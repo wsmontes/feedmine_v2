@@ -2016,7 +2016,7 @@ final class CompositionTests: XCTestCase {
         let presentation = try XCTUnwrap(association.store.state.presentation)
         let store = PublicationStore(database: association.database)
         let edition = try XCTUnwrap(try store.edition(id: presentation.editionID))
-        XCTAssertEqual(edition.editorialRevision.sequencingPolicyVersion.rawValue, 5,
+        XCTAssertEqual(edition.editorialRevision.sequencingPolicyVersion.rawValue, 6,
             "edições novas declaram a versão suportada de diversidade")
         let record = try XCTUnwrap(try store.card(id: presentation.window.items[0].id))
         let diversity = try XCTUnwrap(record.diversity, "a ocorrência carrega os fatos congelados")
@@ -2827,9 +2827,21 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 4)), .recencyAlternatingSourcesByWeightedSupplyShare)
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 5)), .recencyDescending,
             "v5's alternation shape is supplied by the composition that knows its scoring; the fallback is recency")
-        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 6)), .recencyDescending,
-            "an unknown future version is not v4")
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 6)), .maximumDistance,
+            "fresh v6 editions use maximum distance")
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 7)), .recencyDescending,
+            "an unknown future version does not inherit v6")
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 99)), .recencyDescending)
+    }
+
+    /// The two live paths at the 5/6 seam: a fresh Edition says 6 and gets maximum distance; a restored v5
+    /// Edition keeps the shaped behavior its composition supplied, not the static fallback.
+    func testFreshSixAndRestoredFiveKeepDistinctSequencingBehavior() throws {
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 6)), .maximumDistance)
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 5)), .recencyDescending,
+            "restored v5 keeps its composition-shaped policy; only a fresh Edition is 6")
+        XCTAssertNotEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 6)),
+            FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 5)))
     }
 
     /// R2-D2/R2-D8: a behavior change gets its own EditorialRevision identity. `PublicationStore`
@@ -2881,16 +2893,15 @@ final class CompositionTests: XCTestCase {
             "the context the app rebuilds from is the resolved one, not the stale overlay")
     }
 
-    /// R2: a fresh session declares the proportional sequencing behavior, and a v2 revision stays usable
+    /// v6: a fresh session declares maximum-distance sequencing, and a v2 revision stays usable
     /// for the Editions already published under it.
-    func testFreshSessionDeclaresSupplyShareSequencingAndStillAcceptsV2Editions() async throws {
+    func testFreshSessionDeclaresMaximumDistanceAndStillAcceptsV2Editions() async throws {
         let root = root()
         await root.launch()
         let association = try XCTUnwrap(root.association)
-        // R17/A8: sequencing version 5 is the one that carries the diversity context; its neutral shape still
-        // resolves to the supply-share alternating behaviour asserted below.
-        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 5))
-        XCTAssertEqual(association.policy.sequencing, .recencyAlternatingSourcesBySupplyShare)
+        // New editions use v6; the legacy v2 assertion below still protects already-published behavior.
+        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 6))
+        XCTAssertEqual(association.policy.sequencing, .maximumDistance)
         let v2 = EditorialRevision(id: EditorialRevisionID(), contextKey: ContextKey(request: .main),
             catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 2),
             eligibilityPolicyVersion: PolicyVersion(rawValue: 2), scoringPolicyVersion: PolicyVersion(rawValue: 1),

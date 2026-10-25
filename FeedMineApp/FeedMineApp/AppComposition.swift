@@ -2819,6 +2819,7 @@ final class FeedAssociation {
         case 2: return .recencyAlternatingSources
         case 3: return .recencyAlternatingSourcesBySupplyShare
         case 4: return .recencyAlternatingSourcesByWeightedSupplyShare
+        case 6: return .maximumDistance
         default: return .recencyDescending
         }
     }
@@ -2943,7 +2944,7 @@ final class FeedAssociation {
         // P10/R17: new Editions state the **supported** sequencing version. Version 5 keeps the same alternation
         // shape the previous versions described (by scoring) and adds the frozen-diversity tie-break; the shape is
         // resolved below, never inferred from a number this build does not know.
-        let sequencingVersion = PolicyVersion(rawValue: 5)
+        let sequencingVersion = PolicyVersion(rawValue: 6)
         let shapedSequencing: ResolvedSelectionPolicy.SequencingBehavior
         switch scoring {
         case .equal: shapedSequencing = .recencyAlternatingSourcesBySupplyShare
