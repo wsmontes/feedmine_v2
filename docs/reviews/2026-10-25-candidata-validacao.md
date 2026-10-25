@@ -64,15 +64,21 @@ candidata — 2 cartas publicadas, ambas com selo **Vídeo**; nenhum `card.play`
 leitor igual à do item. O caminho de identidade de vídeo funciona ponta a ponta; o que a janela de 180 s no catálogo
 público não mostrou foi uma **carta** de vídeo, porque a fila não chegou a essas fontes.
 
-**Regressão confirmada — BLOQUEIA RELEASE (P1, com controle verde):** depois de fechar o navegador, a carta que o leitor deixou **não
+**Regressão de medição — NÃO atribuir ao produto até ser medida (controle verde):** depois de fechar o navegador, a carta que o leitor deixou **não
 está mais no feed** na candidata — `return restored=false`, leitura de frame `(0,0,440,956)` e 75 s de buscas por
 identidade sem nenhum resultado. No controle pré-mudança (`3eee1935`) a mesma jornada passa em 39 s com
 `restored=true`. A diferença entre os dois braços é a cadência de publicação (a candidata publica ~1.159 cartas em
 180 s contra 68–80 históricos): enquanto o leitor está no navegador, o app continua publicando e a janela admitida
 muda; ao voltar, a âncora não é mais a mesma. É a promessa do B04 ("o feed apresentado é sagrado") num cenário que o
 B04 não cobre — com um navegador no meio. É o **segundo custo comportamental confirmado do volume de publicação**,
-ao lado das paradas do B03: as cláusulas 1–4 do vídeo passam no feed real, a restauração de posição falha. Enquanto
-não for corrigido, nenhum build desta árvore vai ao TestFlight como candidato.
+ao lado das paradas do B03: as cláusulas 1–4 do vídeo passam no feed real, a restauração de posição falha. O que está provado é que **a jornada não consegue fechar o Safari modal**: medido com
+instrumentação temporária, depois do toque em "Close" o controle de URL do Safari continua presente e o `webView`
+também, por 30 s, enquanto toda consulta de árvore responde em 90–250 ms; no braço verde (build 54, Safari embutido)
+as duas consultas ficam falsas na primeira iteração e a jornada passa em 39 s. O `Close` que o teste toca resolve na
+árvore do app, não no processo do `SafariViewService`, então o toque não fecha o Safari modal. Consequência honesta:
+o retorno **do produto** depois de um fechamento real está **não medido** — não provado quebrado. A correção é do
+instrumento (fechar pelo processo do SafariViewService, ou por gesto de coordenada com espera própria), sem afrouxar
+a cláusula de mesma carta / mesmo frame.
 
 **Atribuição por bisseção (executada, cada ponto com build próprio):** `3eee1935` (build 54) **PASS** em 39 s;
 `67d78212` ("present the site modally and never leave the upgrade notice blocking", 21/out) **FAIL** em 107 s — e
