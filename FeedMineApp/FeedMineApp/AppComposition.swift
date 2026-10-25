@@ -3357,7 +3357,7 @@ final class FeedAssociation {
             // The publication cap is the runway's own published-reserve target: one opportunity publishes at most
             // what the reserve exists to hold ahead of the reader. The rest stays ready and eligible, so the next
             // opportunity publishes it — a burst that publishes every ready candidate was the defect this states away.
-            publicationLimit: Self.runwayMinimumReserveCards + Self.forwardWindowCards)
+            publicationLimit: Self.runwayMinimumReserveCards)
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,
@@ -3373,7 +3373,7 @@ final class FeedAssociation {
             makeMediaOpportunity: makeMediaOpportunity,
             // The first publication obeys the same cap: at most the reserve target in one opportunity, with the
             // remainder left ready (R6-E then grows the admitted window from what was published, not from a burst).
-            publicationLimit: Self.runwayMinimumReserveCards + Self.forwardWindowCards)
+            publicationLimit: Self.runwayMinimumReserveCards)
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }
