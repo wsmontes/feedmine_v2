@@ -24,7 +24,15 @@ O que o traço mostra: **seis das sete paradas são um único evento de ~3 s** (
 (epoch 1792911859,2). Nas janelas há centenas de `editorial_refusal` com `tooSoon(cardsRemaining: 4)` — o app está
 examinando e recusando a oferta do F02 enquanto o leitor avança, e a admissão só chega junto com a publicação
 seguinte, 1–2 s depois. As duas ocorrências caem dentro de rajadas sintéticas de 3 cartas/s; nenhuma é no meio do
-regime permanente. Fica registrado com o traço; a correção exige instrumentar a cadência de publicação na rajada.
+regime permanente.
+
+**Onde a parada nasce (medido nos três traços, A e B):** em toda janela de parada, `candidate` (publicação) = **0** e
+`window` (instalação da lista admitida) = **0** — não há material novo para admitir. Não é render: os quadros seguem
+a 39–60 fps nas mesmas janelas, com o pior quadro entre 96 e 194 ms, nunca ~1 s. Não é fatia lenta: as 175 fatias do
+traço têm mediana **215 ms**, p99 **291 ms** e máxima **340 ms**. Ou seja, a pausa é **cadência de admissão sob a
+rajada de 3 avanços/s**: o leitor avança mais rápido do que uma nova admissão chega quando nenhuma publicação está em
+voo. O limite de publicação por oportunidade não muda isso (16/32/48 → 6/7/8 paradas), o que é coerente: o problema
+é o intervalo entre publicações, não o tamanho de cada uma.
 
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
