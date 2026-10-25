@@ -74,12 +74,18 @@ B04 não cobre — com um navegador no meio. É o **segundo custo comportamental
 ao lado das paradas do B03: as cláusulas 1–4 do vídeo passam no feed real, a restauração de posição falha. Enquanto
 não for corrigido, nenhum build desta árvore vai ao TestFlight como candidato.
 
-Pista medida para a próxima sessão: no braço que falha, o traço do teste mostra ~75 s sem **nenhum** elemento de
-carta na árvore (as buscas por identidade UUID não encontram nada), e não uma carta deslocada — ou seja, a superfície
-do leitor não volta a subir depois do fechamento do site. O caminho a inspecionar é `onFinish` → `finishReader` (o
-leitor é derrubado e precisa ser representado de novo), não o cálculo de posição. Uma tentativa de suspender a
-produção na abertura do site (checkpoint + `suspendForBackground`, retomada no fechamento) foi implementada, compilou
-e **falhou o mesmo teste do mesmo jeito**; foi revertida em vez de ficar como mudança não verificada.
+**Atribuição por bisseção (executada, cada ponto com build próprio):** `3eee1935` (build 54) **PASS** em 39 s;
+`67d78212` ("present the site modally and never leave the upgrade notice blocking", 21/out) **FAIL** em 107 s — e
+`67d78212^` é exatamente `3eee1935`, **PASS** em 39 s. Também falham, de forma idêntica: `d6ef2452` (base do trabalho
+desta sessão, antes de qualquer commit meu), `c24c3e15`, `031b27d3`, `1f4f0ee8` e `cb282bcf`. Ou seja: **a regressão
+é de 67d78212**, anterior a v6, à reserva, ao limite de publicação e à correção do instrumento. O defeito está na
+apresentação modal do site introduzida ali, não no cálculo de posição.
+
+Duas tentativas de correção foram feitas e **revertidas** por não mudarem o resultado: (a) suspender a produção ao
+abrir o site (checkpoint + `suspendForBackground`, retomada no fechamento); (b) manter o leitor vivo ao fechar o site
+(não chamar `onFinish`). Ambas compilaram e falharam o mesmo teste do mesmo jeito. O que falta medir é por que, no
+braço que falha, o app fica ~75 s sem responder a consultas de árvore (snapshot sem nenhum elemento), enquanto o
+braço verde fecha em 39 s — isso pede inspeção da árvore de acessibilidade durante a transição, não outro palpite.
 
 **Cobertura de controles:** 127 dos 199 `accessibilityIdentifier` da UI são referenciados por testes; os 72 restantes
 incluem templates interpolados (idiomas, regiões, tipos de mídia) e controles de folhas secundárias (seletor de
