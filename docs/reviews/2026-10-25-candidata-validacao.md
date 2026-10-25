@@ -66,6 +66,13 @@ B04 não cobre — com um navegador no meio. É o **segundo custo comportamental
 ao lado das paradas do B03: as cláusulas 1–4 do vídeo passam no feed real, a restauração de posição falha. Enquanto
 não for corrigido, nenhum build desta árvore vai ao TestFlight como candidato.
 
+Pista medida para a próxima sessão: no braço que falha, o traço do teste mostra ~75 s sem **nenhum** elemento de
+carta na árvore (as buscas por identidade UUID não encontram nada), e não uma carta deslocada — ou seja, a superfície
+do leitor não volta a subir depois do fechamento do site. O caminho a inspecionar é `onFinish` → `finishReader` (o
+leitor é derrubado e precisa ser representado de novo), não o cálculo de posição. Uma tentativa de suspender a
+produção na abertura do site (checkpoint + `suspendForBackground`, retomada no fechamento) foi implementada, compilou
+e **falhou o mesmo teste do mesmo jeito**; foi revertida em vez de ficar como mudança não verificada.
+
 **Cobertura de controles:** 127 dos 199 `accessibilityIdentifier` da UI são referenciados por testes; os 72 restantes
 incluem templates interpolados (idiomas, regiões, tipos de mídia) e controles de folhas secundárias (seletor de
 coleção, colar endereço, rejeição de feed, disponibilidade de catálogo). Não foi feita varredura manual de cada um:
