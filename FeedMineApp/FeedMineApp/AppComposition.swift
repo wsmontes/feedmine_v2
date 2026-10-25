@@ -2322,6 +2322,9 @@ final class FeedAssociation {
     let driver: FeedRunwayDriver
     let coordinator: AcquisitionCoordinator
     let media: MediaPrefetcher
+    /// PM-028A: this association's prepared-presentation reserve. State and policy only — the prepared
+    /// presentation and its bytes live in `media.readiness` and in the content-addressed store.
+    @ObservationIgnored let reserve: PreparedReserve
     /// Owner directive 2026-10-17 §2: a save prepares the occurrence's media and records what the link can open.
     @ObservationIgnored let savedMedia: SavedMediaCoordinator
     /// P2: a preparation whose durable write was refused has no availability row to read. The failure is kept
@@ -2781,6 +2784,28 @@ final class FeedAssociation {
             keepsAdmittedHead: true)
     }
 
+    /// PM-028A §3: one readiness transition, stated to the reserve in the reserve's own terms.
+    ///
+    /// `MediaReadiness` names two decisions that a caller must not confuse, and the reserve distinguishes them
+    /// exactly as the rest of the app does (INV-17, `MediaSkippedSupply.reconsider`): a revision with a presentation
+    /// is `.prepared` (with the asset's own persisted bytes, never a decoded size); a revision whose **declared**
+    /// card image was decided with no presentation at all can never become the card the feed promised, so it is a
+    /// definitive media failure on its first answer. A declared text card (`presentation == .textOnly`) is a
+    /// legitimate presentation and therefore `.prepared(hasImage: false)`.
+    ///
+    /// `nonisolated` on purpose: the prefetcher calls it from its own actor, and nothing in it touches this
+    /// association's state.
+    nonisolated static func settleReserve(_ revision: OriginRevisionID, readiness: MediaReadiness,
+        reserve: PreparedReserve) async {
+        let prepared = readiness.prepared(revision)
+        if prepared == nil, readiness.isSettled(revision), readiness.presentation(for: revision) == nil {
+            await reserve.settle(revision, outcome: .definitiveFailure)
+        } else {
+            await reserve.settle(revision, outcome: .prepared(hasImage: prepared != nil),
+                persistedBytes: prepared?.byteCount ?? 0)
+        }
+    }
+
     /// The restore's own statement, as one log line. The window a restore installs already starts at the card the
     /// reader left (or at the neighbour it names); this is how that fact reaches the run's record instead of being
     /// inferred from geometry (`PublicationHistory.RestoredPosition`).
@@ -2853,6 +2878,10 @@ final class FeedAssociation {
         // the volume read happens in `storageCapacity.refresh()` on a background executor.
         let budget = StageBudgetPolicy.budget(pressure: stagePressureFacts(), settings: launchSettings)
         return .init(runway: .init(localWorkAllowed: budget.localWorkAllowed,
+            // PM-028A/PM-029: the examined window is the prepared reserve's material, so the policy's ladder is now
+            // stated at the reserve's depth — 128 nominal, and 64/48/32 as thermal pressure rises, with the
+            // useful-yield thresholds scaled by the same factor. The stage policy stays the one owner of the ladder;
+            // this composition only hands it the facts.
             examinedCandidateCapacity: budget.examinedCandidateCapacity,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
             // F01/§5.3: the reserve exists so the reader can walk into the window the session materialised, so the
@@ -3088,10 +3117,20 @@ final class FeedAssociation {
         let assetDirectory = directory.appendingPathComponent("Media", isDirectory: true)
         let device = DeviceMediaConditions.currentOnMain()
         let readiness = MediaReadiness()
+        // PM-028A §3: one prepared reserve per association, beside the readiness index it indexes. It holds the
+        // state, the depth policy and the retained-byte budget; the presentation and its bytes stay in `readiness`
+        // and in the content-addressed store. Built before the prefetcher because its readiness transition is the
+        // reserve's own settlement (below).
+        let reserve = PreparedReserve()
+        self.reserve = reserve
         // One bounded memory of the stories a one-way walk skipped for pending media, shared by the first screen
         // and the live feed: a skip recorded before the reader's first store is ready must still be reachable by the
         // opportunity that runs after it, because that opportunity examines a different window.
-        let reoffer = PendingMediaReconsideration(database: db)
+        // PM-028A: the deferral page this association prepares and the slice rotates is the reserve's depth, stated
+        // once in the stage policy (128). It used to be the type's own default of 32, which was the real ceiling on
+        // how many skipped stories one opportunity could bring back.
+        let reoffer = PendingMediaReconsideration(database: db,
+            ceiling: StageBudgetPolicy.preparedReserveDepth)
         let fetcher = MediaHTTPFetcher(session: transport)
         // F06-G/PD-6: one derived tolerance feeds both the preparation window and the byte budget below. The media
         // layer used to be handed a fixed 5 s here while the window was computed elsewhere — two numbers for one
@@ -3115,7 +3154,12 @@ final class FeedAssociation {
             fetch: { try await fetcher.fetch($0, budget: $1) },
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
                 assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) },
-            onReadinessChanged: { _ in await readinessRelay.deliver() },
+            onReadinessChanged: { revision in
+                // PM-028A §3/§4.1: every real readiness transition is the reserve's settlement, told in the
+                // reserve's own terms (see `settleReserve`). A transition never publishes anything by itself.
+                await FeedAssociation.settleReserve(revision, readiness: readiness, reserve: reserve)
+                await readinessRelay.deliver()
+            },
             mediaTrace: replenishment)
         self.media = media
         savedMedia = SavedMediaCoordinator(database: db, assetDirectory: assetDirectory, prefetcher: media)
@@ -3184,7 +3228,27 @@ final class FeedAssociation {
             let startedAt = ProcessInfo.processInfo.systemUptime
             let wait = await mediaWait()
             return MediaPreparationOpportunity(waitSeconds: wait, startedAt: startedAt) { revisions, deadline in
-                await media.prefetch(revisions, deadline: deadline)
+                // PM-029: the durable deferral page this opportunity is about to prepare. A revision on it is a
+                // story the one-way walk skipped for want of media, so if it becomes ready here it was **recovered
+                // by reconsideration** — the reserve counts it, and publication decides whether it became a card.
+                // The page is read before the slice rotates and forgets it, and it is the same page the driver just
+                // appended to `revisions`, so no second list is introduced.
+                if let editionID = await session.currentRunwayScope()?.editionID {
+                    let page = (try? reoffer.pendingEntries(for: editionID, limit: reoffer.ceiling)) ?? []
+                    await reserve.noteReconsidered(page.map(\.originRevisionID))
+                }
+                // PM-028A §3/§4: `revisions` is exactly the set the coming slice will examine — the structural
+                // window (`examinedCandidateCapacity: 128`) plus the durable deferral page the driver prepares — so
+                // the reserve's depth bounds real work rather than a parallel list. Nothing is prepared that the
+                // reserve did not plan; a revision already ready, in flight, published or exhausted is not charged
+                // again, and the persisted-byte budget refuses new work without dropping what is prepared.
+                let planned = await reserve.plan(offer: revisions)
+                for revision in planned { await reserve.markPreparing(revision, attempt: 0) }
+                await media.prefetch(planned, deadline: deadline)
+                // The opportunity's window is over. Whatever the prefetcher is still running is no longer this
+                // window's in-flight work: a completion that arrives later is taken as `.ready` and counted as a
+                // late completion (PM-028A §4.3), which is the fact the depth policy exists to make visible.
+                await reserve.windowClosed(planned)
                 // F05/F06: **when a candidate's media becomes ready** is one of the facts a run is judged on — a
                 // pending candidate that recovers is exactly what the suspension rule promises. Codex's review: a
                 // level-triggered event fires again on later queries and proves nothing; what a run needs is the
@@ -3193,6 +3257,24 @@ final class FeedAssociation {
                     trace?.recordOnce("media_ready", key: "ready:\(revision.rawValue.uuidString)",
                         ["revision": revision.rawValue.uuidString])
                 }
+                // PM-028A §3: one line per cycle, the three numbers the product is judged on — the depth the
+                // reserve holds, the completions that arrived after their window, and the persisted asset it
+                // retains. The remaining counters are stated beside them because they are what makes the first
+                // three readable (a depth of zero because of a budget looks nothing like a depth of zero because
+                // everything was already published).
+                let depth = await reserve.snapshot()
+                trace?.record("reserve_depth", [
+                    "ready": String(depth.ready),
+                    "preparing": String(depth.preparing),
+                    "pending": String(depth.pending),
+                    "deferred": String(depth.deferred),
+                    "exhausted": String(depth.exhausted),
+                    "published": String(depth.published),
+                    "late_completions": String(depth.lateCompletions),
+                    "persisted_bytes": String(depth.persistedBytes),
+                    "reconsidered_published": String(depth.reconsideredPublished),
+                    "reconsidered_with_image": String(depth.reconsideredWithImage),
+                ])
             }
         }
         maintainTail = { lease in
@@ -3588,6 +3670,13 @@ final class FeedAssociation {
             }
         }
         lastPublication = (now, receipt.cardIDs.count)
+        // PM-028A §3: the revisions that just became cards leave the reserve's competition. A ready revision is
+        // `.published` (its retained asset is not re-counted and it never competes again); anything else the
+        // receipt names was published through another path and is superseded, so the reserve cannot prepare a story
+        // the edition already carries. The revision identity is the receipt's, read from the store it committed to.
+        let publication = PublicationStore(database: database)
+        let publishedRevisions = receipt.cardIDs.compactMap { try? publication.card(id: $0)?.originRevisionID }
+        if !publishedRevisions.isEmpty { await reserve.markPublished(publishedRevisions) }
         await growAdmittedWindowIfPublished()
     }
 
