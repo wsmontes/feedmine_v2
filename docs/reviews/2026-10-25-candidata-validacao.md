@@ -45,8 +45,12 @@ lista em 10,23 s; a **primeira fatia do próprio runway só é pedida em t=15,93
 10,9 s e 15,9 s não há publicação, admissão nem pedido de fatia — o leitor consome as 12 cartas do bootstrap a 3/s e
 fica sem nada. O aglomerado do B03 é esse **vão de entrega bootstrap → runway** (~5,9 s), não regime permanente, e por
 isso nenhum parâmetro de steady state (limite por oportunidade 16/32/48, piso 32/64) o moveu. A correção seguinte
-pertence a esse handoff (acionar a cadência do runway imediatamente após a publicação inicial / na primeira
-observação), não à reserva nem ao limite de lote.
+pertence a esse handoff, não à reserva nem ao limite de lote.
+
+Tentativa medida e revertida: acordar o runway explicitamente após a publicação do bootstrap
+(`noteLocalSupplyCommitted`). O pedido de fatia **continuou em 15,94 s** e as paradas continuaram 6 — porque
+`reconsider` devolve `.none` sem `latestObservation`, e a primeira observação só existe quando a janela é
+apresentada e medida. O vão não é falta de aviso: é a **cadência de observação após a primeira apresentação**.
 
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
