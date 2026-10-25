@@ -608,4 +608,143 @@ final class SyndicationTranslatorTests: XCTestCase {
         XCTAssertNotNil(build(search: nil, subjects: declared))
         XCTAssertNil(build(search: " opaque ", subjects: declared))
     }
+
+    // MARK: - Video identity (spec 2026-10-24)
+
+    /// The live YouTube Atom shape, verbatim: the video is a `media:group/media:content` with no `medium` and
+    /// the Flash `type`, beside the thumbnail. It now names a video payload; the card still gets its visual.
+    func testVID01YouTubeAtomEntryNamesAVideoPayloadBesideItsThumbnail() throws {
+        let value = try translate(Data("""
+        <feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+        <title>Channel</title>
+        <entry>
+        <id>yt:video:jcBji3EovfI</id>
+        <yt:videoId>jcBji3EovfI</yt:videoId>
+        <title>Video title</title>
+        <link rel="alternate" href="https://www.youtube.com/watch?v=jcBji3EovfI"/>
+        <media:group>
+        <media:title>Video title</media:title>
+        <media:content url="https://www.youtube.com/v/jcBji3EovfI?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+        <media:thumbnail url="https://i3.ytimg.com/vi/jcBji3EovfI/hqdefault.jpg" width="480" height="360"/>
+        </media:group>
+        </entry>
+        </feed>
+        """.utf8))
+        let o = try XCTUnwrap(value.observations.first)
+        XCTAssertEqual(o.objectIdentity.value, "yt:video:jcBji3EovfI")
+        XCTAssertEqual(o.primaryLink?.absoluteString, "https://www.youtube.com/watch?v=jcBji3EovfI")
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),
+            ["https://i3.ytimg.com/vi/jcBji3EovfI/hqdefault.jpg",
+             "https://www.youtube.com/v/jcBji3EovfI?version=3"],
+            "the visual keeps ordinal 0; the payload is appended after it")
+        XCTAssertEqual(o.mediaCandidates.first?.role, .cardVisual)
+        XCTAssertEqual(o.mediaCandidates.first?.mediaClass, .image)
+        XCTAssertEqual(o.mediaCandidates.first?.declaredPixelWidth, 480)
+        XCTAssertEqual(o.mediaCandidates.last?.role, .playback)
+        XCTAssertEqual(o.mediaCandidates.last?.mediaClass, .video)
+        XCTAssertEqual(o.mediaCandidates.last?.declaredMimeType, "application/x-shockwave-flash")
+        XCTAssertNil(o.mediaCandidates.last?.declaredPixelWidth, "a video's declared frame is not a card size")
+        XCTAssertEqual(o.mediaCandidates.filter { $0.role == .playback }.count, 1)
+        XCTAssertEqual(o.mediaCandidates.filter { $0.role == .cardVisual }.count, 1)
+    }
+
+    /// Each of the three declarations names a video on its own, and the MIME is compared as a media type.
+    func testVID02MediumVideoAndVideoMIMEAndFlashAllNameAVideoPayload() throws {
+        let byMediumAndType = try item(rss("<item><guid>v</guid><link>https://site.example/v</link>"
+            + "<media:content url=\"https://example.test/clip.mp4\" medium=\"video\" type=\"video/mp4\" width=\"1280\" height=\"720\"/></item>"))
+        XCTAssertEqual(byMediumAndType.mediaCandidates.count, 1)
+        XCTAssertEqual(byMediumAndType.mediaCandidates[0].role, .playback)
+        XCTAssertEqual(byMediumAndType.mediaCandidates[0].mediaClass, .video)
+        XCTAssertEqual(byMediumAndType.mediaCandidates[0].declaredMimeType, "video/mp4")
+
+        func claims(_ attributes: String) throws -> [AcquisitionMediaCandidateClaim] {
+            try item(rss("<item><guid>v</guid><link>https://site.example/v</link>"
+                + "<media:content url=\"https://example.test/clip.mp4\" \(attributes)/></item>")).mediaCandidates
+        }
+        let byMedium = try claims("medium=\"video\"")
+        XCTAssertEqual(byMedium.map(\.mediaClass), [.video], "the medium alone is the publisher's word")
+        XCTAssertEqual(byMedium.map(\.role), [.playback])
+        XCTAssertNil(byMedium[0].declaredMimeType, "nothing was declared, so nothing is claimed")
+        XCTAssertEqual(try claims("type=\"video/webm\"").map(\.mediaClass), [.video])
+        XCTAssertEqual(try claims("medium=\"Video\" type=\"VIDEO/MP4; codecs=avc1\"").map(\.mediaClass), [.video])
+        XCTAssertEqual(try claims("type=\"application/x-shockwave-flash\"").map(\.mediaClass), [.video])
+        XCTAssertEqual(try claims("type=\"application/pdf\""), [], "an unplayable declaration is not a payload")
+        XCTAssertEqual(try claims("medium=\"audio\" type=\"audio/mpeg\""), [],
+            "audio `media:content` stays unread: an episode's audio is its enclosure")
+    }
+
+    /// Spec §2.2: one playback per revision, and the enclosure is the canonical payload, so it wins.
+    func testVID03AnEnclosureClaimsThePayloadAndAVideoContentOnlyEntersWithoutOne() throws {
+        let atomEntry = try item(atom("<entry><id>urn:ep</id><link href=\"https://site.example/ep\"/>"
+            + "<link rel=\"enclosure\" type=\"audio/mpeg\" href=\"https://example.test/ep.mp3\"/>"
+            + "<media:group><media:content url=\"https://www.youtube.com/v/x?version=3\" type=\"application/x-shockwave-flash\"/>"
+            + "</media:group></entry>"))
+        XCTAssertEqual(atomEntry.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/ep.mp3"],
+            "the audio enclosure is the payload; the video declaration does not compete with it")
+        XCTAssertEqual(atomEntry.mediaCandidates.map(\.mediaClass), [.audio])
+
+        let rssEntry = try item(rss("<item><guid>ep</guid><link>https://site.example/ep</link>"
+            + "<enclosure url=\"https://example.test/ep.mp3\" type=\"audio/mpeg\" length=\"2\"/>"
+            + "<media:content url=\"https://example.test/clip.mp4\" type=\"video/mp4\"/></item>"))
+        XCTAssertEqual(rssEntry.mediaCandidates.map(\.mediaClass), [.audio])
+        XCTAssertEqual(rssEntry.mediaCandidates.filter { $0.role == .playback }.count, 1)
+
+        // An enclosure the reader cannot play claims nothing, so it does not shadow the video declaration.
+        let unplayable = try item(rss("<item><guid>d</guid><link>https://site.example/d</link>"
+            + "<enclosure url=\"https://example.test/doc.pdf\" type=\"application/pdf\" length=\"1\"/>"
+            + "<media:content url=\"https://example.test/clip.mp4\" type=\"video/mp4\"/></item>"))
+        XCTAssertEqual(unplayable.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/clip.mp4"])
+        XCTAssertEqual(unplayable.mediaCandidates.map(\.mediaClass), [.video])
+    }
+
+    /// Replay is deterministic: the first video declaration in document order is the one claim, item level
+    /// before `media:group`, and the images beside it stay images.
+    func testVID04AtMostOneVideoPayloadAndTheFirstDeclarationInDocumentOrderWins() throws {
+        let o = try item(rss("<item><guid>v</guid><link>https://site.example/v</link>"
+            + "<media:content url=\"https://example.test/first.mp4\" type=\"video/mp4\"/>"
+            + "<media:content url=\"https://example.test/second.mp4\" type=\"video/mp4\"/>"
+            + "<media:content url=\"https://example.test/cover.jpg\" type=\"image/jpeg\" width=\"1200\" height=\"800\"/>"
+            + "<media:group><media:content url=\"https://example.test/third.webm\" medium=\"video\"/></media:group></item>"))
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),
+            ["https://example.test/cover.jpg", "https://example.test/first.mp4"])
+        XCTAssertEqual(o.mediaCandidates.map(\.role), [.cardVisual, .playback])
+        XCTAssertEqual(o.mediaCandidates.filter { $0.role == .playback }.count, 1)
+    }
+
+    /// Regression: nothing else moves. An audio enclosure keeps its one audio payload, an entry with only
+    /// images keeps none, and a declaration the translator still does not read adds no claim.
+    func testVID05AudioAndImageBehaviourIsUnchanged() throws {
+        let audio = try item(rss("<item><guid>ep</guid><link>https://site.example/ep</link>"
+            + "<enclosure url=\"https://example.test/ep.mp3\" type=\"audio/mpeg\" length=\"2\"/></item>"))
+        XCTAssertEqual(audio.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/ep.mp3"])
+        XCTAssertEqual(audio.mediaCandidates.map(\.mediaClass), [.audio])
+
+        let images = try item(rss("<item><guid>g</guid><link>https://site.example/p</link>"
+            + "<media:content url=\"https://example.test/content.jpg\" medium=\"image\" width=\"1200\" height=\"800\"/>"
+            + "<media:group><media:content url=\"https://example.test/group.jpg\" type=\"image/jpeg\"/></media:group></item>"))
+        XCTAssertEqual(images.mediaCandidates.map(\.role), [.cardVisual, .cardVisual])
+        XCTAssertTrue(images.mediaCandidates.allSatisfy { $0.mediaClass == .image })
+        XCTAssertTrue(images.mediaCandidates.allSatisfy { $0.role != .playback })
+    }
+
+    /// The fingerprint is the claim URLs: a declaration the translator does not read leaves the version identity
+    /// exactly as it was, and the new video claim is material on purpose, so such entries get a new version.
+    func testVID06OnlyAdmittedVideoPayloadsChangeTheMaterialIdentity() throws {
+        func entry(_ extra: String) throws -> AcquisitionObservation {
+            try item(atom("<entry><id>urn:video-material</id><updated>2020-01-02T00:00:00Z</updated>"
+                + "<summary>Same</summary><media:thumbnail url=\"https://example.test/cover.jpg\"/>\(extra)</entry>"))
+        }
+        let plain = try entry("")
+        let unread = try entry("<media:content url=\"https://example.test/ep.mp3\" type=\"audio/mpeg\"/>")
+        let video = try entry("<media:content url=\"https://example.test/clip.mp4\" type=\"video/mp4\"/>")
+        XCTAssertEqual(plain.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/cover.jpg"])
+        XCTAssertEqual(plain.mediaCandidates.map(\.remoteURL.absoluteString),
+            unread.mediaCandidates.map(\.remoteURL.absoluteString), "a declaration that is not read adds no claim")
+        XCTAssertEqual(plain.versionIdentity, unread.versionIdentity,
+            "no new claim, so the material fingerprint and the version identity are unchanged")
+        XCTAssertNotNil(plain.versionIdentity)
+        XCTAssertNotEqual(plain.versionIdentity, video.versionIdentity,
+            "the video claim is material: the same declared update now names a different revision")
+        XCTAssertEqual(video.mediaCandidates.last?.mediaClass, .video)
+    }
 }
