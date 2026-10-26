@@ -144,8 +144,16 @@ principal é o anchor key). Retirada continua sendo `revoked` durável, recusada
   falta — e é o bloqueador real — é a captura antes/depois: esta rodada não executou jornada de UI (o sheet de Fontes
   não expõe as linhas na árvore de acessibilidade neste device, já documentado em
   `docs/reviews/evidence/2026-10-25-f12-source-feed/README.md`), então nenhuma tela é alegada.
+  **Correção (2026-10-26, rodada de revisão):** a jornada de UI foi executada e passou; a árvore do sheet expõe as
+  linhas e a ausência da fonte desenha a nota de limite do feed. Ver `docs/reviews/2026-10-26-s1-review-and-ui.md` §8
+  e `SourceAbsenceJourneyUITests` (PASS 126,3 s, `/tmp/s1-ui-4.xcresult`). O texto acima permanece como registro do
+  estado daquela rodada, não como estado atual.
 - UX12-A não foi reaberto: a rota card→detalhe→assunto→país→lista→fonte continua dependendo do sheet que não expõe
   linhas; o que esta rodada prova é o **destino** da fonte (`.source` correto, card/âncora preservados), não o percurso
   completo.
+  **Correção (2026-10-26, rodada de revisão):** o sheet **expõe** as linhas (`node-child-*`, `node-source-*`, medido
+  nas duas jornadas). A rota completa card→detalhe→assunto→país→lista→fonte continua **não executada**; o que passou
+  em UI foi card→fonte→retorno com a mesma carta e Fontes abrindo/fechando dos dois contextos. Ver
+  `docs/reviews/2026-10-26-s1-review-and-ui.md` §7.
 - `bench/**`, oráculo congelado, driver, `criteria.json`, `capacity-ready.json`, corpus: intocados. B03 permanece o
   resultado congelado (não é PASS) e B06 não é declarado provado.
