@@ -138,16 +138,15 @@ leitor, menu, adicionar feed, navegador e a carta de vídeo.
 
 ## Aberto (produto)
 
-1. **B03 — 7 paradas de 1 s** contadas pelo oráculo, que são **dois eventos**: um hiccup de ~3 s dentro da rajada
-   sintética e uma parada isolada no fim da janela. Causa **medida**: cadência de admissão — em toda janela de parada
-   há 0 publicações e 0 instalações de lista, as fatias terminam em ≤340 ms e os quadros seguem a 39–60 fps. Correção
-   não feita; o limite por oportunidade já foi refutado (16/32/48 → 6/7/8).
+1. **B03 — paradas de 1 s contadas pelo oráculo.** Run `20261025T132433Z` (`0e7a35ee`): **2 paradas** (1,17 s e 1,27 s) em 3.409 avanços. A leitura do traço (§B03 abaixo) mostra que as duas são **re-admissões da mesma lista** — `cards`, `head` e `tail` idênticos, só a âncora mudou — e que o buffer de 16 cartas à frente nunca se esgota (maior intervalo sem conteúdo novo em regime: 3,26 s). Portanto, **neste run não há parada visível por falta de runway**; o proxy do oráculo conta cadência de admissão. A cláusula continua FAIL mecânico (oráculo, limiar, corpus e driver intocados); a arbitragem entre o texto da cláusula e o proxy é do dono. O run anterior (piso 32/64) media o mesmo fenômeno com 6–7 paradas, e o limite por oportunidade já foi refutado (16/32/48 → 6/7/8).
 2. **Volume de publicação**: 1.159 cartas em 180 s contra 68–80 históricos. `HiddenTailMaintenance` seleciona sem
    limite (`examinedCapacity: 256`) e a taxa de oportunidades é alta (≈3,1 fatias/s no traço real). O campo
-   `coverage` registrado nessas requisições diz `healthy` em 520 de 532 casos com `ready: at_least(32)` — valor que,
-   pela própria política, deveria resultar em `hold`; portanto **a instrumentação registra uma cobertura que não é a
-   que produziu a ação**. Isso é um achado de instrumentação a investigar, não prova de que o runway esteja sadio
-   pedindo fatia: a causa verificada do volume é a cauda oculta sem limite mais a taxa de oportunidades.
+   `coverage` gravado nas requisições **não é contraditório nem mentiroso**: `RunwayPolicy.evaluate` devolve
+   `hold` para `healthy`, mas existe uma segunda autorização — a *fresh supply opportunity*
+   (`RunwayController.swift`, ramo `freshSupplyOpportunity`) — que concede **uma** fatia justamente quando a
+   política diz `hold`. O traço registrava a cobertura mas não o gatilho. Em 25/10 a requisição passou a carregar
+   `trigger: fresh_supply | policy` (instrumentação aditiva, com testes), então a leitura deixa de exigir o
+   código. A causa verificada do volume continua sendo a cauda oculta sem limite mais a taxa de oportunidades.
 3. **Primeira tela** toda de áudio (4 fontes); primeira imagem pronta a 13,0 s, primeira publicação a 5,7 s.
 4. **Vídeo**: 14 claims `playback/video`, nenhuma carta publicada na janela.
 5. **Armazenamento**: 335 MB de mídia em 3 min; teto de retenção é decisão de produto.
@@ -156,3 +155,28 @@ leitor, menu, adicionar feed, navegador e a carta de vídeo.
    também forem incompatíveis com a cauda por PD-4, a preparação para ali e só a aquisição pode trazer outra fonte.
    É o limite decidido (o PM proibiu preparação ilimitada), mas não é prova de liveness — fica registrado como
    pendência, não como "P1 resolvido".
+
+## B03 — o que as 2 paradas do run `20261025T132433Z` são, medidas
+
+> Registro local autorizado nesta sessão (sem push/merge): a instrumentação `trigger` foi commitada em `f7832caf` e a correção da superfície NF-04 em `7a87e035`; a jornada de app em `a5c3573d`. **B03 continua FAIL mecânico** — nada aqui o reclassifica.
+
+Análise somente-leitura do `trace.jsonl` do próprio contêiner da corrida (`0e7a35ee`, `--full-trace`). O oráculo selado conta `advance → próximo admitted ≥ 1,0 s` (`bench/oracle.py`), sem distinguir atividade nem o que a admissão mudou.
+
+| Fato medido | Valor |
+|---|---|
+| Avanços / por atividade | 3.409 (forward 2.730, stationary 669, backward 10) |
+| Paradas pelo oráculo | 2 (1,17 s e 1,27 s) — ambas `forward` |
+| O que a admissão seguinte mudou | **nada**: `cards`, `head` e `tail` idênticos à admissão anterior; só a `anchor` mudou |
+| Quando a admissão acontece | **só quando o leitor alcança a cauda admitida**: `RunwayActivity.admitsForwardContent` é `self == .explicitTailApproach` (`FeedPresentationAdmission.swift:79-86`) e é o único portão do gesto em `FeedRunwayDriver.swift:427`. Avanço **dentro** do histórico já admitido, settle estacionário, gesto para trás e mudança de layout não admitem nada |
+| Buffer à frente | `forwardWindowCards = 16` (`AppComposition.swift:2766`); a poda preserva a cabeça e corta os **mais antigos** (`FeedSession.swift:424-455`), nunca a reserva à frente; `admitForwardScroll` só estende (capacidade = 16 − à frente; `FeedSession.swift:367-395`) |
+| Intervalo sem mudança de conteúdo (≥60 s, forward) | n=2.670: p50 0,118 s · p99 0,941 s · **máx 3,26 s**; 25 intervalos ≥1 s |
+| Cartas admitidas **à frente** da âncora em cada avanço (medido) | 3.409/3.409 avanços mapeados ao banco do run (`feed_segments.ordinal` + `published_cards.ordinal`): mínimo **6**, p1 13, p50 **15**, máximo 17; **nenhum** avanço com ≤2, nenhum com 0 |
+| Cartas à frente nas 2 paradas | **15** (gap 1,17 s) e **14** (gap 1,27 s) — e o mínimo entre todos os avanços com gap ≥1 s é **14** |
+| Intervalo sem mudança de conteúdo nas 2 paradas | 1,301 s e 1,599 s |
+| Quadros nas janelas | 40–54 frames/s; pior quadro 101–157 ms |
+
+Uma parada visível por falta de runway exigiria esgotar 16 cartas à frente — cerca de 16 s consumindo a 1 card/s. O maior intervalo sem conteúdo novo em regime é 3,26 s, e as duas paradas são re-admissões da mesma lista (conteúdo idêntico; só a âncora mudou). **Conclusão (no modelo de admissão, não na tela):** em nenhum dos 3.409 avanços a âncora estava na cauda — as duas paradas tinham 14–15 cartas **admitidas** à frente (medido; 16 antes do avanço, valor que confirma o limite de poda). Numa parada por falta de runway, a cauda admitida coincide com a âncora; **estas duas não são isso**. O que resta não medido: que essas 14–15 cartas estivessem efetivamente **renderizadas** naquele instante — os `frames` (40–54 fps, pior 101–157 ms) são indício, não prova de conteúdo na tela. **B03 segue FAIL mecânico.** O proxy conta cadência de admissão — inclusive eventos que nada acrescentam — e o texto da cláusula pede "paralisação visível … causada por falta de runway". O veredito do gate segue **FAIL mecânico**; nada aqui o reclassifica.
+
+**Por que nenhum avanço precisou admitir:** `.explicitTailApproach` é produzido quando a carta desenhada **é a última carta admitida** (`FeedVisualCapture.swift:505-515`; `FeedScreen` passa `isLast: window.items.last?.id == card.id`), e é o único portão do gesto (`FeedPresentationAdmission.swift:79-86` → `FeedRunwayDriver.swift:427`). No run há **zero** avanços com essa atividade (forward 2.730, stationary 669, backward 10): o leitor nunca alcançou a cauda, porque a lista cresce pelo caminho do runtime, `.publishedGrowth` (`FeedPresentationAdmission.swift:63-70`), limitado pelas 16 cartas à frente. As 8.879 admissões do run são, portanto, **cadência de publicação**, não de gesto.
+
+Método do ordinal: as cartas do trace foram mapeadas ao banco do próprio run (zero não mapeadas) e ordenadas por `feed_segments.ordinal` + `published_cards.ordinal`; "à frente" = ordinal da cauda admitida − ordinal da âncora do avanço, na admissão que cobria o instante. Não é estimativa agregada.
