@@ -184,15 +184,13 @@ public struct NodeSourcesView: View {
         ForEach(store.nodeSections) { section in
             Section {
                 ForEach(section.rows) { row in
-                    // F12/UX12-B: a source row opens its own feed when the host has a destination for it. The
-                    // open control is offered only while the source is part of the reader's selection — the
-                    // session's source context is scoped to its own feeds, and an unselected source would land
-                    // on the main feed instead of the destination the row names. Enabling stays the toggle's
-                    // own act (R4), and the two controls keep separate hit areas.
+                    // F12/UX12-B: a source row opens its own feed whenever the host has that destination. It is
+                    // independent of the toggle, including for a source the reader has not enabled: opening shows
+                    // the source's own local memberships and never enables its endpoint (S1) nor writes the
+                    // selection (R4). The two controls keep separate hit areas.
                     let selected = store.selection.contains(row.id)
-                    let opens = selected && onOpenSource != nil
                     NodeSourceRowView(row: row, isSelected: selected,
-                        onOpen: opens ? { onOpenSource?(row) } : nil,
+                        onOpen: onOpenSource.map { open in { open(row) } },
                         onToggle: {
                             guard let source = store.sources.first(where: { $0.id == row.id }) else { return }
                             Task { await store.toggle(source) }

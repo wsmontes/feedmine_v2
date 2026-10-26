@@ -1352,7 +1352,8 @@ final class AppComposition {
 
     /// A collection without any available members cannot be the active preset. The same
     /// reconciliation is used on cold restore and on later rebuilds after collection edits.
-    private func sessionState(for proposed: ContextKey) throws -> (key: ContextKey, feeds: [TrustedFeed]) {
+    private func sessionState(for proposed: ContextKey,
+        allowsSourceOutsideSelection: Bool = false) throws -> (key: ContextKey, feeds: [TrustedFeed]) {
         let activeFeeds: [TrustedFeed]
         if case .collection(let id) = proposed.preset {
             activeFeeds = try collectionFeeds(id: id)
@@ -1365,7 +1366,7 @@ final class AppComposition {
         } else {
             activeFeeds = selectedFeeds
         }
-        if case .source(let id) = proposed.request,
+        if case .source(let id) = proposed.request, !allowsSourceOutsideSelection,
             !activeFeeds.contains(where: { $0.sourceID == id }) {
             return (ContextKey(request: .main, preset: proposed.preset, filter: proposed.filter,
                 searchScope: proposed.searchScope), activeFeeds)
@@ -1395,17 +1396,53 @@ final class AppComposition {
         try await next.launch()
     }
 
-    /// F12/UX12-B: opens one catalogue source's own feed from its taxonomy row. The row carries the catalogue
-    /// key; the selection is adopted first (the source surface's toggles are durable), and the destination is the
-    /// reader's **own resolved feed** — the key is matched against what `TrustedFeed.resolveAvailable` produced,
-    /// never derived here and never matched by title or URL shape. Returns false when the key is not part of the
-    /// selection: the row draws no destination it cannot reach, and this is not an error.
+    /// F12/UX12-B: opens one catalogue source's own feed from its taxonomy row. The selection is adopted first
+    /// (the source surface's toggles are durable). A source in the reader's selection uses the ordinary source
+    /// context; a catalogue source the reader has **not** selected opens a context scoped to that source's
+    /// canonical identity while the session keeps the reader's own feeds — so nothing is enabled (S1), the
+    /// selection is not written (R4), and only that source's local memberships can be published. Returns false
+    /// when the catalogue cannot resolve the key: the row then has no destination to promise.
     @discardableResult
     func openSourceFeed(forKey key: String) async throws -> Bool {
         await adoptSelectionChange()
-        guard let feed = selectedFeeds.first(where: { $0.principal == key }) else { return false }
-        try await selectContext(.source(feed.sourceID))
+        if let selected = selectedFeeds.first(where: { $0.principal == key }) {
+            try await selectContext(.source(selected.sourceID))
+            return true
+        }
+        guard let feed = catalogueFeed(forKey: key) else { return false }
+        try await openSourceContext(feed)
         return true
+    }
+
+    /// The catalogue's own identity for one key, resolved by the owner that produced it. Nil when the key is not
+    /// in the active catalogue or cannot be fetched; nothing is derived here and no URL or title is matched.
+    private func catalogueFeed(forKey key: String) -> TrustedFeed? {
+        let links = (try? libraryDatabase().map { try ReaderLibraryStore(database: $0).sourceLinks() }) ?? [:]
+        return (try? TrustedFeed.resolveAvailable(keys: [key], fallback: [],
+            readerSources: readerSourceEntries(), catalogueURL: catalogueURL, identities: links))?.first
+    }
+
+    /// A source's own surface outside the reader's selection, mirroring `selectContext`'s transition: the reader's
+    /// place is checkpointed first, the context is persisted, and the replacement is built and launched. It differs
+    /// in one fact: the session is built with `allowsSourceOutsideSelection`, so its candidate filter is the source
+    /// while its **feeds remain the reader's own** — opening never enables an endpoint, never rewrites the
+    /// selection and never substitutes the Edition the reader already had (that one is checkpointed, not replaced).
+    private func openSourceContext(_ feed: TrustedFeed) async throws {
+        guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
+        replacingSession = true
+        defer { replacingSession = false }
+        if let retired = association {
+            _ = try await retired.session.checkpointCurrentPosition(at: Date())
+            await retired.close()
+        }
+        association = nil
+        currentContextKey = ContextKey(request: .source(feed.sourceID), preset: currentContextKey.preset,
+            filter: resolvedFilter(at: Date()))
+        _ = try preferences?.setContext(currentContextKey)
+        let next = try await association(contextKey: currentContextKey, allowsSourceOutsideSelection: true)
+        association = next
+        startupFailure = nil
+        try await next.launch()
     }
 
     /// T11: the hood of the feed the reader is on, when it is one of their own.
@@ -1791,11 +1828,13 @@ final class AppComposition {
     /// behaviour and any edit is a different one.
     /// The one place a session is built: every transition ranks with the context's own scoring. A collection's
     /// own feed passes its own sources; everything else is the reader's selection.
-    private func association(contextKey: ContextKey) async throws -> FeedAssociation {
+    private func association(contextKey: ContextKey,
+        allowsSourceOutsideSelection: Bool = false) async throws -> FeedAssociation {
         // The detached pool may finish after an activation. It retries for the current fingerprint;
         // resolve the selected sources, policy and traversal *after* that await so they all agree about the
         // authority one new association is using.
-        let initial = try sessionState(for: contextKey)
+        let initial = try sessionState(for: contextKey,
+            allowsSourceOutsideSelection: allowsSourceOutsideSelection)
         var profile = discoveryProfile(for: applied(initial.key))
         let requestedFingerprint = catalogueSnapshot?.fingerprint
         var read = await discoveryRead(profile: profile)
@@ -1803,7 +1842,8 @@ final class AppComposition {
         // Actor reentrancy can allow an activation *between* returning an old cached pool and
         // resuming this constructor. Do not combine that pool with the replacement snapshot.
         if requestedFingerprint != snapshot?.fingerprint {
-            return try await association(contextKey: contextKey)
+            return try await association(contextKey: contextKey,
+                allowsSourceOutsideSelection: allowsSourceOutsideSelection)
         }
         // An answer received while the detached read was running is behaviour, not identity (F02): the constructor
         // is a boundary that answer must cross. Capturing the profile before the await and never looking again made
@@ -1816,12 +1856,14 @@ final class AppComposition {
             profile = current
             read = await discoveryRead(profile: profile)
         }
-        let session = try sessionState(for: contextKey)
+        let session = try sessionState(for: contextKey,
+            allowsSourceOutsideSelection: allowsSourceOutsideSelection)
         if session.key != contextKey {
             currentContextKey = session.key
             _ = try preferences?.setContext(session.key)
         }
-        return try makeAssociation(contextKey: session.key, profile: profile, read: read, warmLaunch: false)
+        return try makeAssociation(contextKey: session.key, profile: profile, read: read, warmLaunch: false,
+            allowsSourceOutsideSelection: allowsSourceOutsideSelection)
     }
 
     /// The one place an association is built. The **asynchronous** launch and the **warm** launch hand the same
@@ -1829,8 +1871,9 @@ final class AppComposition {
     /// can run (the warm one cannot `await`, because the reader's own window has to exist before the first frame)
     /// — and therefore how much of discovery exists when it is built.
     private func makeAssociation(contextKey: ContextKey, profile: ReaderDiscoveryProfile,
-        read: DiscoveryRead?, warmLaunch: Bool) throws -> FeedAssociation {
-        let session = try sessionState(for: contextKey)
+        read: DiscoveryRead?, warmLaunch: Bool, allowsSourceOutsideSelection: Bool = false) throws -> FeedAssociation {
+        let session = try sessionState(for: contextKey,
+            allowsSourceOutsideSelection: allowsSourceOutsideSelection)
         if session.key != contextKey {
             currentContextKey = session.key
             _ = try preferences?.setContext(session.key)
@@ -3025,11 +3068,17 @@ final class FeedAssociation {
         // what keeps a pool read for the reader's earlier interests from answering this session's invitations.
         self.discovery = discovery
         self.subjects = subjects
+        // What this session may read from is the supply above — plus the **context's own source** when the session
+        // is a source context. A source the reader has not selected (or discovery has not found) has no target and
+        // no registration below, so opening it enables nothing; the union only lets its own local memberships be
+        // selected, which is what F12/UX12-B asks for. For a selected source this is a no-op.
+        var eligible = Set(supply.map(\.sourceID))
+        if case .source(let contextSource) = context.key.request { eligible.insert(contextSource) }
         let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
             exposurePolicyVersion: revision.exposurePolicyVersion, selectionSchemaVersion: revision.selectionSchemaVersion,
-            eligibility: .selectedSources(Set(supply.map(\.sourceID))), scoring: scoring, sequencing: sequencing,
+            eligibility: .selectedSources(eligible), scoring: scoring, sequencing: sequencing,
             exposure: revision.exposurePolicyVersion >= alternating ? .excludePublishedMaterial : .excludePublishedRevisions)
         // The policy is a fact about this session (T11): what it ranks by, and the versions it was published
         // under. A surface or a test can state it without rebuilding the decision.
