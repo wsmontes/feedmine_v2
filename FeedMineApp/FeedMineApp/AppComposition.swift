@@ -984,7 +984,12 @@ final class AppComposition {
     /// not a move either — `.source` is entered by opening that source, never as a side effect of a toggle.
     private func destinationAfterSelectionChange() -> FeedContextRequest {
         if case .source(let current) = currentContextKey.request,
-            !selectedFeeds.contains(where: { $0.sourceID == current }) {
+            !selectedFeeds.contains(where: { $0.sourceID == current }),
+            contextSource?.sourceID != current {
+            // The visited source is the exception: the reader opened it explicitly (F12/UX12-B), its session reads
+            // only its own memberships, and toggling another source is a management act — not a reason to eject
+            // them from a source they never had to select. `destinationAfterSelectionChange` keeps `.source(x)`;
+            // `contextSource` is only cleared by a real destination change, so the rebuild below still knows it.
             return .main
         }
         return currentContextKey.request
@@ -1027,7 +1032,10 @@ final class AppComposition {
         currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
             filter: currentContextKey.filter)
         _ = try preferences.setContext(currentContextKey)
-        let nextAssociation = try await association(contextKey: currentContextKey)
+        // The destination the guard above kept has to survive the rebuild too: a visited source outside the
+        // selection is a real place, and `sessionState` would otherwise repair it to `.main` on the way in.
+        let nextAssociation = try await association(contextKey: currentContextKey,
+            allowsSourceOutsideSelection: allowsSourceOutsideSelection(currentContextKey))
         association = nextAssociation
         startupFailure = nil
         try await nextAssociation.launch()
@@ -1453,8 +1461,12 @@ final class AppComposition {
     private func allowsSourceOutsideSelection(_ key: ContextKey) -> Bool {
         guard case .source(let id) = key.request else { return false }
         if selectedFeeds.contains(where: { $0.sourceID == id }) { return true }
-        // Outside the selection it is a real destination only when this reader already has an Edition there: a
-        // saved context that resolves to nothing is repaired to `main`, never shown as an empty source.
+        // The source this session explicitly opened stays a destination across its own rebuilds (a filter or an
+        // unrelated toggle). It is session memory, never a selection and never persisted, so a relaunch falls
+        // through to the Edition rule below.
+        if contextSource?.sourceID == id { return true }
+        // Otherwise outside the selection it is a real destination only when this reader already has an Edition
+        // there: a saved context that resolves to nothing is repaired to `main`, never shown as an empty source.
         guard let library else { return false }
         return (try? PublicationStore(database: library).hasEdition(contextSourceID: id)) ?? false
     }
@@ -2021,6 +2033,12 @@ final class AppComposition {
         }
         let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
+        // S1: only a gesture on this session reaches here (`openSourceContext`); a relaunch restores the reading
+        // place with `contextSource == nil`, so it opens the source's local history and issues no request.
+        let visitFeed: TrustedFeed? = {
+            guard let contextSource, case .source(let id) = key.request, id == contextSource.sourceID else { return nil }
+            return contextSource
+        }()
         let association = try FeedAssociation(directory: directory, feeds: session.feeds,
             discovery: read?.feeds ?? [], subjects: read?.subjects ?? [:],
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
@@ -2028,7 +2046,7 @@ final class AppComposition {
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
             discoveryProfile: profile, contextSourceDisplayName: sourceContextDisplayName,
-            warmLaunch: warmLaunch, launchSettings: launchSettings,
+            warmLaunch: warmLaunch, launchSettings: launchSettings, visitFeed: visitFeed,
             monotonicNow: monotonicNow, bookmarkRead: bookmarkRead)
         #if DEBUG
         sessionConstructions += 1
@@ -2561,6 +2579,9 @@ final class FeedAssociation {
     /// behind its window), so the map belongs to the association and not to one closure.
     @ObservationIgnored private let names: LiveValue<[SourceID: String]>
     let acquisition: SyndicationAcquisitionSnapshot
+    /// S1: the process-scoped licence of the source this session was explicitly opened for. Empty (never armed) for
+    /// every other session; revoked when the association closes.
+    @ObservationIgnored let visitAuthority: VisitTargetAuthority
     /// F05: the evidence the run is judged by, shared with the host that owns the file.
     let trace: RunwayTrace?
     /// The catalogue this session's host resolved, passed in rather than re-derived: `sourcePage` reads a source's
@@ -3135,6 +3156,39 @@ final class FeedAssociation {
             usefulCardsPerSecond: usefulYield.current)
     }
 
+    /// The one binding shape a feed contributes: catalogue bindings carry the catalog namespace, an imported
+    /// development feed carries its own. One derivation for the durable and the visit registration alike.
+    private static func binding(for feed: TrustedFeed) -> SourceBinding? {
+        SourceBinding(id: feed.bindingID, sourceID: feed.sourceID,
+            externalPrincipal: .init(connectorKind: .syndication,
+                namespace: feed.principalNamespace ?? (feed.principal.hasPrefix("http")
+                    ? LegacyCatalogImport.principalNamespace : "feedmine-development-rss"),
+                value: feed.principal, role: .principal), aliases: [], generation: 1, state: .enabled)
+    }
+
+    /// S1: the registration of the source the reader explicitly opened, or none. It answers only for its own
+    /// source context, it never writes a durable target, and it yields to a durable row: an `enabled` row is
+    /// reused (its generation and cursor are the durable ones), a `revoked` row refuses the visit outright.
+    private static func visitRegistrations(for visitFeed: TrustedFeed?, contextKey: ContextKey,
+        existing: [SyndicationTargetRegistration], authority: AcquisitionTargetAuthority,
+        visitAuthority: VisitTargetAuthority) throws -> [SyndicationTargetRegistration] {
+        guard let feed = visitFeed, case .source(let sourceID) = contextKey.request, sourceID == feed.sourceID,
+            !existing.contains(where: { $0.targetID == feed.targetID }) else { return [] }
+        let durable = try authority.target(id: feed.targetID)
+        if let durable {
+            guard durable.state == .enabled else { return [] }
+            guard let registration = SyndicationTargetRegistration(targetID: durable.id,
+                targetGeneration: durable.generation, endpoint: feed.endpoint,
+                bindings: [binding(for: feed)!]) else { return [] }
+            return [registration]
+        }
+        guard visitAuthority.arm(targetID: feed.targetID, connectorKind: .syndication,
+            authorizedSources: [feed.sourceID], sourceID: feed.sourceID) != nil,
+            let registration = SyndicationTargetRegistration(targetID: feed.targetID, targetGeneration: 1,
+                endpoint: feed.endpoint, bindings: [binding(for: feed)!]) else { return [] }
+        return [registration]
+    }
+
     init(directory: URL, feeds: [TrustedFeed], discovery: [TrustedFeed] = [],
         subjects: [SourceID: AppComposition.EditorialSubject] = [:],
         configuration: URLSessionConfiguration,
@@ -3146,6 +3200,7 @@ final class FeedAssociation {
         discoveryProfile: ReaderDiscoveryProfile = .init(), contextSourceDisplayName: String? = nil,
         warmLaunch: Bool = false,
         launchSettings: CollectionLaunchSettings = .init(),
+        visitFeed: TrustedFeed? = nil,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
         bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) throws {
         self.trace = trace
@@ -3242,7 +3297,16 @@ final class FeedAssociation {
         // no registration below, so opening it enables nothing; the union only lets its own local memberships be
         // selected, which is what F12/UX12-B asks for. For a selected source this is a no-op.
         var eligible = Set(supply.map(\.sourceID))
-        if case .source(let contextSource) = context.key.request { eligible.insert(contextSource) }
+        if case .source(let contextSource) = context.key.request {
+            eligible.insert(contextSource)
+            // A verified alias makes one editorial source carry two minted ids: cards published before a catalogue
+            // rename name the anchor id, cards published after it name the current key's id. The surface the reader
+            // opened reads both halves — otherwise half of that source's stories are silently unreachable. Only the
+            // rows that name this source in either derivation contribute; there is no global id mapping here.
+            if let links = try? ReaderLibraryStore(database: db).sourceLinks() {
+                eligible.formUnion(SourceIdentityIndex.sourceIDs(in: links, for: contextSource))
+            }
+        }
         let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
@@ -3257,14 +3321,16 @@ final class FeedAssociation {
             let existing = try authority.target(id: feed.targetID)
             let target = try existing ?? authority.register(id: feed.targetID,
                 connectorKind: .syndication, authorizedSources: [feed.sourceID])
-            let binding = SourceBinding(id: feed.bindingID, sourceID: feed.sourceID,
-                externalPrincipal: .init(connectorKind: .syndication,
-                    namespace: feed.principalNamespace ?? (feed.principal.hasPrefix("http")
-                        ? LegacyCatalogImport.principalNamespace : "feedmine-development-rss"),
-                    value: feed.principal, role: .principal), aliases: [], generation: 1, state: .enabled)!
             return SyndicationTargetRegistration(targetID: target.id, targetGeneration: target.generation,
-                endpoint: feed.endpoint, bindings: [binding])!
+                endpoint: feed.endpoint, bindings: [Self.binding(for: feed)!])!
         }
+        // S1: the one source this session was explicitly opened for. It has the same responsibility as a durable
+        // registration (endpoint + licence to pull) with this visit's lifetime; a durable row for the same target
+        // stays the only authority, so a revoked row is never revived by opening the source.
+        let visitAuthority = VisitTargetAuthority()
+        let visitRegistrations = try Self.visitRegistrations(for: visitFeed, contextKey: context.key,
+            existing: registrations, authority: authority, visitAuthority: visitAuthority)
+        self.visitAuthority = visitAuthority
         let transport = URLSession(configuration: configuration)
         self.transport = transport
         // §5.3: discovery is a **traversal**, not a preview — the same object advances page by page across the cold and
@@ -3352,7 +3418,8 @@ final class FeedAssociation {
             authorizedNonPublicOrigins: authorizedNonPublicOrigins,
             selectedSourceIDs: Set(feeds.map(\.sourceID)),
             installation: CatalogInstallation(appDirectory: directory),
-            targetSignals: Self.targetSignals(catalogueURL: catalogueURL, feeds: supply))
+            targetSignals: Self.targetSignals(catalogueURL: catalogueURL, feeds: supply),
+            visitRegistrations: visitRegistrations, visitAuthority: visitAuthority)
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource
@@ -4770,6 +4837,9 @@ final class FeedAssociation {
         // P01: the media owner shares this transport and used to keep starting queued revisions after close. Its
         // fence is closed before the drain, so a timeout can never license a late start.
         _ = await media.retire()
+        // S1/R20: the visit dies with the association. Revoked before settlement so a pull that was already
+        // authorized settles as `.cancelled` and no new start can be licensed by the dead arming.
+        visitAuthority.revokeAll()
         _ = await coordinator.settleInFlight()
         transport.invalidateAndCancel()
     }

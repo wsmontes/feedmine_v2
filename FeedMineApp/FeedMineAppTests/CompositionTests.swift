@@ -5373,12 +5373,11 @@ final class CompositionTests: XCTestCase {
         return (composition, card, entry, sourceID, database)
     }
 
-    /// S1: opening a source the reader did not select enables nothing, and eligibility does not become a request.
-    /// The coordinator is the only owner that can issue one, and its input is the eligibility set the snapshot
-    /// derives **from registrations** (selection + discovery), not from the context's name: with no target registered
-    /// the planner has nothing to execute, and the coordinator's own settled record stays empty. The control proves
-    /// the same measurement names the source the moment the reader selects it.
-    func testF12OpeningAnUnselectedSourceNeverReachesTheCoordinator() async throws {
+    /// S1: an explicit open of a source the reader did not select pulls **only** that source's endpoint, through the
+    /// existing coordinator and the existing admission, and creates no durable target: the licence and the cursor
+    /// belong to the visit. The transport journal is the evidence ("requests feitos por ação explícita"), and the
+    /// relaunch is the negative control — a restored reading place issues nothing until a new gesture.
+    func testF12OpeningAnUnselectedSourcePullsOnlyItsOwnEndpointByExplicitGesture() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
@@ -5390,53 +5389,176 @@ final class CompositionTests: XCTestCase {
         await composition.launch()
         let database = try XCTUnwrap(composition.association).database
 
-        // The transport is the evidence S1 asks for ("requests feitos por ação explícita"): the log is the
-        // fixture's own record of the calls that reached it, not the URL the app was handed.
         FixtureTransport.requests.withLock { $0 = [] }
         let openedSource = try await composition.openSourceFeed(forKey: key)
         XCTAssertTrue(openedSource)
         let association = try XCTUnwrap(composition.association)
         XCTAssertEqual(association.contextKey.request, .source(sourceID))
-        XCTAssertNil(try AcquisitionTargetStore(database: database).target(id: entry.targetID),
-            "opening the source registered no acquisition target")
+        XCTAssertTrue(association.visitAuthority.isArmed, "the explicit open armed this session's visit")
+
+        // Eligibility names exactly the visited target — and only inside its own context. A `.main` opportunity is
+        // not the gesture that licensed it.
         let eligible = try association.acquisition.eligibleTargets(for: FeedContext(key: association.contextKey))
-        XCTAssertTrue(eligible.isEmpty,
-            "the session's eligibility names no target for a source the reader did not select: \(eligible)")
-        // An explicit opportunity on the opened surface, the same one its launch took.
+        XCTAssertEqual(eligible.map(\.id), [entry.targetID],
+            "the visit is the one target this source surface may pull")
+        XCTAssertTrue(try association.acquisition.eligibleTargets(for: FeedContext(request: .main)).isEmpty,
+            "the visit never leaks into the reader's own feed")
+
         _ = try? await association.driver.drive(resources: association.resources)
-        let health = await association.coordinator.healthSnapshot()
-        XCTAssertNil(health[entry.targetID],
-            "no request was made for the opened source: \(health.keys.map(\.rawValue.uuidString))")
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline,
+            !FixtureTransport.requests.withLock({ $0 }).contains(where: { $0.contains("science_and_environment") }) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
         let requestsAfterOpening = FixtureTransport.requests.withLock { $0 }
-        XCTAssertFalse(requestsAfterOpening.contains { $0.contains("science_and_environment") },
-            "opening is explicit and still re-enables no endpoint: \(requestsAfterOpening)")
+        XCTAssertTrue(requestsAfterOpening.contains { $0.contains("science_and_environment") },
+            "the explicit open is the act that requests that endpoint: \(requestsAfterOpening)")
+        XCTAssertNil(try AcquisitionTargetStore(database: database).target(id: entry.targetID),
+            "opening registers no durable target: visiting is not enabling")
+        XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.sourceKeys, [],
+            "opening writes no selection")
+        let published = association.store.state.presentation?.window.items ?? []
+        XCTAssertFalse(published.isEmpty, "the visited source's admitted payload reaches its surface")
 
-        // Control: the same measurement, once the reader's own act selects the source.
-        FixtureTransport.requests.withLock { $0 = [] }
-        try SourceManagementCoordinator(catalogURL: catalogue, database: database)
-            .setSourceEnabled(key: key, enabled: true)
-        await composition.adoptSelectionChange()
-        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
-        let enabled = try XCTUnwrap(composition.association)
-        let controlled = try enabled.acquisition.eligibleTargets(for: FeedContext(key: enabled.contextKey))
-        XCTAssertEqual(controlled.map(\.id), [entry.targetID],
-            "control: a selected source is exactly what eligibility names (so the empty set above discriminates)")
-        _ = try? await enabled.driver.drive(resources: enabled.resources)
-        let requestsAfterEnabling = FixtureTransport.requests.withLock { $0 }
-        XCTAssertTrue(requestsAfterEnabling.contains { $0.contains("science_and_environment") },
-            "control at the transport: the selected source is the one the coordinator fetches: "
-                + "\(requestsAfterEnabling)")
-
-        // The retired scope is fenced: the session that read that source without selecting it is not active, and
-        // once closed it issues nothing — the ephemeral opportunity dies with the context, not with a durable
-        // enable.
-        XCTAssertFalse(association.active, "the previous session is retired, not still reading")
+        // The retired scope issues nothing: the arming dies with the association, and a later drive on it is inert.
         await association.close()
+        XCTAssertFalse(association.visitAuthority.isArmed, "close revokes the visit")
         FixtureTransport.requests.withLock { $0 = [] }
         _ = try? await association.driver.drive(resources: association.resources)
         XCTAssertTrue(FixtureTransport.requests.withLock { $0 }.isEmpty,
             "a retired scope issues no request: \(FixtureTransport.requests.withLock { $0 })")
+
+        // Relaunch on the same container: the reading place is restored, the licence is not. The local payload is
+        // what the reader sees; zero requests until a new explicit gesture.
+        FixtureTransport.requests.withLock { $0 = [] }
+        let reopened = root(directory: directory, feeds: [])
+        await reopened.launch()
+        let restored = try XCTUnwrap(reopened.association)
+        XCTAssertEqual(reopened.currentContextKey.request, .source(sourceID),
+            "the saved source context survives the relaunch")
+        XCTAssertFalse(restored.visitAuthority.isArmed, "relaunching is not a gesture")
+        _ = try? await restored.driver.drive(resources: restored.resources)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertFalse(FixtureTransport.requests.withLock { $0 }.contains { $0.contains("science_and_environment") },
+            "a restored visit issues no request until the reader opens it again: \(FixtureTransport.requests.withLock { $0 })")
+        XCTAssertNil(try AcquisitionTargetStore(database: try XCTUnwrap(reopened.association).database)
+            .target(id: entry.targetID), "and the relaunch enabled nothing durable either")
+
+        // The same gesture again is what licenses the next pull.
+        FixtureTransport.requests.withLock { $0 = [] }
+        let openedAgain = try await reopened.openSourceFeed(forKey: key)
+        XCTAssertTrue(openedAgain)
+        let again = try XCTUnwrap(reopened.association)
+        _ = try? await again.driver.drive(resources: again.resources)
+        let rearmDeadline = Date().addingTimeInterval(30)
+        while Date() < rearmDeadline,
+            !FixtureTransport.requests.withLock({ $0 }).contains(where: { $0.contains("science_and_environment") }) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue(FixtureTransport.requests.withLock { $0 }.contains { $0.contains("science_and_environment") },
+            "the new gesture re-arms the visit: \(FixtureTransport.requests.withLock { $0 })")
+        await reopened.association?.close()
+    }
+
+    /// F12/UX12-C (B1): toggling another source while reading a source that was **never** in the selection is a
+    /// management act, not a navigation. The reader stays on that source's surface, and its Edition, cards and anchor
+    /// keep their identity — the case the previous rule ejected to `.main` because it only recognised selected
+    /// sources.
+    func testF12TogglingAnotherSourceWhileReadingADormantOneKeepsTheVisit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let seeds = try TrustedFeed.catalog(limit: 2, resourceURL: catalogue)
+        let composition = root(directory: directory, feeds: seeds)
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+        let dormantKey = "https://feeds.npr.org/1001/rss.xml"
+        let dormant = try XCTUnwrap(LegacyCatalogImport.entry(
+            try XCTUnwrap(LegacyCatalogReader(catalogURL: catalogue).source(key: dormantKey))))
+        // A real local card of the dormant source, so its surface has published history to preserve.
+        let date = Date()
+        let origin = OriginRecordID(), revision = OriginRevisionID()
+        try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
+            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "f12-b1",
+                value: "dormant-b1", role: .object),
+            revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                headline: "Dormant B1", summary: "Summary", bodyText: "Body", authoredAt: date, modifiedAt: nil,
+                observedAt: date, language: "en", primaryLink: nil, searchProjection: nil, providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: date, expectedCurrent: .none,
+            currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: dormant.source.id, kind: .direct, observedAt: date)]))
+
+        let openedDormant = try await composition.openSourceFeed(forKey: dormantKey)
+        XCTAssertTrue(openedDormant)
+        let visited = try XCTUnwrap(composition.association)
+        let opened = await Self.waitUntil(30) {
+            (visited.store.state.presentation?.window.items.count ?? 0) > 0
+        }
+        XCTAssertTrue(opened, "premise: the dormant source's surface publishes its local card")
+        let before = try XCTUnwrap(visited.store.state.presentation)
+        XCTAssertEqual(Set(before.window.items.compactMap(\.sourceID)), [dormant.source.id])
+
+        // The reader manages another source from the sources surface: the selection really changes.
+        try await composition.searchSources("")
+        try await composition.toggleSource(seeds[0].sourceID)
+        XCTAssertEqual(composition.currentContextKey.request, .source(dormant.source.id),
+            "toggling another source does not eject the reader from the visit")
+        XCTAssertFalse(composition.feeds.contains { $0.sourceID == seeds[0].sourceID },
+            "premise: the toggle reached the selection")
+        let after = try XCTUnwrap(composition.association)
+        XCTAssertEqual(after.contextKey.request, .source(dormant.source.id))
+        let presentation = try XCTUnwrap(after.store.state.presentation)
+        XCTAssertEqual(presentation.editionID, before.editionID, "the Edition the reader was reading is not replaced")
+        XCTAssertEqual(presentation.window.items.map(\.id), before.window.items.map(\.id),
+            "the published cards keep their identity and order")
+        XCTAssertEqual(presentation.window.anchor, before.window.anchor, "and so does the reader's anchor")
+        XCTAssertEqual(try after.acquisition.eligibleTargets(for: FeedContext(key: after.contextKey)).map(\.id),
+            [dormant.targetID], "the visit is still the surface's own target")
+        await after.close()
+    }
+
+    /// F12/UX12-C (B3): an emptied selection is not a reason to destroy published history. The original requirement
+    /// is explicit — disabling a source "não remove/reordena os cards já publicados" — and the reader's own surface
+    /// is what states the empty selection (`surfaceHasSources`). The Edition, its cards and the anchor survive the
+    /// transition and a relaunch; only future supply is empty.
+    func testF12AnEmptiedSelectionKeepsPublishedHistoryAndStatesTheEmptySelection() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let seeds = try TrustedFeed.catalog(limit: 1, resourceURL: catalogue)
+        let composition = root(directory: directory, feeds: seeds)
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+        let presented = await Self.waitUntil(60) {
+            !(composition.association?.store.state.presentation?.window.items.isEmpty ?? true)
+        }
+        XCTAssertTrue(presented, "premise: the selected source published")
+        let before = try XCTUnwrap(composition.association?.store.state.presentation)
+        XCTAssertFalse(composition.currentContextKey.request.isSource)
+
+        try SourceManagementCoordinator(catalogURL: catalogue, database: database).setSelection([])
+        await composition.adoptSelectionChange()
+        XCTAssertTrue(composition.feeds.isEmpty)
+        XCTAssertFalse(composition.hasSelectedSources)
+        XCTAssertFalse(composition.surfaceHasSources,
+            "the reader's own surface states that nothing is selected")
+        XCTAssertEqual(composition.currentContextKey.request, .main,
+            "emptying the selection is a management act, not a navigation")
+        let after = try XCTUnwrap(composition.association?.store.state.presentation)
+        XCTAssertEqual(after.editionID, before.editionID, "the published Edition is preserved")
+        XCTAssertEqual(after.window.items.map(\.id), before.window.items.map(\.id),
+            "no published card is removed or reordered")
+        XCTAssertEqual(after.window.anchor, before.window.anchor, "the reader's position is preserved")
         await composition.association?.close()
+
+        let reopened = root(directory: directory, feeds: [])
+        await reopened.launch()
+        XCTAssertTrue(reopened.feeds.isEmpty)
+        let restored = try XCTUnwrap(reopened.association?.store.state.presentation)
+        XCTAssertEqual(restored.editionID, before.editionID, "the relaunch restores that same history")
+        XCTAssertEqual(restored.window.items.map(\.id), before.window.items.map(\.id))
+        XCTAssertEqual(restored.window.anchor, before.window.anchor)
+        await reopened.association?.close()
     }
 
     /// F12/R1: a card from a **collection's** source, which the reader has not selected, opens that source's own
