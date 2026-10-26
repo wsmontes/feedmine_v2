@@ -50,11 +50,9 @@ public final class VisitTargetAuthority: @unchecked Sendable {
     private final class Armed {
         var target: AcquisitionTarget
         let authorizedSources: Set<SourceID>
-        let sourceID: SourceID
-        init(target: AcquisitionTarget, authorizedSources: Set<SourceID>, sourceID: SourceID) {
+        init(target: AcquisitionTarget, authorizedSources: Set<SourceID>) {
             self.target = target
             self.authorizedSources = authorizedSources
-            self.sourceID = sourceID
         }
     }
 
@@ -72,7 +70,7 @@ public final class VisitTargetAuthority: @unchecked Sendable {
             let target = AcquisitionTarget(id: targetID, connectorKind: connectorKind, generation: generation,
                 state: .enabled, checkpointRevision: 0, checkpoint: nil) else { return nil }
         lock.lock(); defer { lock.unlock() }
-        armed[targetID] = Armed(target: target, authorizedSources: authorizedSources, sourceID: sourceID)
+        armed[targetID] = Armed(target: target, authorizedSources: authorizedSources)
         return target
     }
 
@@ -84,12 +82,6 @@ public final class VisitTargetAuthority: @unchecked Sendable {
     public func authorizedSources(id: AcquisitionTargetID) -> Set<SourceID>? {
         lock.lock(); defer { lock.unlock() }
         return armed[id]?.authorizedSources
-    }
-
-    /// The source whose explicit visit this arming belongs to. Nil when the arming is gone.
-    public func sourceID(for id: AcquisitionTargetID) -> SourceID? {
-        lock.lock(); defer { lock.unlock() }
-        return armed[id]?.sourceID
     }
 
     public var isArmed: Bool {
