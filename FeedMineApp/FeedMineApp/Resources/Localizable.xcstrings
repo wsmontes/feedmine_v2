@@ -3798,16 +3798,6 @@
         }
       }
     },
-    "Esta fonte não está no seu feed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This source isn’t in your feed"
-          }
-        }
-      }
-    },
     "Explore outros assuntos": {
       "localizations": {
         "en": {

@@ -20,6 +20,14 @@ struct FeedMineApp: App {
     /// A filter selection that was durably saved but not presented. The retry uses the existing activation
     /// owner; the alert is above the feed, not behind the closed sheet.
     @State private var filterActivationFailure = false
+    /// The filter sheet's draft store. It lives with the **presenter**, not with the sheet: a platform swipe ends
+    /// the sheet's view tree before any closure inside it can run, and V1's contract is that going away applies the
+    /// dirty parts. Holding it here is what lets the dismissal apply the draft and what keeps the reader's edits
+    /// when the durable write refuses them.
+    @State private var filterStore: ReaderFilterStore?
+    /// Whether the surface being dismissed is the filter sheet, so a dismissal applies **its** draft and closing
+    /// another sheet never applies a filter the reader is not editing.
+    @State private var filterDismissalAppliesDraft = false
     /// The lens hidden by a swipe, keyed by the selection it was hidden for: a new selection shows it again.
     @State private var hiddenLensSignature: String?
     /// D7-A: whether the reader still owes an acknowledgement for a V1 upgrade. Set once when the surface
@@ -313,28 +321,30 @@ struct FeedMineApp: App {
     /// The filter sheet and the country levels it opens. The navigation state lives with the sheet's own
     /// content: a push inside this host keeps the reader's draft and cannot be lost in a re-render of the
     /// feed's body. The country level mirrors the source sheet's own `SourceRoute`.
+    ///
+    /// The draft store is handed **in** by the app host: it outlives the sheet (so a refused write keeps the
+    /// reader's edits for the next open) and it is what the platform swipe's dismissal applies. Every control
+    /// that closes this surface — the sheet's toolbar, the node level's Concluído — goes through `close()`, which
+    /// is the store's own `dismiss()`: one path, idempotent, no double apply.
     private struct FilterSurfaceHost: View {
         let composition: AppComposition
+        let filterStore: ReaderFilterStore
         let store: SourceManagementStore?
         let onDone: () -> Void
         let onActivationFailure: () -> Void
         @State private var path: [SourceRoute] = []
+        @State private var applyFailure: String?
+        @State private var closing = false
 
         var body: some View {
             NavigationStack(path: $path) {
-                FilterSheetView(applying: composition.currentFilter,
-                    preset: composition.currentPreset,
-                    availableCriteria: ReaderFilterCriterion.enforceable,
+                FilterSheetView(store: filterStore,
                     languages: composition.filterLanguages(),
                     presets: composition.presetRows(),
-                    onApply: { filter, preset in
-                        try await composition.applyFilterFromSheet(filter, preset: preset) {
-                            onActivationFailure()
-                        }
-                    },
                     onActivate: { key in try await composition.activateSavedPreset(key) },
                     onShowCountries: { path.append(.countries) },
-                    onDone: onDone)
+                    onDone: onDone,
+                    onClose: close)
                     .navigationDestination(for: SourceRoute.self) { route in
                         if let store {
                             switch route {
@@ -346,12 +356,38 @@ struct FeedMineApp: App {
                                 // The filter sheet keeps only its own navigation: opening a source there would
                                 // close this sheet and discard the reader's draft, which is outside F12.
                                 NodeSourcesView(store: store, node: node,
-                                    onOpenNode: { path.append(.node($0)) }, onClose: onDone)
+                                    onOpenNode: { path.append(.node($0)) },
+                                    onClose: { Task { await close() } })
                             }
                         } else {
                             ProgressView("Abrindo o catálogo de fontes")
                         }
                     }
+            }
+            .alert(String(localized: "Filtro"), isPresented: Binding(
+                get: { applyFailure != nil }, set: { if !$0 { applyFailure = nil } })) {
+                Button("OK") { applyFailure = nil }
+            } message: {
+                Text(applyFailure ?? "")
+            }
+        }
+
+        /// V1's `onDisappear`: going away applies the dirty parts. A clean draft closes without a durable write;
+        /// a failure keeps the sheet and the draft, and states which failure happened. Serialized, so a second
+        /// request while the first is in flight neither applies twice nor closes a sheet that said it failed.
+        @MainActor private func close() async {
+            guard !closing else { return }
+            closing = true
+            defer { closing = false }
+            do {
+                let applied = try await filterStore.dismiss()
+                // A duplicate request that found the first apply in flight must not close the sheet.
+                guard applied || !filterStore.isDirty else { return }
+                onDone()
+            } catch let failure as ReaderFilterFailure {
+                applyFailure = failure.readerMessage
+            } catch {
+                applyFailure = String(localized: "Não foi possível salvar o filtro. Tente novamente.")
             }
         }
     }
@@ -359,9 +395,53 @@ struct FeedMineApp: App {
     /// The filter sheet and its country tree. Extracted for the same reason as the other sheets: one case of a
     /// large presentation switch stays a named expression, and the compiler type-checks it on its own.
     @ViewBuilder private var filterSurface: some View {
-        FilterSurfaceHost(composition: composition, store: sourcesStore,
-            onDone: { popSurface() },
-            onActivationFailure: { filterActivationFailure = true })
+        if let filterStore {
+            FilterSurfaceHost(composition: composition, filterStore: filterStore, store: sourcesStore,
+                onDone: { popSurface() },
+                onActivationFailure: { filterActivationFailure = true })
+        } else {
+            ProgressView("Abrindo os filtros")
+        }
+    }
+
+    /// Opening the filter surface is also the moment its store is reconciled with the selection the reader is on.
+    /// The store is reused across opens: a clean draft follows the applied selection, a dirty one is kept — that is
+    /// what a refused dismissal left behind, and `isStale` is what the sheet states about it.
+    @MainActor private func openFilters() {
+        if let existing = filterStore {
+            existing.hydrate(applying: composition.currentFilter, preset: composition.currentPreset)
+        } else {
+            filterStore = ReaderFilterStore(applying: composition.currentFilter,
+                preset: composition.currentPreset,
+                availableCriteria: ReaderFilterCriterion.enforceable,
+                onApply: { filter, preset in
+                    try await composition.applyFilterFromSheet(filter, preset: preset) {
+                        filterActivationFailure = true
+                    }
+                })
+        }
+        filterDismissalAppliesDraft = true
+        present(.filters)
+    }
+
+    /// A dismissal the sheet itself cannot observe: the platform swipe ends the sheet's view tree, so V1's
+    /// `onDisappear` runs here, on the store that outlived it. The dirty parts are applied once; a refused write
+    /// keeps the draft for the next open and states its failure above the feed, because the sheet is gone. A
+    /// saved-but-not-presented selection is the existing retry alert's, not a second message.
+    @MainActor private func applyDismissedFilterDraft() async {
+        guard let filterStore, filterStore.isDirty else { return }
+        do {
+            _ = try await filterStore.dismiss()
+        } catch let failure as ReaderFilterFailure {
+            if !failure.selectionIsSaved {
+                composition.association?.store.showToast(text: failure.readerMessage,
+                    systemImage: "exclamationmark.triangle")
+            }
+        } catch {
+            composition.association?.store.showToast(
+                text: String(localized: "Não foi possível salvar o filtro. Tente novamente."),
+                systemImage: "exclamationmark.triangle")
+        }
     }
 
     /// The lists a box surface can open. A payload-carrying route, because a box is an identity, not a flag.
@@ -496,11 +576,22 @@ struct FeedMineApp: App {
                     // A selection made in the source surface is adopted when it closes, never mid-list, and the
                     // appearance is re-derived because the settings surface may have changed it.
                     appearance = composition.currentAppearance()
+                    // V1's `onDisappear`: a filter sheet the platform dismissed (the swipe) still applies the
+                    // draft it was editing. The store outlived the sheet, so the same one path runs — a clean
+                    // draft writes nothing, and the buttons' own close already applied it.
+                    let closedFilters = filterDismissalAppliesDraft
+                    filterDismissalAppliesDraft = false
                     Task {
+                        // The filter sheet's country level toggles the *selection*, so it is adopted before the
+                        // draft is applied: the filter's own confirmation then rebuilds on the new selection.
                         await composition.adoptSelectionChange()
-                        // The settings' own content filters decide what every surface hides; a change there is a
-                        // change to what the session applies, so it is re-applied when that surface closes.
-                        await composition.reapplyReaderFilters()
+                        if closedFilters {
+                            await applyDismissedFilterDraft()
+                        } else {
+                            // The settings' own content filters decide what every surface hides; a change there is
+                            // a change to what the session applies, so it is re-applied when that surface closes.
+                            await composition.reapplyReaderFilters()
+                        }
                     }
                 }) { surface in
                     switch surface {
@@ -748,7 +839,7 @@ struct FeedMineApp: App {
                     switch destination {
                     case .sources: present(.sources)
                     case .filters:
-                        present(.filters)
+                        openFilters()
                     case .saved: savedPath.append(.saved)
                     case .bookmarkBoxes: present(.bookmarkBoxes)
                     case .collections: present(.collections)
@@ -1849,8 +1940,9 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// F12/UX12-B: opens one source's own feed from its taxonomy row. The row carries the catalogue key, which
     /// **is** the source's principal, so the destination is the reader's own resolved feed: no identity is derived
     /// here and nothing is matched by title or URL shape. The sources path is deliberately kept, so reopening the
-    /// surface returns to the same node; the reader's selection is untouched, and an unselected source never
-    /// reaches this call (the row draws no open control for it).
+    /// surface returns to the same node; the reader's selection is untouched. An unselected source reaches this
+    /// call too (`NodeSourceRowView` draws the open control independently of the toggle): opening it shows only its
+    /// own local memberships and never enables its endpoint.
     @MainActor private func openSourceRow(_ row: NodeSourceRow) {
         Task {
             var opened = false

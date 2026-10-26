@@ -91,4 +91,88 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         add(proof)
     }
 
+    /// F12/V1's filter contract: the sheet going away **is** the apply. The node level's Concluído closes the
+    /// whole surface, so a draft edited before walking Filtros → Países → nó reaches the same `dismiss()` the
+    /// toolbar uses. Before this, that close dropped the edits and left the old filter applied.
+    /// Assertions use accessibility identifiers only: this device runs the app in English, so the localized titles
+    /// ("Filtros") are not stable selectors.
+    @MainActor
+    func testFilterDraftEditedBeforeTheNodeLevelIsAppliedWhenThatLevelCloses() throws {
+        let app = SurfaceTest.launchFixture()
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 30), "the filter sheet is presented")
+        let preset = app.buttons["preset-option-lastClicked"]
+        XCTAssertTrue(preset.waitForExistence(timeout: 20), "the sheet offers its preset criterion")
+        XCTAssertEqual(preset.value as? String, "not selected", "premise: the draft starts clean")
+        preset.tap()
+        XCTAssertEqual(preset.value as? String, "selected", "the draft is dirty before the level is opened")
+
+        let countries = app.buttons["countries-link"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(countries, in: app, timeout: 20), "Países is offered")
+        for _ in 0..<3 where !app.buttons["countries-done"].exists {
+            countries.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(app.buttons["countries-done"].waitForExistence(timeout: 30), "Países opens")
+        let country = app.buttons["country-algeria"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(country, in: app, timeout: 30), "the countries are listed")
+        country.tap()
+        let done = app.buttons["node-sources-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 30), "the node level offers its own Concluir")
+        done.tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20),
+            "closing the node level goes away from the whole sheet")
+
+        // The durable re-read: reopening hydrates from what was applied, not from what was drawn.
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 30))
+        let reopened = app.buttons["preset-option-lastClicked"]
+        XCTAssertTrue(reopened.waitForExistence(timeout: 20))
+        XCTAssertEqual(reopened.value as? String, "selected",
+            "the edit made before the node level was applied, not discarded")
+        app.buttons["filter-done"].tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20))
+
+        let proof = XCTAttachment(string: "path=Filtros>Paises>country-algeria>Concluir preset=lastClicked applied=true")
+        proof.name = "filter-node-close-applies"
+        proof.lifetime = .keepAlways
+        add(proof)
+    }
+
+    /// The platform gesture: a swipe that dismisses the sheet ends its view tree, so the draft store lives with the
+    /// presenter and the dismissal itself applies the draft. Before this, the swipe discarded the edits.
+    @MainActor
+    func testSwipeDismissalOfTheFilterSheetAppliesTheDraft() throws {
+        let app = SurfaceTest.launchFixture()
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 30))
+        let preset = app.buttons["preset-option-lastClicked"]
+        XCTAssertTrue(preset.waitForExistence(timeout: 20), "the sheet offers its preset criterion")
+        preset.tap()
+        XCTAssertEqual(preset.value as? String, "selected", "the draft is dirty before the swipe")
+
+        // The sheet's own grabber: a downward drag from the top of the presented sheet is the interactive
+        // dismissal. Coordinates only — no localized title takes part.
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20),
+            "the swipe dismissed the sheet instead of leaving it up")
+
+        // The durable re-read: the state the dismissal wrote is what the sheet hydrates the next time.
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 30))
+        let reopened = app.buttons["preset-option-lastClicked"]
+        XCTAssertTrue(reopened.waitForExistence(timeout: 20))
+        XCTAssertEqual(reopened.value as? String, "selected",
+            "the swipe applied the draft instead of discarding it")
+        app.buttons["filter-done"].tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20))
+
+        let proof = XCTAttachment(string: "path=swipe-down preset=lastClicked applied=true")
+        proof.name = "filter-swipe-applies"
+        proof.lifetime = .keepAlways
+        add(proof)
+    }
+
 }

@@ -25,6 +25,12 @@ public enum ReaderSourceIdentity {
     /// External principal namespace for bindings whose key came from the reader, not from the catalogue.
     public static let principalNamespace = "feedmine-reader-source"
 
+    /// The Source identity this mapping mints for one reader key — the same derivation `entry` uses, exposed for
+    /// the one reader that must trace a card's frozen id back to the key it came from.
+    public static func sourceID(forKey key: String) -> SourceID {
+        SourceID(rawValue: LegacyCatalogImport.stableUUID(namespace: sourceNamespace, key: key))
+    }
+
     /// One imported entry, in the shape the catalogue mapping produces for one record: the same identities, the
     /// same two-URL split (`id` is the identity, `requestURL` is what gets fetched).
     ///

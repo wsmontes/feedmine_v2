@@ -39,6 +39,14 @@ public enum LegacyCatalogImport {
             digest[8], digest[9], digest[10], digest[11], digest[12], digest[13], digest[14], digest[15]))
     }
 
+    /// The Source identity this mapping mints for one key. `entry` is the only producer of that identity; this
+    /// exposes the same derivation so an id already frozen on a published card can be traced back to the key it
+    /// was minted from (the reader's own identity table stores keys, never ids). No second mapping exists here:
+    /// the namespace and the hash are the ones `entry` uses.
+    public static func sourceID(forKey key: String) -> SourceID {
+        SourceID(rawValue: stableUUID(namespace: sourceNamespace, key: key))
+    }
+
     /// Preserve the single-argument function value used by the catalog/discovery compactMaps.
     /// Swift default arguments do not reduce a function reference's arity.
     public static func entry(_ record: LegacyCatalogSourceRecord) -> LegacyCatalogEntry? {

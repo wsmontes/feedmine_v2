@@ -91,32 +91,18 @@ public struct FilterSheetView: View {
     private let onShowCountries: () -> Void
     private let onShowTopics: () -> Void
     private let onDone: () -> Void
+    /// The one way this sheet goes away (V1's `onDisappear`): the host runs the store's own dismissal, so the
+    /// toolbar's Concluído, the node level's Concluído and the platform swipe all apply the same draft once.
+    private let onClose: @MainActor () async -> Void
 
-    /// Builds the draft store from values, so the host never mutates state while rendering to open the sheet.
-    /// `onApply` is the host's persist-and-activate step; the sheet closes only after it returns.
-    public init(applying filter: ReaderFilter, preset: ReaderPresetID,
-        availableCriteria: Set<ReaderFilterCriterion>, languages: [CatalogLanguageGroup] = [],
-        presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
-        onApply: @escaping @MainActor (ReaderFilter, ReaderPresetID) async throws -> Void,
-        onActivate: @escaping @MainActor (ContextKey) async throws -> Void = { _ in },
-        onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
-        onDone: @escaping () -> Void = {}) {
-        _store = State(initialValue: ReaderFilterStore(applying: filter, preset: preset,
-            availableCriteria: availableCriteria, onApply: onApply))
-        self.onActivate = onActivate
-        self.languages = languages
-        self.presets = presets
-        self.appearance = appearance
-        self.onShowCountries = onShowCountries
-        self.onShowTopics = onShowTopics
-        self.onDone = onDone
-    }
-
+    /// The store belongs to the presenter (`FilterSurfaceHost`), not to this view: the sheet can be pushed into a
+    /// country/node level, and the level's own "Concluir" must apply the same draft. `onApply` is the host's
+    /// persist-and-activate step; nothing closes until it returns.
     public init(store: ReaderFilterStore, languages: [CatalogLanguageGroup] = [],
         presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
         onActivate: @escaping @MainActor (ContextKey) async throws -> Void = { _ in },
         onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
-        onDone: @escaping () -> Void = {}) {
+        onDone: @escaping () -> Void = {}, onClose: @escaping @MainActor () async -> Void = {}) {
         _store = State(initialValue: store)
         self.onActivate = onActivate
         self.languages = languages
@@ -125,6 +111,7 @@ public struct FilterSheetView: View {
         self.onShowCountries = onShowCountries
         self.onShowTopics = onShowTopics
         self.onDone = onDone
+        self.onClose = onClose
     }
 
     /// V1's two always-available entries; named presets (collections, smart bookmarks, curated feeds) arrive
@@ -308,22 +295,12 @@ public struct FilterSheetView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
-                // V1: the sheet going away is the apply. The host's `onApply` persists the identity and
-                // activates its context; the sheet closes only after that succeeded, and a failure keeps the
-                // draft (and the sheet) so the reader can retry — with the failure's own sentence on screen.
+                // V1: the sheet going away is the apply. The host's `onClose` runs the store's own dismissal, so
+                // every way out of this sheet (this control, the node level's Concluído, the platform swipe)
+                // applies the draft once; a failure keeps the draft and states its own sentence.
                 Button {
                     guard !store.isApplying else { return }
-                    Task {
-                        do {
-                            let applied = try await store.apply()
-                            // A duplicate tap that found the first apply in flight must not close the sheet.
-                            if applied || !store.isDirty { onDone() }
-                        } catch let failure as ReaderFilterFailure {
-                            applyFailure = failure.readerMessage
-                        } catch {
-                            applyFailure = String(localized: "Não foi possível salvar o filtro. Tente novamente.")
-                        }
-                    }
+                    Task { await onClose() }
                 } label: {
                     if store.isApplying {
                         ProgressView()

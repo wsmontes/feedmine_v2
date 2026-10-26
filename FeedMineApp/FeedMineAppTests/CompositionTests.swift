@@ -1075,8 +1075,21 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(switched, "Ver fonte abre o contexto interno da fonte")
         XCTAssertTrue(opened.isEmpty, "Ver fonte não abre o site da fonte")
 
-        // Back to the previous context: its own checkpoint restores the promised position.
-        try await root.selectContext(origin.request)
+        // Back to the previous context: its own checkpoint restores the promised position. The switch the card
+        // action started may still be settling — a concurrent switch is refused by contract
+        // (`ReaderContextSwitchError.inProgress`) and its end is not observable from here — so ask again until it
+        // accepts. What is asserted below is unchanged.
+        var returned = false
+        let returnDeadline = Date().addingTimeInterval(10)
+        while Date() < returnDeadline, !returned {
+            do {
+                try await root.selectContext(origin.request)
+                returned = true
+            } catch ReaderContextSwitchError.inProgress {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        XCTAssertTrue(returned, "o contexto de origem volta a ser alcançável depois da troca")
         let back = try XCTUnwrap(root.association)
         XCTAssertEqual(back.store.state.presentation?.window.anchor, anchor)
         XCTAssertEqual(back.store.state.presentation?.editionID, presentation.editionID)
@@ -5160,6 +5173,151 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(reopened.feeds.map(\.principal), feedsBefore,
             "the relaunch keeps exactly the reader's own feeds")
         await reopened.association?.close()
+    }
+
+    /// F12/R1 + S1: the **card** of a source the reader disabled still has a destination. The id frozen on the card
+    /// is traced back to the reader's durable key by the owner that minted it, and the composition opens the same
+    /// canonical context the taxonomy row opens — without enabling the source, writing the selection or touching an
+    /// acquisition target. Before this, the card path consulted the selection and answered with a toast inside the
+    /// very feed the reader was reading.
+    func testF12ViewSourceOnADormantSourcesCardOpensItsCanonicalContext() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let (composition, card, entry, sourceID, database) = try await dormantSourceCard(directory: directory)
+
+        let preferences = ReaderPreferencesStore(database: database)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [], "premise: the source is dormant")
+        XCTAssertNotNil(try PublicationStore(database: database).card(id: card),
+            "premise: the published card still exists (an older Edition still shows it)")
+        let targetBefore = try AcquisitionTargetStore(database: database).target(id: entry.targetID)
+
+        let association = try XCTUnwrap(composition.association)
+        association.perform(.viewSource, cardID: card)
+        let opened = await Self.waitUntil(10) {
+            composition.currentContextKey.request == .source(sourceID)
+        }
+        XCTAssertTrue(opened, "the card of a dormant source opens that source's canonical context key")
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [],
+            "opening never enables the source nor writes the selection")
+        XCTAssertTrue(composition.feeds.isEmpty, "the session keeps the reader's own (empty) feeds")
+        XCTAssertEqual(try AcquisitionTargetStore(database: database).target(id: entry.targetID), targetBefore,
+            "opening registers nothing and changes no acquisition target")
+        XCTAssertNil(composition.association?.store.toast,
+            "nothing was refused: \(composition.association?.store.toast?.text ?? "nil")")
+        await composition.association?.close()
+    }
+
+    /// F12/R1, the other terminal: a card whose source id this reader never resolved has **no** destination. The
+    /// composition answers `false` and the card path states it; no context, selection or target moves, and nothing
+    /// else is opened in its place.
+    func testF12ViewSourceWithoutAResolvedKeyStatesNoDestination() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let (composition, card, _, _, database) = try await dormantSourceCard(directory: directory)
+        // The state a database written before identities were pinned has: the card exists, the key does not.
+        try database.write { db in try db.execute(sql: "DELETE FROM reader_source_identity") }
+
+        let original = composition.currentContextKey
+        let association = try XCTUnwrap(composition.association)
+        association.perform(.viewSource, cardID: card)
+        let stated = await Self.waitUntil(5) {
+            association.store.toast?.text == String(localized: "Não foi possível abrir a fonte")
+        }
+        XCTAssertTrue(stated, "an unresolvable key is stated: \(association.store.toast?.text ?? "no toast")")
+        XCTAssertEqual(composition.currentContextKey, original, "the refusal moves nothing")
+        XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.sourceKeys, [])
+        await composition.association?.close()
+    }
+
+    /// One published card of a catalogue source the reader **disabled**: the reader enables it through the
+    /// surface's own owner (so a real card is published), then disables it. The identity row the owner wrote is
+    /// what survives, not a selection.
+    private func dormantSourceCard(directory: URL) async throws -> (AppComposition, PublicationCardID,
+        LegacyCatalogEntry, SourceID, RuntimeDatabase) {
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let key = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(
+            try XCTUnwrap(LegacyCatalogReader(catalogURL: catalogue).source(key: key))))
+        let sourceID = entry.source.id
+        let composition = root(directory: directory, feeds: [])
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+        let date = Date()
+        let origin = OriginRecordID(), revision = OriginRevisionID()
+        try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
+            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "f12-card",
+                value: "dormant", role: .object),
+            revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                headline: "Dormant source", summary: "Summary", bodyText: "Body", authoredAt: date,
+                modifiedAt: nil, observedAt: date, language: "en", primaryLink: nil, searchProjection: nil,
+                providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: date, expectedCurrent: .none,
+            currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: sourceID, kind: .direct, observedAt: date)]))
+
+        let coordinator = SourceManagementCoordinator(catalogURL: catalogue, database: database)
+        try coordinator.setSourceEnabled(key: key, enabled: true)
+        await composition.adoptSelectionChange()
+        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
+        var published: [PresentationCard] = []
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline, published.isEmpty {
+            published = composition.association?.store.state.presentation?.window.items ?? []
+            if published.isEmpty { await composition.association?.retryNow() }
+            await Task.yield()
+        }
+        let card = try XCTUnwrap(published.first?.id, "the enabled source publishes its local membership")
+        XCTAssertEqual(published.first?.sourceID, sourceID)
+
+        try coordinator.setSourceEnabled(key: key, enabled: false)
+        await composition.adoptSelectionChange()
+        XCTAssertEqual(composition.currentContextKey.request, .main)
+        XCTAssertTrue(composition.feeds.isEmpty)
+        return (composition, card, entry, sourceID, database)
+    }
+
+    /// S1: opening a source the reader did not select enables nothing, and eligibility does not become a request.
+    /// The coordinator is the only owner that can issue one, and its input is the eligibility set the snapshot
+    /// derives **from registrations** (selection + discovery), not from the context's name: with no target registered
+    /// the planner has nothing to execute, and the coordinator's own settled record stays empty. The control proves
+    /// the same measurement names the source the moment the reader selects it.
+    func testF12OpeningAnUnselectedSourceNeverReachesTheCoordinator() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let key = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(
+            try XCTUnwrap(LegacyCatalogReader(catalogURL: catalogue).source(key: key))))
+        let sourceID = entry.source.id
+        let composition = root(directory: directory, feeds: [])
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+
+        let openedSource = try await composition.openSourceFeed(forKey: key)
+        XCTAssertTrue(openedSource)
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertEqual(association.contextKey.request, .source(sourceID))
+        XCTAssertNil(try AcquisitionTargetStore(database: database).target(id: entry.targetID),
+            "opening the source registered no acquisition target")
+        let eligible = try association.acquisition.eligibleTargets(for: FeedContext(key: association.contextKey))
+        XCTAssertTrue(eligible.isEmpty,
+            "the session's eligibility names no target for a source the reader did not select: \(eligible)")
+        // An explicit opportunity on the opened surface, the same one its launch took.
+        _ = try? await association.driver.drive(resources: association.resources)
+        let health = await association.coordinator.healthSnapshot()
+        XCTAssertNil(health[entry.targetID],
+            "no request was made for the opened source: \(health.keys.map(\.rawValue.uuidString))")
+
+        // Control: the same measurement, once the reader's own act selects the source.
+        try SourceManagementCoordinator(catalogURL: catalogue, database: database)
+            .setSourceEnabled(key: key, enabled: true)
+        await composition.adoptSelectionChange()
+        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
+        let enabled = try XCTUnwrap(composition.association)
+        let controlled = try enabled.acquisition.eligibleTargets(for: FeedContext(key: enabled.contextKey))
+        XCTAssertEqual(controlled.map(\.id), [entry.targetID],
+            "control: a selected source is exactly what eligibility names (so the empty set above discriminates)")
+        await composition.association?.close()
     }
 
     /// A changed persisted selection is a plain/source context, not an intersection with the

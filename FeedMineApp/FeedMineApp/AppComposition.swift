@@ -211,8 +211,15 @@ final class AppComposition {
         association.onOpenSource = { [weak self] sourceID in
             guard let self else { return }
             Task {
-                do { try await self.selectContext(.source(sourceID)) }
-                catch { self.association?.store.showToast(
+                do {
+                    // F12/R1: one source, one destination. The card names an id; the composition resolves the
+                    // reader's own durable key and takes the same entry point the taxonomy row uses, so a source
+                    // the reader has not enabled still opens instead of being refused by a selection guard.
+                    if try await self.openSourceFeed(forSourceID: sourceID) { return }
+                    self.association?.store.showToast(
+                        text: String(localized: "Não foi possível abrir a fonte"),
+                        systemImage: "info.circle")
+                } catch { self.association?.store.showToast(
                     text: String(localized: "Não foi possível abrir a fonte"),
                     systemImage: "exclamationmark.triangle") }
             }
@@ -1491,6 +1498,43 @@ final class AppComposition {
             readerSources: readerSourceEntries(), catalogueURL: catalogueURL, identities: links))?.first
     }
 
+    /// F12/R1: the destination a **published card** names. The card froze a source id, never a key, so the key is
+    /// read off the owner that minted that id: the reader's own feeds first (the source is in the selection or is
+    /// the one this session opened), then the durable identity table every resolution writes. The id is compared
+    /// with the derivation `LegacyCatalogImport`/`ReaderSourceIdentity` minted it under — never with a title, a URL
+    /// or a second namespace. Already on that source's surface it answers without rebuilding anything.
+    /// `false` is a real answer: this reader never resolved that key, so no destination is promised.
+    @discardableResult
+    func openSourceFeed(forSourceID sourceID: SourceID) async throws -> Bool {
+        if case .source(let current) = currentContextKey.request, current == sourceID, association != nil {
+            return true
+        }
+        // A source in the reader's own selection is the ordinary context switch, exactly as before: no identity
+        // resolution and no extra transition.
+        if feeds.contains(where: { $0.sourceID == sourceID }) {
+            try await selectContext(.source(sourceID))
+            return true
+        }
+        guard let key = sourceKey(for: sourceID) else { return false }
+        return try await openSourceFeed(forKey: key)
+    }
+
+    /// The reader's durable key for one source id, stated by the identity owner. Nil when this reader never
+    /// resolved the key — an honest absence, not a guess.
+    private func sourceKey(for sourceID: SourceID) -> String? {
+        if let feed = feeds.first(where: { $0.sourceID == sourceID }) { return feed.principal }
+        if let contextSource, contextSource.sourceID == sourceID { return contextSource.principal }
+        guard let database = libraryDatabase(),
+            let links = try? ReaderLibraryStore(database: database).sourceLinks() else { return nil }
+        for link in links.values {
+            let minted = link.authority == "reader"
+                ? ReaderSourceIdentity.sourceID(forKey: link.anchorKey)
+                : LegacyCatalogImport.sourceID(forKey: link.anchorKey)
+            if minted == sourceID { return link.sourceKey }
+        }
+        return nil
+    }
+
     /// A source's own surface outside the reader's selection, mirroring `selectContext`'s transition: the reader's
     /// place is checkpointed first, the context is persisted, and the replacement is built and launched. It differs
     /// in one fact: the session is built with `allowsSourceOutsideSelection`, so its candidate filter is the source
@@ -1507,6 +1551,14 @@ final class AppComposition {
         association = nil
         contextSource = selectedFeeds.contains(where: { $0.sourceID == feed.sourceID }) ? nil : feed
         persistedContextSourceName = nil
+        // The source this session is about to read is a resolved identity like any other: pinning its key is what
+        // keeps a card of it addressable after the reader leaves (F12/R1) — it writes no selection and enables
+        // nothing.
+        if let database = libraryDatabase() {
+            try? ReaderLibraryStore(database: database).rememberResolvedSources([(key: feed.principal,
+                authority: feed.principalNamespace == ReaderSourceIdentity.principalNamespace
+                    ? "reader" : "catalog")])
+        }
         currentContextKey = ContextKey(request: .source(feed.sourceID), preset: currentContextKey.preset,
             filter: resolvedFilter(at: Date()))
         _ = try preferences?.setContext(currentContextKey)
@@ -2595,13 +2647,11 @@ final class FeedAssociation {
                         systemImage: "info.circle")
                     return
                 }
-                guard feeds.contains(where: { $0.sourceID == sourceID }) else {
-                    store.showToast(text: String(localized: "Esta fonte não está no seu feed"),
-                        systemImage: "info.circle")
-                    return
-                }
+                // R1: the card names a destination; whether the source is in the reader's selection is not this
+                // guard's question. The composition resolves the canonical key and opens that source's own context
+                // without enabling it (F12/S1) — the same entry point the taxonomy row uses.
                 guard let onOpenSource else {
-                    store.showToast(text: String(localized: "Esta fonte não está no seu feed"),
+                    store.showToast(text: String(localized: "Não foi possível abrir a fonte"),
                         systemImage: "info.circle")
                     return
                 }
