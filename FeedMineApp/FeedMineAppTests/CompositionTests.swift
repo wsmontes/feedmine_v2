@@ -4765,6 +4765,165 @@ final class CompositionTests: XCTestCase {
     }
 
 
+    /// F12/S1 + D1/D2, the measured sequence. The reader starts with an **empty** selection; the surface's own
+    /// owner enables one catalogue source, whose local memberships publish under the catalogue's name; the reader
+    /// disables it; and then opens its row. Four product facts are asserted, each on the value the surface reads:
+    /// the destination is admitted while the selection question stays false (`surfaceHasSources` vs
+    /// `hasSelectedSources`, D1); the cards that appear come from that source alone and carry its name in the
+    /// published attribution (D2 — the chip is not accepted as proof); opening writes no selection and changes no
+    /// acquisition target; and a relaunch on the same container restores the context, the window and the
+    /// attribution from the feed's own published fact, without a catalogue scan. The window is filled by the open's
+    /// own launch: no `refreshFromTheReader`, no `retryNow`.
+    func testF12EmptySelectionOpensTheDisabledSourceWithNamedCards() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let key = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(
+            try XCTUnwrap(LegacyCatalogReader(catalogURL: catalogue).source(key: key))))
+        let sourceID = entry.source.id
+        let expectedName = entry.source.displayName
+
+        let composition = root(directory: directory, feeds: [])
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+        // The reader's own content, stated as the store's fact: the enabled source owns one local membership and
+        // one other source owns another. Acquisition is not what discriminates here — the state is.
+        let date = Date()
+        func seed(_ headline: String, source: SourceID, value: String) throws {
+            let origin = OriginRecordID(), revision = OriginRevisionID()
+            try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
+                externalObjectIdentity: .init(connectorKind: .syndication, namespace: "f12-empty",
+                    value: value, role: .object),
+                revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                    headline: headline, summary: "Summary", bodyText: "Body", authoredAt: date, modifiedAt: nil,
+                    observedAt: date, language: "en", primaryLink: nil, searchProjection: nil, providerID: nil),
+                mediaCandidates: [], availability: .available, observedAt: date, expectedCurrent: .none,
+                currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: date)]))
+        }
+        try seed("Only this source", source: sourceID, value: "f12-empty-s")
+        try seed("Another source", source: SourceID(), value: "f12-empty-t")
+
+        func cards() -> [PresentationCard] {
+            composition.association?.store.state.presentation?.window.items ?? []
+        }
+        func waitForCards(_ atLeast: Int, timeout: TimeInterval) async throws -> [PresentationCard] {
+            let deadline = Date().addingTimeInterval(timeout)
+            var found = cards()
+            while Date() < deadline, found.count < atLeast {
+                try await Task.sleep(for: .milliseconds(100))
+                found = cards()
+            }
+            return found
+        }
+
+        // Control: with nothing selected, the main surface is the honest empty-selection surface and the reader
+        // has no feeds. This is the T7/F02 question, and the source destination must not be confused with it.
+        XCTAssertTrue(composition.feeds.isEmpty)
+        XCTAssertFalse(composition.hasSelectedSources)
+        XCTAssertFalse(composition.surfaceHasSources,
+            "an empty selection on `.main` still asks the reader to enable sources")
+
+        // R4's own act, through the surface's owner: the source is enabled and publishes under a selection version.
+        let coordinator = SourceManagementCoordinator(catalogURL: catalogue, database: database)
+        try coordinator.setSourceEnabled(key: key, enabled: true)
+        await composition.adoptSelectionChange()
+        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
+        let enabledCards = try await waitForCards(1, timeout: 60)
+        XCTAssertGreaterThan(enabledCards.count, 0, "the enabled source publishes its local memberships")
+        XCTAssertEqual(Set(enabledCards.compactMap(\.sourceID)), [sourceID])
+        XCTAssertTrue(enabledCards.allSatisfy { $0.sourceDisplayName == expectedName },
+            "control: while selected, the feed attributes its own name; got \(enabledCards.map(\.sourceDisplayName))")
+
+        let preferences = ReaderPreferencesStore(database: database)
+        let targetBefore = try AcquisitionTargetStore(database: database).target(id: entry.targetID)
+        try coordinator.setSourceEnabled(key: key, enabled: false)
+        await composition.adoptSelectionChange()
+        XCTAssertEqual(composition.currentContextKey.request, .main)
+        XCTAssertFalse(composition.hasSelectedSources, "the reader chose nothing; that empty is honest for `.main`")
+        XCTAssertFalse(composition.surfaceHasSources)
+        XCTAssertTrue(composition.feeds.isEmpty)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [])
+
+        // The row still names its destination. Opening it is not enabling it.
+        let opened = try await composition.openSourceFeed(forKey: key)
+        XCTAssertTrue(opened, "the catalogue row still resolves its key")
+        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [], "opening writes no selection")
+        XCTAssertTrue(composition.feeds.isEmpty,
+            "the session keeps the reader's own feeds, so no endpoint is enabled")
+        XCTAssertEqual(try AcquisitionTargetStore(database: database).target(id: entry.targetID), targetBefore,
+            "opening registers nothing and changes no acquisition target")
+        XCTAssertFalse(composition.hasSelectedSources, "the destination did not become a selection")
+        XCTAssertTrue(composition.surfaceHasSources,
+            "a source context is a destination even with an empty selection (D1)")
+        XCTAssertEqual(composition.sourceContextDisplayName, expectedName,
+            "the chip's one owner names the source the reader opened")
+
+        // D1+D2 on the product's own publication: the disabled source's cards, named, and no other source's.
+        let openedCards = try await waitForCards(1, timeout: 60)
+        XCTAssertGreaterThan(openedCards.count, 0,
+            "the disabled source's published material reaches its surface (D1); cards=\(openedCards.count)")
+        XCTAssertEqual(Set(openedCards.compactMap(\.sourceID)), [sourceID],
+            "only that source's memberships reach this surface")
+        XCTAssertTrue(openedCards.allSatisfy { $0.sourceDisplayName == expectedName },
+            "the published cards attribute the destination even though it is not in the selection (D2): "
+                + "\(openedCards.map(\.sourceDisplayName))")
+        await composition.association?.close()
+
+        // A new process on the same container, with the selection still empty: the source context is the reading
+        // place, named from the attribution the feed itself published — no catalogue walk at launch.
+        let reopened = root(directory: directory, feeds: [])
+        await reopened.launch()
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertEqual(reopened.currentContextKey.request, .source(sourceID),
+            "the saved source context survives the relaunch")
+        XCTAssertFalse(reopened.hasSelectedSources)
+        XCTAssertTrue(reopened.surfaceHasSources, "the relaunch draws the destination, not the selection prompt")
+        XCTAssertEqual(reopened.sourceContextDisplayName, expectedName,
+            "a relaunch names the source from the attribution the feed itself published")
+        var restored = reopened.association?.store.state.presentation?.window.items ?? []
+        let restoreDeadline = Date().addingTimeInterval(60)
+        while Date() < restoreDeadline, restored.isEmpty {
+            try await Task.sleep(for: .milliseconds(100))
+            restored = reopened.association?.store.state.presentation?.window.items ?? []
+        }
+        XCTAssertFalse(restored.isEmpty, "the relaunch restores the source's own window")
+        XCTAssertEqual(Set(restored.compactMap(\.sourceID)), [sourceID])
+        XCTAssertTrue(restored.allSatisfy { $0.sourceDisplayName == expectedName },
+            "the restored cards keep their attribution: \(restored.map(\.sourceDisplayName))")
+        await reopened.association?.close()
+    }
+
+    /// F12/R6: opening a catalogue source and coming back preserves the Edition the reader already had — visiting a
+    /// source must not substitute it. A→B→A through the same owner the chip uses.
+    func testF12ReturningFromASourceKeepsTheEditionsIdentity() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        func presentation() -> FeedPresentationSnapshot? {
+            composition.association?.store.state.presentation
+        }
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, presentation() == nil { await Task.yield() }
+        let before = try XCTUnwrap(presentation(), "the main feed presents")
+        let edition = before.editionID
+
+        let key = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let openedSource = try await composition.openSourceFeed(forKey: key)
+        XCTAssertTrue(openedSource)
+        XCTAssertEqual(composition.currentContextKey.request.isSource, true)
+        try await composition.selectContext(.main)
+        let returnedBy = Date().addingTimeInterval(30)
+        while Date() < returnedBy, presentation()?.editionID != edition { await Task.yield() }
+        XCTAssertEqual(presentation()?.editionID, edition,
+            "coming back is the same Edition, not a substitute")
+        XCTAssertEqual(composition.currentContextKey.request, .main)
+        await composition.association?.close()
+    }
+
     /// F12/R2: with **no verified snapshot installed**, the composition serves the bundled catalogue unverified and
     /// the source surface must show that same catalogue instead of declaring it unavailable — measured on the
     /// simulator: the sheet said "The source catalogue isn't available." while the feed was reading the bundle.

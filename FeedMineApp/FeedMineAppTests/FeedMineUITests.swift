@@ -2674,8 +2674,13 @@ final class FeedMineUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if element.exists && element.isHittable { return true }
+            // A SwiftUI List is a table on older runtimes and a collection on newer ones; on a sheet neither may
+            // be exposed, and then the app's own swipe is the one that reaches the list on screen.
             let table = app.tables.firstMatch
-            if table.exists { table.swipeUp() } else { app.swipeUp() }
+            if table.exists { table.swipeUp(); continue }
+            let collection = app.collectionViews.firstMatch
+            if collection.exists { collection.swipeUp(); continue }
+            app.swipeUp()
         }
         return element.exists
     }
@@ -3404,72 +3409,168 @@ final class FeedMineUITests: XCTestCase {
             .sorted { $0.frame.minY < $1.frame.minY }
     }
 
-    /// F12/UX12-B: from the catalogue's own leaf, the source row opens **that source's** feed. The reader enables
-    /// the one source the local transport answers (R4's own act), the row then offers its open control, and the tap
-    /// lands on a source context whose chip names the catalogue's source and whose cards come from it alone.
-    /// Reopening the surface returns to the same leaf, and the toggle never navigates.
+    /// F12/UX12-B on the real screen, with real local supply. A catalogue source the reader has **not** enabled
+    /// opens its own feed showing **only** that source's memberships; the toggle is a separate act that never
+    /// navigates; reopening the surface returns to the same node with the selection unchanged; and a relaunch keeps
+    /// the source's context.
+    ///
+    /// Supply is produced through the product's own path: the reader enables S (R4's own act) with the fixture
+    /// answering that endpoint, waits for its cards to be published, then disables S again. The published history
+    /// stays, so opening S while it is **disabled** must show those cards and no other source's.
     @MainActor
     func testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(pt_BR)", "-AppleLocale", "pt_BR"]
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_DISABLE_CATALOGUE_SYNC"] = "1"
         app.launch()
 
-        let emptyTitle = app.staticTexts["feed-empty-title"]
-        XCTAssertTrue(emptyTitle.waitForExistence(timeout: 300),
-            "a instalação limpa apresenta sua própria superfície")
-        app.buttons["feed-empty-action"].tap()
-
-        let sectionRow = app.buttons["node-child-582585858"]
-        // Measured on both devices this session: the sources sheet's list is not reachable from the accessibility
-        // tree here — `FeedMine Reserve 1024` returns the Application element alone for the sheet (foreground, 181 s
-        // and unchanged), and the idle `iPhone 17` shows the sheet's chrome with no catalogue row after 90 s. The
-        // same symptom hits the pre-existing bookmark-boxes sheet journey. Skip with the measurement instead of
-        // failing, and keep the journey for a harness whose sheet tree is exposed; the route itself is proven at
-        // the app level by `CompositionTests.testF12SourceRowOpensTheSelectedSourceAndRefusesAKeyOutsideTheSelection`.
-        guard scrollIntoView(sectionRow, in: app, timeout: 20) else {
-            throw XCTSkip("sources sheet list not in the accessibility tree on this harness; "
-                + "state=\(app.state.rawValue); tree=\(app.debugDescription)")
-        }
-        sectionRow.tap()
-        let leafRow = app.buttons["node-child-560998273"]
-        XCTAssertTrue(leafRow.waitForExistence(timeout: 60), "a seção abre o nó Wildlife & Nature")
-        leafRow.tap()
-
         let sourceKey = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let sectionRow = app.buttons["node-child-582585858"]
+        let leafRow = app.buttons["node-child-560998273"]
         let toggle = app.switches["node-source-toggle-\(sourceKey)"]
-        XCTAssertTrue(scrollIntoView(toggle, in: app, timeout: 240), "o nó lista a chave do catálogo")
         let open = app.buttons["node-source-\(sourceKey)"]
-        // F12: the row opens its own feed **without** the source being enabled — the toggle is a separate act (R4)
-        // and the open control is independent of it.
-        XCTAssertTrue(open.exists, "a linha oferece abrir mesmo com a fonte desabilitada")
-        XCTAssertEqual(toggle.value as? String, "0", "a fonte está desabilitada neste ponto")
-
-        open.tap()
         let chip = app.staticTexts["reader-context-label"]
+
+        /// Opens the sources surface and waits for its list **in the accessibility tree**. This client loses the
+        /// sheet's tree intermittently on this runtime (measured: the same build lists it in one run and returns the
+        /// Application element alone in another), so the surface is reopened once or twice before the assertion —
+        /// the retry is about the client's snapshot, and every step below still asserts the product's own values.
+        func openSourcesWithList() {
+            for attempt in 1...2 {
+                if attempt > 1 { app.terminate(); app.launch() }
+                let emptyTitle = app.staticTexts["feed-empty-title"]
+                if emptyTitle.waitForExistence(timeout: 120) { app.buttons["feed-empty-action"].tap() }
+                else {
+                    app.buttons["more-menu"].tap()
+                    XCTAssertTrue(app.buttons["Fontes"].waitForExistence(timeout: 30))
+                    app.buttons["Fontes"].tap()
+                }
+                if app.cells.firstMatch.waitForExistence(timeout: 30) { return }
+            }
+            XCTFail("a lista do sheet não chegou à árvore após 3 aberturas; árvore=\(app.debugDescription)")
+        }
+        func openLeaf() {
+            // The sheet keeps the reader's path: a reopened surface may already be on the leaf, and walking the
+            // sections again from there would look for a root row that is not on this screen.
+            if !app.navigationBars["Wildlife & Nature"].exists {
+                XCTAssertTrue(scrollIntoView(sectionRow, in: app, timeout: 120),
+                    "a superfície lista as seções do catálogo; árvore=\(app.debugDescription)")
+                sectionRow.tap()
+                XCTAssertTrue(leafRow.waitForExistence(timeout: 60), "a seção abre o nó Wildlife & Nature")
+                leafRow.tap()
+            }
+            XCTAssertTrue(scrollIntoView(toggle, in: app, timeout: 240), "o nó lista a chave do catálogo")
+        }
+        func closeSources() {
+            // A node carries its own Done, so closing from it does not walk the reader's path back: reopening the
+            // surface returns to the same node.
+            if app.buttons["node-sources-done"].exists {
+                app.buttons["node-sources-done"].tap()
+                return
+            }
+            for _ in 0..<3 where app.buttons["sources-done"].exists == false {
+                let back = app.navigationBars.buttons.element(boundBy: 0)
+                if back.exists { back.tap() }
+            }
+            XCTAssertTrue(app.buttons["sources-done"].waitForExistence(timeout: 30),
+                "a superfície de fontes oferece Concluir; árvore=\(app.debugDescription)")
+            app.buttons["sources-done"].tap()
+        }
+        func cards() -> Int {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).count
+        }
+        func waitForCards(_ atLeast: Int, timeout: TimeInterval) -> Int {
+            let deadline = Date().addingTimeInterval(timeout)
+            var count = cards()
+            while Date() < deadline, count < atLeast {
+                Thread.sleep(forTimeInterval: 0.5)
+                count = cards()
+            }
+            return count
+        }
+        /// D2 is an assertion about the **card**, not about the chip: `app.staticTexts["BBC News"]` also matches
+        /// `reader-context-label`, so a chip-only check would pass with six nameless cards (measured).
+        func cardCarries(_ name: String, timeout: TimeInterval) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            repeat {
+                let found = app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier))
+                    .allElementsBoundByIndex.filter { $0.exists }
+                if found.contains(where: { $0.staticTexts[name].exists }) { return true }
+                Thread.sleep(forTimeInterval: 0.5)
+            } while Date() < deadline
+            return false
+        }
+
+        openSourcesWithList()
+        openLeaf()
+        XCTAssertEqual(toggle.value as? String, "0", "a fonte começa desabilitada")
+        XCTAssertTrue(open.exists, "a linha oferece abrir mesmo com a fonte desabilitada")
+
+        // 1. Produce local supply through the product's own path: enable S, let its cards publish, close the sheet
+        //    so the selection is adopted.
+        let control = toggle.switches.firstMatch
+        (control.exists ? control : toggle).tap()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 60), .completed, "o toggle habilita a fonte")
+        closeSources()
+        XCTAssertGreaterThan(waitForCards(1, timeout: 180), 0,
+            "a fonte habilitada publica suas cartas; árvore=\(app.debugDescription)")
+
+        // 2. Disable S again; its published history stays. The selection returns to what it was.
+        openSourcesWithList()
+        XCTAssertTrue(app.navigationBars["Wildlife & Nature"].waitForExistence(timeout: 60),
+            "reabrir a superfície volta ao mesmo nó")
+        XCTAssertTrue(scrollIntoView(toggle, in: app, timeout: 120))
+        (control.exists ? control : toggle).tap()
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 60), .completed, "o toggle desabilita a fonte")
+        XCTAssertTrue(app.navigationBars["Wildlife & Nature"].exists, "o toggle não navegou")
+        closeSources()
+
+        // 3. Open the now-disabled source: only its own memberships may appear, and the selection stays empty.
+        openSourcesWithList()
+        openLeaf()
+        XCTAssertEqual(toggle.value as? String, "0", "a fonte está desabilitada neste ponto")
+        XCTAssertTrue(open.exists, "o controle de abrir não depende do toggle")
+        open.tap()
         XCTAssertTrue(chip.waitForExistence(timeout: 120),
             "o contexto da fonte precisa chegar à tela; árvore=\(app.debugDescription)")
-        XCTAssertEqual(chip.label, "BBC News", "o destino é a fonte que a linha nomeia")
-        // The source has no local membership in this run: the surface must say so honestly, and it must not show
-        // the other sources' cards.
-        XCTAssertTrue(app.descendants(matching: .any)["feed-loading-surface"].waitForExistence(timeout: 120),
-            "sem memberships locais, a ausência é honesta; árvore=\(app.debugDescription)")
+        XCTAssertEqual(chip.label, "BBC News", "o chip nomeia a fonte que a linha nomeia")
+        XCTAssertGreaterThan(waitForCards(1, timeout: 120), 0,
+            "sem habilitar a fonte, as cartas locais que ela já tinha aparecem; árvore=\(app.debugDescription)")
+        XCTAssertTrue(cardCarries("BBC News", timeout: 60),
+            "as cartas publicadas nomeiam essa fonte (não basta o chip); árvore=\(app.debugDescription)")
         XCTAssertFalse(app.staticTexts["BBC Science"].exists, "o alias de desenvolvimento não aparece")
         XCTAssertFalse(app.staticTexts["BBC World"].exists, "nem outra fonte")
 
-        // Back to the surface: same node, and the source is still disabled — the selection never changed.
-        app.buttons["more-menu"].tap()
-        XCTAssertTrue(app.buttons["Fontes"].waitForExistence(timeout: 30))
-        app.buttons["Fontes"].tap()
+        // 4. Back to the surface: same node, and the source is still disabled — opening wrote no selection.
+        openSourcesWithList()
         XCTAssertTrue(app.navigationBars["Wildlife & Nature"].waitForExistence(timeout: 60),
             "reabrir a superfície volta ao mesmo nó")
-        let again = app.switches["node-source-toggle-\(sourceKey)"]
-        XCTAssertTrue(scrollIntoView(again, in: app, timeout: 120))
-        XCTAssertEqual(again.value as? String, "0", "abrir não habilitou a fonte")
-        app.buttons["sources-done"].tap()
+        XCTAssertTrue(scrollIntoView(toggle, in: app, timeout: 120))
+        XCTAssertEqual(toggle.value as? String, "0", "abrir não habilitou a fonte")
+        closeSources()
         XCTAssertTrue(chip.waitForExistence(timeout: 30))
         XCTAssertEqual(chip.label, "BBC News", "o contexto da fonte sobrevive ao retorno")
+
+        // 5. Relaunch: the persisted source context is honored; a silent fallback to main would drop the chip, and
+        //    an unnamed destination would fall back to "Uma fonte" even though the feed published its name.
+        app.terminate()
+        app.launch()
+        let relaunched = app.staticTexts["reader-context-label"]
+        XCTAssertTrue(relaunched.waitForExistence(timeout: 120),
+            "o relançamento preserva o contexto da fonte; árvore=\(app.debugDescription)")
+        XCTAssertEqual(relaunched.label, "BBC News",
+            "o relançamento está na fonte e a nomeia: \(relaunched.label)")
+        XCTAssertGreaterThan(waitForCards(1, timeout: 120), 0,
+            "o relançamento restaura a janela da fonte; árvore=\(app.debugDescription)")
+        XCTAssertTrue(cardCarries("BBC News", timeout: 60),
+            "as cartas restauradas mantêm a atribuição; árvore=\(app.debugDescription)")
     }
 }
