@@ -4765,6 +4765,40 @@ final class CompositionTests: XCTestCase {
     }
 
 
+    /// F12/UX12-B: a taxonomy row opens the source's own feed. The row carries the catalogue key; the destination
+    /// is the reader's own resolved feed (`TrustedFeed.resolveAvailable`), never an identity derived here, and a
+    /// key outside the selection returns `false` instead of moving the reader to a context that would fall back to
+    /// the main feed. The membership oracle for "only that source's items" is the editorial provider's own test
+    /// (`CandidateProviderTests.testSourceFilteringPreservesExaminedCountAndRelativeOrder`).
+    func testF12SourceRowOpensTheSelectedSourceAndRefusesAKeyOutsideTheSelection() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let association = try XCTUnwrap(composition.association)
+        let preferences = ReaderPreferencesStore(database: association.database)
+        let before = try XCTUnwrap(try preferences.load())
+        let selected = composition.feeds
+        XCTAssertGreaterThanOrEqual(selected.count, 2)
+        let science = try XCTUnwrap(selected.first { $0.principal == "bbc-science" })
+
+        let original = composition.currentContextKey
+        let refused = try await composition.openSourceFeed(forKey: "https://not-selected.example/feed")
+        XCTAssertFalse(refused, "a key the reader never selected has no destination")
+        XCTAssertEqual(composition.currentContextKey, original, "the refusal moves nothing")
+        XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys,
+            "a refusal never rewrites the selection")
+
+        let opened = try await composition.openSourceFeed(forKey: science.principal)
+        XCTAssertTrue(opened)
+        XCTAssertEqual(composition.currentContextKey.request, .source(science.sourceID),
+            "the destination is the selection's own resolved source")
+        XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys,
+            "opening a source never rewrites the selection")
+        XCTAssertEqual(composition.association?.contextKey, composition.currentContextKey)
+        await composition.association?.close()
+    }
+
     /// A changed persisted selection is a plain/source context, not an intersection with the
     /// collection previously open. A is selected, B is in the collection, and A never belongs to B.
     func testA05AdoptingSelectionOutsideCollectionExitsCollectionPreset() async throws {
