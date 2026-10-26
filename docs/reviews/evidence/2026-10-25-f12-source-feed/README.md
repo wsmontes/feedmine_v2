@@ -111,7 +111,185 @@ verificação continua sendo um fato declarado no ledger, não um motivo para es
   open, e `testF12OpensAnUnselectedCatalogueSourceWithOnlyItsLocalMemberships` verifica uma nova composição no
   mesmo diretório (contexto `.source(id)`, seleção e feeds inalterados) — **PASS**.
 
-**O que continua fora de alcance:** a **árvore de acessibilidade do sheet** neste device/runtime continua
+~~**O que continua fora de alcance:** a **árvore de acessibilidade do sheet** neste device/runtime continua
 Application-only mesmo com as linhas desenhadas (medido pelo mesmo diagnóstico). A jornada de UI segue skipada com
 essa medição; a interação e o conteúdo estão provados no nível de app e a tela está provada por captura. Skip não
-é aceite e está registrado como tal.
+é aceite e está registrado como tal.~~ **SUPERADO em 25/10 (rodada 10):** a jornada **PASSA** com a árvore viva; a
+falha de cartas era o estado vazio de seleção (`hasSources`), não o harness. Ver “Rodada 10” abaixo.
+
+## Rodada 10 — o corpo da fonte desabilitada era o **estado vazio** (25/10, noite)
+
+A falha de `testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot` (0 cartas depois de abrir a fonte) foi
+**atribuída a produto com o snapshot AX do próprio instante da falha**, exportado do `.xcresult`
+(`xcresulttool export attachments`), não por inferência:
+
+| Fato no snapshot | Valor |
+|---|---|
+| chip de contexto | `reader-context-label` = **BBC News** (o destino é o certo) |
+| corpo | `feed-empty-state`, `feed-empty-title` = **“Nenhuma fonte habilitada”** e `feed-empty-action` = “Escolher fontes” |
+| registro de lançamento | `feed-launch-record … cards=6 first_cards_ms=64561 content_bottom=811 viewport_height=800 render_ready_cards=4` |
+| entrega de viewport | `native-viewport-delivery … received=0` |
+
+**Causa:** `AppComposition.hasSelectedSources` derivava de `feeds` (a seleção do leitor, vazia depois de desabilitar
+S). `FeedScreen` escolhe a superfície pelo `hasSources`; com `false` ele desenha o estado vazio de seleção e **nunca
+renderiza** a Edition restaurada — embora o estado da apresentação tivesse as 6 cartas (o teste de app e o banco do
+próprio run concordam: duas edições de fonte, 6 cartas cada, e o checkpoint nomeando a âncora da edição reaberta).
+O app test passava porque lê o **estado**; a view era o elo que faltava.
+
+**Correção:** uma propriedade própria da superfície, `surfaceHasSources = hasSelectedSources ||
+currentContextKey.request.isSource`, é passada nos **três** pontos que decidem a tela
+(`FeedScreen(hasSources:)`, `noteFirstScreenAppeared(hasSources:)` e o `launchBranch` DEBUG, que promete ser a
+mesma decisão da tela). `hasSelectedSources` continua respondendo
+somente sobre a **seleção** (a primeira execução com `feeds: []` segue falsa). Nada de seleção, endpoint ou
+Edition foi tocado.
+
+**Provas executadas (device `39EA1733`, derived data `/tmp/nf04-r10-dd`):**
+- `FeedMineUITests.testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot` — **PASS (478 s)** com a asserção estrita
+  `waitForCards(1) > 0`; nenhum skip foi reintroduzido.
+- `CompositionTests.testF12OpensAnUnselectedCatalogueSourceWithOnlyItsLocalMemberships`,
+  `…testF12ReopeningADisabledSourceShowsItsAlreadyPublishedCards` (substituído na rodada 11 por
+  `…testF12EmptySelectionOpensTheDisabledSourceWithNamedCards`, que parte de seleção vazia e exige D2),
+  `…testF12ReturningFromASourceKeepsTheEditionsIdentity`,
+  `…testSavedKeysMissingFromCatalogRemainSelectedWithoutVersionBump` — **PASS**.
+- `…testDiscoveryFeedsAReaderWhoChoseNothing` e `…testTheExplicitAllLanguagesAnswerReachesDiscovery` — **PASS**
+  (a mudança de `hasSources` não altera o leitor de `main`).
+- Pacote: `swift test` **1722 testes, 1 skip, 0 falhas**. App: 197 testes, **9 falhas em 7 métodos, todas
+  pré-existentes** (abaixo).
+
+**Correção de atribuição:** a hipótese anterior de “perda de árvore AX” cabia à `debugDescription` de um app já em
+teardown; no instante em que as 0 cartas foram medidas a árvore estava viva (o chip foi encontrado na linha anterior).
+A falha era o estado vazio. O skip que eu havia condicionado a árvore ausente foi **removido**.
+
+**Regra de launch refinada:** honrar `.source` fora da seleção só quando o leitor **já tem Edition** ali
+(`PublicationStore.hasEdition(contextSourceID:)`); uma chave salva que não resolve nada é reparada para `main`
+(PD10-P0D D1), como o teste de chaves ausentes exige. Um resultado inesperado da rodada: o primeiro `openSourceFeed`
+de uma fonte fora da seleção não tem Edition ainda e **não** passa por essa regra (o caminho explícito o permite);
+do segundo em diante, a Edition é o fato durável que sustenta o relançamento.
+
+**Pendência do dono, medida e não consertada — o asset local é que está defasado:** `Resources` está **limpo no
+HEAD** (`git status --short` e `git diff HEAD` vazios). O `catalog.manifest.json` commitado (25/10 07:32) declara
+`sha256 1825fdae…` e `bytes 117993472`; o `catalog.sqlite` é **insumo local gitignored** de 16/10 com
+`sha256 e6da170e…`. O HEAD não é defeituoso — o par local é que não casa, e o app **rejeita** e degrada, como deve.
+`scripts/fetch-catalog.sh` é um stub que **recusa** (`exit 2`) e indica `scripts/bootstrap_catalog.py` com o
+compilador V1 SHA-256 fixado; produzir o asset declarado está fora desta rodada. As 6 falhas de catálogo da suíte
+(`testBundledCatalogHasRealBytes…`, 3×`testPD10…`, `CatalogueUpdateAccept…`) são estado local, não regressão; não se
+regenera o manifesto nem se relaxa o teste para “passar”.
+
+**A falha de reserva (`testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates`, 1 vs 17) é pré-existente:**
+reproduzida com os meus 7 arquivos substituídos pelas versões do HEAD (`50,9 s`, mesma linha 647) — não é regressão
+desta rodada. A branch `product/churn-20261025` (`0e7a35ee`) ativa o runway na primeira apresentação do bootstrap e é
+o próximo passo provável, mas não foi mesclada nem alterada aqui.
+
+## Rodada 11 — D2, o par de catálogo e o que continua vermelho (26/10)
+
+### D1 continua sendo `surfaceHasSources`; D2 ganhou **um** dono de nome
+
+A rodada 10 fechou D1 com `surfaceHasSources = hasSelectedSources || isSource` lido nos três pontos da superfície.
+D2 (as cartas publicadas no contexto de fonte fora da seleção gravavam `source_display_name = NULL`) não estava
+corrigido naquela árvore: o mapa de nomes continuava sendo só `supply`, e o chip usava memória de sessão
+(`contextSource`), que não existe num relançamento.
+
+O conserto integrado tem **um** dono, `AppComposition.sourceContextDisplayName`, consultado pelo chip **e** entregue
+à sessão:
+
+1. um feed vivo que nomeie a fonte (a seleção ou a coleção em leitura);
+2. a linha do catálogo que o leitor abriu nesta sessão (`contextSource`, sem segundo lookup);
+3. depois de um relançamento, a **atribuição que o próprio feed publicou** para aquela fonte
+   (`PublicationStore.publishedSourceDisplayName(sourceID:)`, uma linha indexada em `published_cards`, depois
+   `retired_published_cards`). Nada de varrer o catálogo de 77k no launch (INV-07).
+
+`FeedAssociation.presentationNames(supply:contextKey:contextSourceDisplayName:)` acrescenta a fonte do contexto
+**apenas ao mapa de atribuição**. `supply`, `registrations`, elegibilidade, `acquisition_targets` e endpoints não
+mudaram: abrir a fonte continua sem habilitar nada, e o teste afirma a identidade do target antes/depois.
+
+### Regressão nova, com controle vermelho
+
+`CompositionTests.testF12EmptySelectionOpensTheDisabledSourceWithNamedCards` parte de `feeds: []`, habilita S pelo
+owner da superfície (`SourceManagementCoordinator.setSourceEnabled`), espera a publicação, captura o target,
+desabilita S, e então abre a linha. Afirma, na ordem em que o produto decide: `.main` com seleção vazia continua
+`surfaceHasSources == false` (o controle honesto de T7/F02); a abertura não escreve seleção nem muda o target;
+`hasSelectedSources == false` **e** `surfaceHasSources == true` (D1); ≥1 carta sem `refreshFromTheReader`/`retryNow`,
+somente a fonte S, e `sourceDisplayName == "BBC News"` em **todas** as cartas publicadas (D2); então relança no mesmo
+container com `feeds: []` e exige contexto `.source`, o mesmo nome no chip e nas cartas restauradas.
+
+| Execução | Resultado |
+|---|---|
+| árvore final | **PASS** (0,56 s) |
+| controle vermelho (D1 revertido a `hasSelectedSources`, mapa de nomes só de `supply`, sem fallback persistido) | **5 falhas**: D1 na abertura, as 17 cartas com `nil`, `surfaceHasSources` no relançamento, nome `nil` vs `BBC News`, e as cartas restauradas sem nome |
+| árvore restaurada | **PASS** outra vez, no lote de 14 abaixo |
+
+### Jornada de UI estrita, sem skip
+
+`FeedMineUITests.testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot` — **PASS (482,96 s)** no device
+`39EA1733`. As cláusulas que antes aceitavam vazio agora exigem: ≥1 carta depois de abrir a fonte desabilitada
+**e** ≥1 carta depois do relançamento; a atribuição é lida **dentro do nó da carta** (`cardCarries("BBC News")`), não
+pelo `staticTexts["BBC News"]` que casa o chip; o chip do relançamento é exigido `BBC News` (não mais `"Uma fonte"`).
+O helper de rolagem continua tentando `tables` **e** `collectionViews` antes do swipe do app (runtime iOS 26 expõe a
+lista do sheet como collection). `NodeSourcesView` mantém `onClose` no próprio nó (`node-sources-done`), e a jornada
+prova que reabrir a superfície volta ao **mesmo** nó.
+
+### O par de catálogo local foi refeito pelo pipeline original
+
+Medição: o descritor commitado em `55c097ab` declarava `catalogue sha256 1825fdae…`; **nenhum byte com esse checksum
+existia na máquina** (busca por tamanho+SHA em `~/Documents/GitHub`, `/tmp` e DerivedData). O `catalog.sqlite` local
+(gitignored) era `e6da170e…`, o mesmo do staging verificado de 2026-10-16 e o que este documento declara.
+
+Reparo executado, sem atalho e sem reescrever checksum para acomodar bytes:
+
+```
+/usr/bin/env python3.11 scripts/bootstrap_catalog.py \
+  --compiler .../_legacy_feedmine_v1/scripts/build_catalog.py \
+  --compiler-sha256 e3c9fcf2… --identity-sha256 2a83b833…
+```
+
+- manifesto público lido agora: `revision 5`, `schemaVersion 1`, 118 arquivos, 77.443 fontes,
+  `sha256 2a4f754f…` (21.223 bytes);
+- inventário **118/118** OPML reconferido por tamanho e SHA-256 contra ele (tree identity `846b1720…`);
+- compilador V1 com os hashes pinados acima (`build_catalog.py` e `catalog_identity.py` adjacente, Python 3.11.1);
+- artefato **reusado** pelo gate de idempotência (entradas idênticas ⇒ mesmo checksum), não recompilado;
+- relatório de build concordando: `file_count 118`, `source_count 77443`, `node_count 6450`,
+  `placement_count 77443`, `size_bytes 117993472`;
+- descritor regenerado do staging (`sha256 c2c0f0e7…`) e instalado **com** o `.sqlite`; o par commitado passa a
+  declarar `e6da170e…`.
+
+Backup dos bytes e do descritor pré-reparo: `/tmp/feedmine-omp-final-integration/catalog-bootstrap-repair/pre-repair/`
+(descritor + SHA-256 + estado do staging) e o log do pipeline no mesmo diretório. `CATALOG.md` ganhou a seção
+“Reparo do par local (2026-10-25)” com a mesma cadeia.
+
+As 6 falhas de catálogo da rodada 10 eram **deste par**, e não de regressão: com o par casado, passam
+`testBundledCatalogHasRealBytesAndStableBoundedDefaults`, `testPD10StandardPublicAuthorityChecksFirstForegroundAfterLocalPaint`,
+`testPD10RelaunchRespects23And25HourWindowAndConsistent304`, `testPD10FailedInstallNeverPersistsTheOfferedETag`,
+`testPD10B1B3ForegroundActivatesSixWithoutChangingCompletePublishedPresentation` e
+`CatalogueUpdateAcceptTests.testForegroundAcceptsTheAuthoritiesNewerRevisionWithoutTouchingTheReadersStore`.
+
+**Fronteira de confiança do fallback bundled (reavaliada):** `SourceManagementCoordinator` só cai para
+`installation.bundledCatalogue` quando não há snapshot verificado, e esse caminho lê um recurso do **próprio bundle
+assinado** — o mesmo que a composição já serve, com `kind: "degraded"` escrito no ledger por
+`CatalogInstallation.degraded(_:)`. A verificação não é afrouxada: `bootstrap()` continua tentando
+`installBundled()` com `CatalogManifest.validate(manifest, catalogue:)` e recusa (registrando) quando não casa; o
+fallback apenas deixa de esconder a árvore quando a verificação não produziu snapshot. Ele não concede autoridade de
+aquisição: habilitar fonte continua sendo o ato durável do leitor + registro de target. Com o par reparado, o caminho
+degradado deixa de ser o normal deste build.
+
+### O vermelho que sobra: reserva, caracterizado e **não** verde
+
+`testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates` (1 carta vs 17 exigidas):
+
+| Medição | Resultado |
+|---|---|
+| isolado, árvore final (6 execuções: 5 antes da instrumentação, 1 depois) | **FAIL** 1 vs 17 em todas |
+| suíte de app completa (197 testes) | **PASS** — logo a suíte **não** é prova do caso; ele é dependente de ordem |
+| sonda em `LocalProductionSlice.run` (removida) | `structural=24 window=24 eligible=24 ready=24 publishedInWindow=1 cursor=false` |
+| sonda de uma segunda oportunidade (removida) | `after-first=1`, `after-second=1`, **sem** segunda linha de slice local |
+
+Mecanismo medido: a primeira publicação do bootstrap coloca **1** carta de uma fonte (PD-4: duas cartas adjacentes da
+mesma fonte são proibidas, e a janela só oferecia essa fonte); após a liberação da segunda fonte, a slice local
+examina uma janela de 24 candidatos de **uma** fonte com o tail da edição na mesma fonte, e `MaximumDistanceSequencing`
+(v6) não coloca nada; o runway passa a ver `ready_cards=0`, pede rede, recebe `up_to_date`, e a oportunidade seguinte
+**não emite slice local** — a janela fica em 1. O desfecho depende de qual fonte tem as linhas mais novas (ordem de
+aquisição, diferença de microssegundos), o que explica FAIL isolado × PASS na suíte.
+
+Não é aceitável declarar verde: a decisão que falta é de **planejamento do runway** (depois de uma slice que não
+coloca nada, continuar a página local seguinte enquanto a caminhada não estiver exausta e houver suprimento pronto,
+em vez de ir à rede e parar), camada que governa B03 — cuja classificação o dono mandou não mexer nesta tarefa.
+Nenhum gate, driver, corpus, limiar ou teste foi alterado para mascarar isso.
