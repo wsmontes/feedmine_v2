@@ -528,7 +528,10 @@ final class AppComposition {
                         ? "reader" : "catalog")
                 })
                 self.selectedFeeds = resolved
-                let session = try sessionState(for: saved.activeContextKey)
+                // A persisted source context is a reading place, not a selection: the launch honors it with the
+                // same rule the open used, so a relaunch cannot silently rewrite it to `main`.
+                let session = try sessionState(for: saved.activeContextKey,
+                    allowsSourceOutsideSelection: allowsSourceOutsideSelection(saved.activeContextKey))
                 // A launch is a boundary like any other transition, and the product's own overlay expiry
                 // (four hours) must not outlive it. Without this resolution the app adopted the persisted
                 // key verbatim, so an overlay the reader could no longer see stayed in force on every
@@ -599,7 +602,10 @@ final class AppComposition {
             current = warmed
             startedWarm = true
         } else {
-            do { current = try await association(contextKey: currentContextKey) }
+            do {
+                current = try await association(contextKey: currentContextKey,
+                    allowsSourceOutsideSelection: allowsSourceOutsideSelection(currentContextKey))
+            }
             catch {
                 startupFailure = "Não foi possível abrir o feed local."
                 startupFailureDetail = String(describing: error)
@@ -1162,7 +1168,8 @@ final class AppComposition {
         do {
             _ = try preferences.setContext(key)
             try beforeBuildingSession?(key)
-            let next = try await association(contextKey: key)
+            let next = try await association(contextKey: key,
+                allowsSourceOutsideSelection: allowsSourceOutsideSelection(key))
             association = next
             startupFailure = nil
             try await next.launch()
@@ -1175,7 +1182,8 @@ final class AppComposition {
             currentContextKey = previous
             do {
                 _ = try preferences.setContext(previous)
-                let restored = try await association(contextKey: previous)
+                let restored = try await association(contextKey: previous,
+                    allowsSourceOutsideSelection: allowsSourceOutsideSelection(previous))
                 association = restored
                 startupFailure = nil
                 try await restored.launch()
@@ -1372,6 +1380,14 @@ final class AppComposition {
                 searchScope: proposed.searchScope), activeFeeds)
         }
         return (proposed, activeFeeds)
+    }
+
+    /// Whether a context may name a source outside the reader's selection. Only a source context does: opening a
+    /// catalogue source must not be rewritten to `main` by any rebuild or launch (F12/R1 — no silent fallback), and
+    /// the session still receives the reader's own feeds, so nothing is enabled.
+    private func allowsSourceOutsideSelection(_ key: ContextKey) -> Bool {
+        if case .source = key.request { return true }
+        return false
     }
 
     /// A collection is a session over its own sources, without changing the reader's selection.
@@ -1909,10 +1925,13 @@ final class AppComposition {
     /// Only a launch the previous interaction made durable takes this path (see the guard in `init`): a launch with
     /// nothing to show keeps the asynchronous path and the preparation surface the doctrine gives it.
     private func warmAssociation() throws -> FeedAssociation {
-        let initial = try sessionState(for: currentContextKey)
+        let allowsOutside = allowsSourceOutsideSelection(currentContextKey)
+        let initial = try sessionState(for: currentContextKey,
+            allowsSourceOutsideSelection: allowsOutside)
         let profile = discoveryProfile(for: applied(initial.key))
         return try makeAssociation(contextKey: initial.key, profile: profile,
-            read: alreadyReadDiscovery(profile: profile), warmLaunch: true)
+            read: alreadyReadDiscovery(profile: profile), warmLaunch: true,
+            allowsSourceOutsideSelection: allowsOutside)
     }
 
     /// What **this process** has already read for the profile, and nothing more. It is the same cache
@@ -2306,7 +2325,8 @@ final class AppComposition {
                 }
                 let next: FeedAssociation
                 do {
-                    next = try await association(contextKey: intended)
+                    next = try await association(contextKey: intended,
+                        allowsSourceOutsideSelection: allowsSourceOutsideSelection(intended))
                 } catch {
                     if superseded() { continue }
                     throw error
@@ -2355,7 +2375,8 @@ final class AppComposition {
                     await retired.close()
                 }
                 association = nil
-                let next = try await association(contextKey: currentContextKey)
+                let next = try await association(contextKey: currentContextKey,
+                    allowsSourceOutsideSelection: allowsSourceOutsideSelection(currentContextKey))
                 association = next
                 startupFailure = nil
                 // P1: a search context is a surface, not a feed window. Start the unified page as soon as the store

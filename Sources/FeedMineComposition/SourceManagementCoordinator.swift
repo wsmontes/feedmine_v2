@@ -24,7 +24,17 @@ public struct SourceManagementCoordinator: Sendable {
     /// not when the store was first presented. Previously rendered UI values are never rewritten here.
     private var catalog: LegacyCatalogReader? {
         if let installation {
-            return installation.activeSnapshot().flatMap { try? LegacyCatalogReader(catalogURL: $0.catalogueURL) }
+            if let snapshot = installation.activeSnapshot() {
+                return try? LegacyCatalogReader(catalogURL: snapshot.catalogueURL)
+            }
+            // Degraded reading: with no verified snapshot installed the composition already serves the **bundled**
+            // catalogue, unverified, and the ledger says so. The reader's source surface must show the same
+            // catalogue instead of declaring it unavailable: an unverified catalogue is still a catalogue (R2),
+            // and verification is a fact the surface states, not a reason to hide the tree.
+            if let bundled = installation.bundledCatalogue, FileManager.default.fileExists(atPath: bundled.path) {
+                return try? LegacyCatalogReader(catalogURL: bundled)
+            }
+            return nil
         }
         return fixedCatalog
     }
