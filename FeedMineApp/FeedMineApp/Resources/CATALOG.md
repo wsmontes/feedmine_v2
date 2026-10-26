@@ -95,26 +95,3 @@ substituir conteúdo após fixar o SHA da build. O preflight e o archive usam a 
 pública fresca e confirmam o SHA-256 dos bytes realmente distribuíveis; sem acesso à
 autoridade, não se declara uma revisão antiga como atual. Nada disso ocorre no primeiro paint.
 O antigo `fetch-catalog.sh` agora recusa explicitamente instalar `catalog-v1`.
-
-## Reparo do par local (2026-10-25)
-
-Estado medido antes deste reparo: o descritor **commitado** em `55c097ab` declarava
-`catalogue sha256 1825fdae…`, mas nenhum byte com esse checksum existia na máquina; o
-`catalog.sqlite` presente (insumo gitignored) era `e6da170e…` — o mesmo que o staging verificado
-de 2026-10-16 e que a seção inicial deste documento declara. O descritor, portanto, descrevia um
-artefato que não existia, e `CatalogInstallation` rejeitava o par em execução.
-
-O par foi refeito pelo caminho descrito acima, sem atalho: `scripts/bootstrap_catalog.py` com o
-compilador V1 fixado (`build_catalog.py e3c9fcf2…`, `catalog_identity.py 2a83b833…`, Python
-3.11.1). O manifesto público foi lido agora (`sha256 2a4f754f…`, `revision 5`, 118 arquivos,
-77.443 fontes), o inventário de 118 OPMLs foi reconferido byte a byte contra ele, o relatório de
-build concordou (`file_count 118`, `source_count 77443`, `node_count 6450`, `placement_count
-77443`), e o artefato foi **reusado** pelo gate de idempotência — entradas idênticas, logo o mesmo
-checksum — em vez de recompilado. O descritor foi então regenerado a partir desses fatos e declara
-`catalogue sha256 e6da170e…`, casando com os bytes instalados.
-
-A substituição do descritor é a única mudança rastreada: o `.sqlite` é gitignored e já era o par
-correto. Nenhum checksum esperado foi reescrito para acomodar bytes ruins — o descritor passou a
-declarar os bytes que o pipeline verificou. Para reproduzir: o comando do README com os hashes
-acima e `--staging-root build/catalog-bootstrap`; o par instalado é `catalog.sqlite` +
-`catalog.manifest.json` do staging, nunca um sem o outro.
