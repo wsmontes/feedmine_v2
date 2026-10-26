@@ -122,6 +122,10 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         done.tap()
         XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20),
             "closing the node level goes away from the whole sheet")
+        // What the **applied** selection is, not what the sheet would still hold as a draft: the lens is built from
+        // the confirmed filter, so it is the discriminating fact of this journey.
+        XCTAssertTrue(app.buttons["lens-chip-preset"].waitForExistence(timeout: 20),
+            "the preset the draft named is applied, stated by the feed's own lens")
 
         // The durable re-read: reopening hydrates from what was applied, not from what was drawn.
         app.buttons["filter-button"].tap()
@@ -158,6 +162,10 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end)
         XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20),
             "the swipe dismissed the sheet instead of leaving it up")
+        // What the **applied** selection is, not what the sheet would still hold as a draft: the lens is built from
+        // the confirmed filter, so it is the discriminating fact of this journey.
+        XCTAssertTrue(app.buttons["lens-chip-preset"].waitForExistence(timeout: 20),
+            "the preset the draft named is applied, stated by the feed's own lens")
 
         // The durable re-read: the state the dismissal wrote is what the sheet hydrates the next time.
         app.buttons["filter-button"].tap()
