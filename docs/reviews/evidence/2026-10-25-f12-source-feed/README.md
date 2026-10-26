@@ -45,3 +45,39 @@ acima (`1 skipped, 0 failures`).
 - Não há alegação de UX12 completo: UX12-A/C/D seguem sem prova nesta rodada.
 - Artefatos externos: `/tmp/nf04-r7-apptest3.log`, `/tmp/nf04-r7-ui4.log`, `/tmp/nf04-r7-sheetcontrol.log`,
   `/tmp/nf04-r7-dd` (derived data, descartável).
+
+## Rodada 8 — a fonte catalogada **não selecionada** (requisito integral)
+
+A rodada 7 abria somente fontes já selecionadas, e a limitação de `sessionState` (`.source` fora da seleção vira
+`.main`) havia sido tratada como regra. Não é: R1 (tocar a origem leva ao destino), R4 (habilitar é opcional) e S1
+(abrir não reabilita endpoint nem substitui a Edition) pedem a fonte catalogada **mesmo desabilitada**.
+
+| Requisito | Implementação | Prova |
+|---|---|---|
+| identidade canônica, sem invenção | `AppComposition.catalogueFeed(forKey:)` resolve a chave pelo dono (`TrustedFeed.resolveAvailable` sobre o catálogo ativo); nada é derivado, nada é casado por título/URL | teste de app resolve a mesma chave por `LegacyCatalogReader` + `LegacyCatalogImport` e compara o `SourceID` |
+| abrir sem habilitar endpoint / alterar seleção | `openSourceContext` mantém `feeds` = seleção do leitor; só o **filtro** passa a ser a fonte. Nenhum target/registro é criado para ela | `sourceKeys` idêntico antes/depois; `composition.feeds` idêntico; `selectContext(.source:)` continua recusando a mesma fonte |
+| só memberships locais da fonte | elegibilidade da sessão inclui **apenas** a fonte do contexto (`AppComposition` policy: `eligible ∪ {contextSource}`); a janela de candidatos já é *source-scoped* | duas memberships semeadas (S e outra); publica a de S e **nenhuma** da outra |
+| vazio/erro honestos | sem supply local a sessão apresenta a ausência (`.unavailable`), sem cair no feed principal | UI (jornada, quando o sheet expõe linhas) verifica a superfície de ausência e a ausência de outras fontes |
+| botão e toggle independentes, também desabilitada | `NodeSourcesView` desenha o controle sempre que o host tem destino (não exige `isSelected`); o toggle segue irmão | teste de app abre com a fonte fora da seleção; a jornada de UI afirma o controle com o switch em `0` |
+| retorno/nó/contexto preservados | `sourcesPath` não é limpo; o host abre antes de fechar (o dismiss não disputa `replacingSession`) | UI (quando executável); app test afirma o contexto após a recusa da rota comum |
+
+**Validação executada (candidata):** `CompositionTests.testF12OpensAnUnselectedCatalogueSourceWithOnlyItsLocalMemberships`
+— **PASS** (0,79 s): contexto `.source(sourceID)`, nunca `.main`; seleção e feeds inalterados; carta publicada só da
+fonte S; a outra fonte semeada não aparece. `testF12RefusesAnUnresolvableKeyAndOpensTheSelectedSource` — **PASS**.
+
+**Controle base × candidata (device e configuração idênticos):** o teste **pré-existente**
+`testCleanInstallPresentsTheBundledCatalogueSourceWithTransportBlocked` foi executado na candidata e na base
+`dde275fa` (worktree isolado `/tmp/feedmine-base-dde275fa`, assets não versionados copiados do checkout principal,
+depois removido). **As duas árvores falham nas mesmas linhas (215/224/226)**: a asserção de locale espera pt-BR num
+device em inglês e a superfície de Fontes não lista as seções. Causa medida no container do app: a instalação
+recusa a revisão 5 obtida da rede por `sha256 mismatch` (`quarantine.jsonl`) e serve o catálogo empacotado em modo
+degradado; o sheet não expõe as linhas em nenhuma das árvores. **Isso não é F12 e não é regressão da candidata.**
+
+**Limites declarados, sem aceite:**
+- A jornada de UI segue **skipada** com a medição (compila; `1 skipped, 0 failures`). Skip **não** é aceite: a
+  prova de UI da abertura não selecionada continua pendente enquanto o sheet não expuser as linhas — o próximo
+  passo é o modo degradado do catálogo (`hasCatalog`/fallback empacotado) ou um harness com a árvore do sheet.
+- **Relançamento:** abrir grava o contexto da fonte; num novo launch, `sessionState` (sem o flag explícito) ainda
+  converte `.source` fora da seleção em `.main`. Isso é uma lacuna conhecida do caminho de launch, **não** coberta
+  por esta rodada; não foi alterada para não mexer no fallback global sem a suíte completa.
+- `capacity-ready.json` preservado; nenhum gate/oráculo/limiar/corpus tocado; B03 segue FAIL mecânico.
