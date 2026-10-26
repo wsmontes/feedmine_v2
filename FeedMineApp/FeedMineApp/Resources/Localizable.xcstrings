@@ -506,12 +506,18 @@
         }
       }
     },
-    "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes.": {
+    "Aguardando nova oportunidade": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "We haven’t found enough content yet. We’ll try again in a moment."
+            "value": "Waiting for the next opportunity"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguardando nova oportunidade"
           }
         }
       }
@@ -1968,6 +1974,22 @@
         }
       }
     },
+    "Nada está sendo buscado agora.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing is being searched right now."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada está sendo buscado agora."
+          }
+        }
+      }
+    },
     "Nada para exportar.": {
       "localizations": {
         "en": {
@@ -2674,16 +2696,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Main"
-          }
-        }
-      }
-    },
-    "Procurando mais novidades…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Looking for more news…"
           }
         }
       }

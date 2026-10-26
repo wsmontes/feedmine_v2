@@ -42,9 +42,14 @@ public struct FeedLoadingView: View {
                 case .unavailable:
                     Text("Ainda não encontramos histórias para você.")
                 case .deferred:
+                    // NF-04: `deferred` is the outcome of an opportunity the engine did **not** run — the
+                    // coordinator denied the attempt's resources, or a newer attempt superseded it. Saying
+                    // "looking for more news" claimed a search in flight and promised a next attempt "in a
+                    // moment" that nothing committed to: the invented work the PO forbade. The surface states
+                    // the situation and leaves the next attempt to the host.
                     VStack(spacing: FeedDesignTokens.Spacing.tight) {
-                        Text("Procurando mais novidades…")
-                        Text("Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes.")
+                        Text("Aguardando nova oportunidade")
+                        Text("Nada está sendo buscado agora.")
                             .font(FeedDesignTokens.Typography.label)
                             .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
                     }
@@ -82,12 +87,14 @@ public struct FeedLoadingView: View {
     }
 
     /// The actions the PO approved, and only where they are the honest next step: a walk that ended
-    /// without eligible stories offers both; a proven connection failure offers trying again alone.
+    /// without eligible stories offers both; a proven connection failure and a deferred attempt offer trying
+    /// again alone. The host's action runs a real attempt (`refreshFromTheReader` → `foreground`), which is why
+    /// a state that is only waiting — not searching — may offer it.
     @ViewBuilder private var recoveryActions: some View {
         switch work {
         case .unavailable:
             actions(tryAgain: true, adjust: true)
-        case .unreachable:
+        case .unreachable, .deferred:
             actions(tryAgain: true, adjust: false)
         default:
             EmptyView()

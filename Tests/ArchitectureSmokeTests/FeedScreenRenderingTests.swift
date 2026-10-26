@@ -229,8 +229,8 @@ final class FeedScreenRenderingTests: XCTestCase {
                 ["Ainda não encontramos histórias para você."]),
             (.unreachable, ["Não foi possível conectar.", "Não conseguimos buscar novas histórias agora.", "Tentar novamente"],
                 ["Não foi possível conectar.", "Não conseguimos buscar novas histórias agora."]),
-            (.deferred, ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."],
-                ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."]),
+            (.deferred, ["Aguardando nova oportunidade", "Nada está sendo buscado agora.", "Tentar novamente"],
+                ["Aguardando nova oportunidade", "Nada está sendo buscado agora."]),
             (.failed(message: "Falha recebida da composição"),
                 ["A Falha recebida da composição", "Falha recebida da composição"],
                 ["Falha recebida da composição"])
@@ -241,6 +241,21 @@ final class FeedScreenRenderingTests: XCTestCase {
             XCTAssertEqual(try renderedText(FeedScreen(store: store).frame(height: 900)), expectedScreen)
             XCTAssertEqual(try renderedText(FeedLoadingView(work: work).frame(height: 900)), expectedView)
         }
+    }
+
+    /// NF-04: `deferred` is the outcome of an opportunity the engine did **not** run (resources denied or a
+    /// generation conflict superseded it). The surface used to say "looking for more news" and promised a retry
+    /// "in a moment" — both invented work no owner produced. It now states the wait and offers the host's retry,
+    /// which really runs an opportunity (`refreshFromTheReader` → `retryNow` → `foreground`).
+    func testDeferredWorkStatesTheWaitWithoutClaimingASearch() throws {
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
+        try store.install(FeedPresentationHandoff.report(.deferred, into: store.state))
+        let text = try renderedText(FeedScreen(store: store).frame(height: 900))
+        XCTAssertEqual(text, ["Aguardando nova oportunidade", "Nada está sendo buscado agora.", "Tentar novamente"])
+        XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("procurando") },
+            "an opportunity that was never run is not a search in flight")
+        XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("instantes") },
+            "no surface may promise a retry instant the pipeline never committed to")
     }
 
     func testU11NewSameEditionWindowRendersExactReceivedSequence() async throws {
