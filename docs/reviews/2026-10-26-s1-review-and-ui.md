@@ -138,6 +138,11 @@ Limite honesto da nova imagem: o alerta de falha de carga cobre parte da nota, e
 legível no PNG; ele é afirmado por asserção nessa mesma execução e carregado literalmente no `.txt` acima. Nenhum
 estado foi forçado para a captura e nenhuma imagem foi produzida fora da tela real do simulador.
 
+**Não são screenshots limpos de produto:** os dois PNGs carregam, no canto superior direito, o overlay de depuração
+`received=0 completed=0 backward=0` que o app desenha na build de teste; ele fica sobre a barra de status e não
+esconde chip, cartas ou o corpo das superfícies. Somado a isso, é o alerta — não o overlay — que cobre a nota no
+frame de antes do retorno.
+
 Duas execuções anteriores falharam e estão registradas: (1) com `FEEDMINE_LOCAL_FEEDS=1` o transporte de fixture
 respondia a fonte visitada e desenhava 12 cartas — premissa errada, corrigida removendo o flag; (2) a prova final
 lia `chip.label` depois de fechar o contexto (elemento inexistente) — valores capturados antes. Nenhuma delas foi
