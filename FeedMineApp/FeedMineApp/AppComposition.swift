@@ -78,6 +78,38 @@ final class AppComposition {
         didSet { catalogLanguages = nil }
     }
     private var catalogueURL: URL? { catalogueSnapshot?.catalogueURL }
+
+    /// The source whose own feed was opened from the catalogue when it is **not** one of the reader's feeds. The
+    /// session's feeds stay the reader's selection (nothing is enabled), so the chip would otherwise have no name
+    /// for the destination the reader is on (F12/R1). It is session memory, not a selection and not persisted.
+    private(set) var contextSource: TrustedFeed?
+    /// F12/D2: the **one** owner of "the name of the source whose surface the reader is on". The chip and the
+    /// cards' attribution both read it, so the destination is named by the same fact in both places — before
+    /// this, the chip could say "BBC News" while the cards it published carried no name at all. Three sources,
+    /// in order of directness: a live feed that names it (the reader's selection or the collection being read);
+    /// the catalogue row the reader opened (session memory, so no second lookup); and, after a relaunch where
+    /// neither is in memory, the attribution this feed itself last published — one indexed row, the same string
+    /// its cards carry. A catalogue walk at launch is forbidden (INV-07), and nil states "no name yet" instead of
+    /// inventing one.
+    @ObservationIgnored private var persistedContextSourceName: (request: FeedContextRequest, name: String?)?
+    var sourceContextDisplayName: String? {
+        guard case .source(let id) = currentContextKey.request else { return nil }
+        // The live feeds are re-read on every access: a collection's or the selection's name may arrive after the
+        // request entered this context, and a cached value would keep stating a stale or absent name.
+        if let named = feeds.first(where: { $0.sourceID == id })?.displayName { return named }
+        if let contextSource, contextSource.sourceID == id { return contextSource.displayName }
+        if let persistedContextSourceName, persistedContextSourceName.request == currentContextKey.request {
+            return persistedContextSourceName.name
+        }
+        let name = persistedSourceDisplayName(of: id)
+        persistedContextSourceName = (currentContextKey.request, name)
+        return name
+    }
+    /// The feed's own last published attribution for one source: one bounded row, no catalogue walk.
+    private func persistedSourceDisplayName(of sourceID: SourceID) -> String? {
+        guard let library else { return nil }
+        return (try? PublicationStore(database: library).publishedSourceDisplayName(sourceID: sourceID)) ?? nil
+    }
     @ObservationIgnored private var preferences: ReaderPreferencesStore?
     /// The reader's **real** exposures: the cards the visual capture actually presented as the reader's own
     /// position, in the order they happened. The ledger observes new identities so invitation eligibility can
@@ -713,6 +745,12 @@ final class AppComposition {
     }
 
     private func syncCatalogueIfDue(installNewRevisions: Bool = true) async {
+        #if DEBUG
+        // A deterministic run states that no catalogue check leaves the process: the bundled catalogue is what the
+        // reader sees, and the published channel's timing (or a rejected payload) must not decide a journey.
+        // Inert unless a test sets it.
+        if ProcessInfo.processInfo.environment["FEEDMINE_DISABLE_CATALOGUE_SYNC"] == "1" { return }
+        #endif
         guard !catalogueSyncInFlight, !Task.isCancelled else { return }
         catalogueSyncInFlight = true
         defer { catalogueSyncInFlight = false }
@@ -980,6 +1018,7 @@ final class AppComposition {
         if case .source(let sourceID) = request, !feeds.contains(where: { $0.sourceID == sourceID }) {
             throw ReaderPreferencesError.invalidSelection
         }
+        contextSource = nil
         guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
         if request == currentContext, association != nil,
             currentContextKey.filter.isUnrestricted, currentContextKey.preset == .everything { return }
@@ -1091,6 +1130,12 @@ final class AppComposition {
         }
         return (currentFilter, currentPreset, false)
     }
+
+    /// Whether the feed surface has a source to draw. A catalogue source opened outside the selection is its own
+    /// destination even when the reader enabled nothing: its surface must show the Edition the reader already had,
+    /// never the empty-selection state that asks them to enable a source (F12). The reader's **selection** question
+    /// stays `hasSelectedSources` — this is the surface's question, read in the same two places.
+    var surfaceHasSources: Bool { hasSelectedSources || currentContextKey.request.isSource }
 
     /// What an explicit transition applies: a *pending* expiry is resolved here and nowhere else, so a clock
     /// never changes the reader's active presentation (`filterExpiry` is the record, `resolvedFilter` the
@@ -1386,13 +1431,18 @@ final class AppComposition {
     /// catalogue source must not be rewritten to `main` by any rebuild or launch (F12/R1 — no silent fallback), and
     /// the session still receives the reader's own feeds, so nothing is enabled.
     private func allowsSourceOutsideSelection(_ key: ContextKey) -> Bool {
-        if case .source = key.request { return true }
-        return false
+        guard case .source(let id) = key.request else { return false }
+        if selectedFeeds.contains(where: { $0.sourceID == id }) { return true }
+        // Outside the selection it is a real destination only when this reader already has an Edition there: a
+        // saved context that resolves to nothing is repaired to `main`, never shown as an empty source.
+        guard let library else { return false }
+        return (try? PublicationStore(database: library).hasEdition(contextSourceID: id)) ?? false
     }
 
     /// A collection is a session over its own sources, without changing the reader's selection.
     func openCollectionFeed(id: String) async throws {
         guard let preferences else { return }
+        contextSource = nil
         guard !(try collectionFeeds(id: id)).isEmpty else { throw ReaderPreferencesError.invalidSelection }
         guard !replacingSession else { return }
         replacingSession = true
@@ -1452,6 +1502,8 @@ final class AppComposition {
             await retired.close()
         }
         association = nil
+        contextSource = selectedFeeds.contains(where: { $0.sourceID == feed.sourceID }) ? nil : feed
+        persistedContextSourceName = nil
         currentContextKey = ContextKey(request: .source(feed.sourceID), preset: currentContextKey.preset,
             filter: resolvedFilter(at: Date()))
         _ = try preferences?.setContext(currentContextKey)
@@ -1902,7 +1954,8 @@ final class AppComposition {
             discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
-            discoveryProfile: profile, warmLaunch: warmLaunch, launchSettings: launchSettings,
+            discoveryProfile: profile, contextSourceDisplayName: sourceContextDisplayName,
+            warmLaunch: warmLaunch, launchSettings: launchSettings,
             monotonicNow: monotonicNow, bookmarkRead: bookmarkRead)
         #if DEBUG
         sessionConstructions += 1
@@ -2705,6 +2758,21 @@ final class FeedAssociation {
         var seen = Set(selection.map(\.sourceID))
         return selection + discovery.filter { seen.insert($0.sourceID).inserted }
     }
+    /// The names preparation attributes to cards: `supply` plus, **for a source context only**, the name of that
+    /// source. A destination the reader opened is read even while it is outside their selection, and its local
+    /// memberships may publish there (F12); without this, the same card that carried "BBC News" while the source
+    /// was selected published nameless after the reader disabled it. The addition is to the attribution map alone
+    /// — `supply`, registrations, eligibility and endpoints are untouched, so opening a destination still enables
+    /// nothing and registers no target. A source already in `supply` keeps that name.
+    static func presentationNames(supply: [TrustedFeed], contextKey: ContextKey,
+        contextSourceDisplayName: String?) -> [SourceID: String] {
+        var names = Dictionary(uniqueKeysWithValues: supply.map { ($0.sourceID, $0.displayName) })
+        if case .source(let sourceID) = contextKey.request, names[sourceID] == nil,
+            let contextSourceDisplayName, !contextSourceDisplayName.isEmpty {
+            names[sourceID] = contextSourceDisplayName
+        }
+        return names
+    }
     /// T5: the reader shell's intents. The association reports them; the app host presents them.
     @ObservationIgnored var onNavigate: ((ReaderDestination) -> Void)?
     /// T9: the share sheet a card's share action opens. The app presents it; the association never does.
@@ -2996,7 +3064,8 @@ final class FeedAssociation {
         contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2,
         scoring: ResolvedSelectionPolicy.ScoringBehavior = .equal, scoringVersion: UInt64 = 1,
         catalogueURL: URL?, editorialExposure: EditorialExposureLedger,
-        discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false,
+        discoveryProfile: ReaderDiscoveryProfile = .init(), contextSourceDisplayName: String? = nil,
+        warmLaunch: Bool = false,
         launchSettings: CollectionLaunchSettings = .init(),
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
         bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) throws {
@@ -3303,7 +3372,8 @@ final class FeedAssociation {
         // reads, so the closure below must consult them at the moment it prepares — not the map that existed here.
         // It is stored as well, because discovery also arrives **after** this association exists: a warm launch
         // adopts its pool behind the reader's own window (`adopt(_:)`).
-        let names = LiveValue(Dictionary(uniqueKeysWithValues: supply.map { ($0.sourceID, $0.displayName) }))
+        let names = LiveValue(Self.presentationNames(supply: supply, contextKey: contextKey,
+            contextSourceDisplayName: contextSourceDisplayName))
         self.names = names
         // T9/D2: the playable payload a card's tap should use, read from the candidate the feed declared. The
         // candidate (not just its URL) is what states whether the enclosure is audio or video.

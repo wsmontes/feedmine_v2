@@ -161,6 +161,8 @@ public struct ContextKey: Hashable, Codable, Sendable {
 
 /// Meaning of the requested surface; never how content is acquired.
 public enum FeedContextRequest: Hashable, Codable, Sendable {
+    /// Whether this request names one source's own surface.
+    public var isSource: Bool { if case .source = self { return true }; return false }
     case main
     case source(SourceID)
     case search(SearchContext)

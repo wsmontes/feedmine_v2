@@ -346,7 +346,7 @@ struct FeedMineApp: App {
                                 // The filter sheet keeps only its own navigation: opening a source there would
                                 // close this sheet and discard the reader's draft, which is outside F12.
                                 NodeSourcesView(store: store, node: node,
-                                    onOpenNode: { path.append(.node($0)) })
+                                    onOpenNode: { path.append(.node($0)) }, onClose: onDone)
                             }
                         } else {
                             ProgressView("Abrindo o catálogo de fontes")
@@ -385,7 +385,7 @@ struct FeedMineApp: App {
                             appearance: appearance,
                             statusChip: AnyView(contextChip(association)),
                             lens: AnyView(filterLens),
-                            hasSources: composition.hasSelectedSources,
+                            hasSources: composition.surfaceHasSources,
                             onChooseSources: { present(.sources) },
                             onTryAgain: { Task { await composition.refreshFromTheReader() } },
                             // R3: the flow that owns the reader's interests is the existing one.
@@ -521,7 +521,8 @@ struct FeedMineApp: App {
                                         case .node(let node):
                                             NodeSourcesView(store: store, node: node,
                                                 onOpenNode: { sourcesPath.append(.node($0)) },
-                                                onOpenSource: { openSourceRow($0) })
+                                                onOpenSource: { openSourceRow($0) },
+                                                onClose: { popSurface() })
                                         }
                                     }
                             } else {
@@ -1556,7 +1557,7 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// screen). The decision itself is `FeedScreenStore.firstScreenSurface`, which the screen draws and this host's
     /// launch record reads.
     @MainActor private func prepareFirstScreen(of association: FeedAssociation) {
-        association.store.noteFirstScreenAppeared(hasSources: composition.hasSelectedSources,
+        association.store.noteFirstScreenAppeared(hasSources: composition.surfaceHasSources,
             maximumWait: composition.firstScreenWait)
     }
 
@@ -1950,9 +1951,10 @@ struct ReaderHost: UIViewControllerRepresentable {
     private var activeContextLabel: String? {
         switch composition.currentContext {
         case .main: return nil
-        case .source(let id):
-            return composition.feeds.first { $0.sourceID == id }?.displayName
-                ?? String(localized: "Uma fonte")
+        case .source:
+            // One owner names the destination: the live feed, the row this session opened, or — after a relaunch —
+            // the attribution the feed itself published. The chip and the cards state the same fact (F12/R1, D2).
+            return composition.sourceContextDisplayName ?? String(localized: "Uma fonte")
         case .search(let context): return String(localized: "Busca: \(context.query)")
         }
     }
@@ -1963,7 +1965,7 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// second opinion about them: the branch read here and the branch `FeedScreen` draws are one decision.
     private var launchBranch: FeedLaunchWitness.Branch {
         guard let association = composition.association else { return .launchProgress }
-        guard composition.hasSelectedSources else { return .notAWaitSurface }
+        guard composition.surfaceHasSources else { return .notAWaitSurface }
         // D4: the branch is the surface the screen is drawing, read from the **one** decision both sides share
         // (`FeedScreenStore.firstScreenSurface`). Cards that are still behind the preparation cover are not on
         // screen, so they are not stated as cards; a search draws its own results surface and is not a wait.

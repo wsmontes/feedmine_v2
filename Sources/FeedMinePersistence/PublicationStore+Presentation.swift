@@ -109,6 +109,39 @@ extension PublicationStore {
         return TailRecord(ordinal: ordinal)
     }
 
+    /// Whether this reader has any Edition for one source's own context. A source outside the reader's selection is
+    /// a real destination only when they already read there: a saved context with nothing to restore is repaired to
+    /// `main` instead of presenting an empty surface as if it were the reader's place (PD10-P0D D1).
+    public func hasEdition(contextSourceID: SourceID) throws -> Bool {
+        try database.read { db in
+            try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM feed_editions WHERE context_kind = 'source' AND context_source_id = ?)
+                """, arguments: [contextSourceID.rawValue.uuidString.lowercased()]) ?? false
+        }
+    }
+
+    /// The attribution this feed last published for one source. A source context names its surface after a
+    /// relaunch, when the catalogue's `TrustedFeed` for it is not in memory (F12/D2); the string the feed itself
+    /// published is the existing durable fact for that, and it is the same one its cards carry. One indexed row;
+    /// `published_cards` first, then the retired history. Nil means this source has never published under a name —
+    /// absence, never a guess.
+    public func publishedSourceDisplayName(sourceID: SourceID) throws -> String? {
+        try database.read { db in
+            let key = PersistenceValueCoding.uuid(sourceID.rawValue)
+            for table in ["published_cards", "retired_published_cards"] {
+                if let name = try String.fetchOne(db, sql: """
+                    SELECT source_display_name FROM \(table)
+                    WHERE source_id = ? AND source_display_name IS NOT NULL
+                        AND TRIM(source_display_name) <> ''
+                    ORDER BY rowid DESC LIMIT 1
+                    """, arguments: [key]) {
+                    return name
+                }
+            }
+            return nil
+        }
+    }
+
     public func edition(id: FeedEditionID) throws -> EditionRecord? {
         try database.read { db in
             try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?", arguments: [PersistenceValueCoding.uuid(id.rawValue)])

@@ -57,15 +57,19 @@ public struct NodeSourcesView: View {
     /// Opening one source's own feed stays with the host too. Nil when the host has no such destination — the
     /// row then draws no control, instead of offering a tap that cannot go anywhere.
     private let onOpenSource: ((NodeSourceRow) -> Void)?
+    /// Closing the surface from here keeps the reader's path: the sheet's own Done lives on its root, and walking
+    /// back to reach it made a reopened surface start over instead of returning to the same node.
+    private let onClose: (() -> Void)?
 
     public init(store: SourceManagementStore, node: CatalogNodeSummary,
         appearance: ReaderAppearance = .standard, onOpenNode: @escaping (CatalogNodeSummary) -> Void,
-        onOpenSource: ((NodeSourceRow) -> Void)? = nil) {
+        onOpenSource: ((NodeSourceRow) -> Void)? = nil, onClose: (() -> Void)? = nil) {
         _store = State(initialValue: store)
         self.node = node
         self.appearance = appearance
         self.onOpenNode = onOpenNode
         self.onOpenSource = onOpenSource
+        self.onClose = onClose
     }
 
     /// The sections the node's own sources are drawn in: audio, then video, then text, then anything the
@@ -138,6 +142,14 @@ public struct NodeSourcesView: View {
             .scrollContentBackground(.hidden)
             .background(appearance.pageBackground)
             .navigationTitle(Text(verbatim: node.name))
+            .toolbar {
+                if let onClose {
+                    ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
+                        Button(String(localized: "Concluir"), action: onClose)
+                            .accessibilityIdentifier("node-sources-done")
+                    }
+                }
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
