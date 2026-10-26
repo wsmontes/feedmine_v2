@@ -3156,13 +3156,16 @@ final class FeedAssociation {
             usefulCardsPerSecond: usefulYield.current)
     }
 
-    /// The one binding shape a feed contributes: catalogue bindings carry the catalog namespace, an imported
-    /// development feed carries its own. One derivation for the durable and the visit registration alike.
-    private static func binding(for feed: TrustedFeed) -> SourceBinding? {
+    /// The one binding shape a feed contributes: the durable and the visit registration derive it from the same
+    /// function, so the two lifetimes can never disagree about namespace or SourceID. A feed that does not state a
+    /// namespace is a catalogue feed — that is the only producer that leaves it nil — and the catalogue mapping
+    /// stamps its namespace unconditionally (`ReaderDiscoveryTraversal.materialization`). Deriving it from the
+    /// principal's text instead would mint a second namespace for a catalogue key that happens not to look like a
+    /// URL, and the promotion revalidation compares the namespace exactly.
+    static func binding(for feed: TrustedFeed) -> SourceBinding? {
         SourceBinding(id: feed.bindingID, sourceID: feed.sourceID,
             externalPrincipal: .init(connectorKind: .syndication,
-                namespace: feed.principalNamespace ?? (feed.principal.hasPrefix("http")
-                    ? LegacyCatalogImport.principalNamespace : "feedmine-development-rss"),
+                namespace: feed.principalNamespace ?? LegacyCatalogImport.principalNamespace,
                 value: feed.principal, role: .principal), aliases: [], generation: 1, state: .enabled)
     }
 

@@ -7,11 +7,17 @@ import XCTest
 
 final class CardActionJourneyUITests: XCTestCase {
     /// G6: "Ver a fonte" must switch to the internal source context, never open the article's site; returning
-    /// restores the main context.
+    /// restores the main context. UX12-A also asks that returning reconstitutes the navigation and the initial
+    /// card, and the task adds the Fontes surface: opening it from either context must not lose the reader's
+    /// place, and closing it must return to the same context.
     @MainActor
     func testViewSourceOpensTheInternalSourceAndReturns() throws {
-        let app = SurfaceTest.launchFixture()
+        // The menu's entries are product copy in the source language: pin it so the gesture targets the sentence
+        // the catalogue ships, not a translation chosen by the simulator's own language.
+        let app = SurfaceTest.launchFixture(
+            arguments: ["-AppleLanguages", "(pt_BR)", "-AppleLocale", "pt_BR"])
         let card = try XCTUnwrap(SurfaceTest.firstCard(app))
+        let cardIdentifier = card.identifier
         let context = SurfaceTest.element(app, "reader-contexts")
         XCTAssertTrue(context.waitForExistence(timeout: 10))
         let before = context.label
@@ -28,9 +34,23 @@ final class CardActionJourneyUITests: XCTestCase {
             predicate: NSPredicate(format: "label != %@", before), object: context)
         XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 30), .completed,
             "the source context is stated by the header")
+        let sourceLabel = context.label
         XCTAssertFalse(app.staticTexts["reading.headline"].exists,
             "viewing the source is not opening the article's site")
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+
+        // The Fontes surface is still the reader's way out and back: opening and closing it while on a source
+        // must not repair the context to `.main` (the visit is preserved by the host, measured in composition).
+        SurfaceTest.menuEntry(app, "Fontes")
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 30),
+            "the Fontes surface opens from a source context")
+        let done = app.buttons["sources-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 30), "and offers its own Concluir")
+        done.tap()
+        let stillSource = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", sourceLabel), object: context)
+        XCTAssertEqual(XCTWaiter.wait(for: [stillSource], timeout: 30), .completed,
+            "closing Fontes returns to the source context, not to the main feed")
 
         context.tap()
         SurfaceTest.element(app, "reader-context-clear").tap()
@@ -39,6 +59,27 @@ final class CardActionJourneyUITests: XCTestCase {
             predicate: NSPredicate(format: "label == %@", before), object: context)
         XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 30), .completed,
             "clearing the source context restores the reading context it came from")
+        // UX12-A: the card the journey started from is the reading point again — the return reconstructs the
+        // card, not just the header. A repaired-but-empty main feed would pass the chip assertion alone.
+        let returned = SurfaceTest.firstCard(app)
+        XCTAssertEqual(returned?.identifier, cardIdentifier,
+            "the same card is the reading point after returning (observed: \(returned?.identifier ?? "nil"))")
+
+        // And the main context keeps Fontes as a working destination after the round trip.
+        SurfaceTest.menuEntry(app, "Fontes")
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["sources-done"].waitForExistence(timeout: 30))
+        app.buttons["sources-done"].tap()
+        XCTAssertTrue(SurfaceTest.element(app, "reader-contexts").waitForExistence(timeout: 30))
+        XCTAssertEqual(SurfaceTest.element(app, "reader-contexts").label, before,
+            "and the main context is what remains after the sources surface closes")
+
+        let proof = XCTAttachment(string:
+            "card=\(cardIdentifier) main='\(before)' source='\(sourceLabel)' "
+                + "fontes-from-source=opened-closed ok fontes-from-main=opened-closed ok")
+        proof.name = "ux12a-card-source-return"
+        proof.lifetime = .keepAlways
+        add(proof)
     }
 
     /// G6: the card's Compartilhar asks the host to present the platform sheet. The test presents it, records the

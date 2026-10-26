@@ -468,6 +468,7 @@ struct FeedMineApp: App {
                             statusChip: AnyView(contextChip(association)),
                             lens: AnyView(filterLens),
                             hasSources: composition.surfaceHasSources,
+                            sourceContextName: composition.sourceContextDisplayName,
                             onChooseSources: { present(.sources) },
                             onTryAgain: { Task { await composition.refreshFromTheReader() } },
                             // R3: the flow that owns the reader's interests is the existing one.

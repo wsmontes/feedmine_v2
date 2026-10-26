@@ -22,6 +22,9 @@ public struct FeedScreen: View {
     /// it is V1's own empty surface, so it takes precedence over both.
     private let hasSources: Bool
     private let onChooseSources: @MainActor () -> Void
+    /// The name of the source whose surface this is, when the reader is on one (F12/S1). Nil on `.main`; the
+    /// absence surface uses it to state the limit of what a source surface can ever show.
+    private let sourceContextName: String?
     /// R3: the host's recovery actions for the absence surface. "Tentar novamente" runs a real
     /// attempt and "Ajustar interesses" opens the flow that owns the reader's interests; this view
     /// executes neither.
@@ -34,6 +37,7 @@ public struct FeedScreen: View {
 
     public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard,
         statusChip: AnyView? = nil, lens: AnyView? = nil, hasSources: Bool = true,
+        sourceContextName: String? = nil,
         onChooseSources: @escaping @MainActor () -> Void = {},
         onTryAgain: @escaping @MainActor () -> Void = {},
         onAdjustInterests: @escaping @MainActor () -> Void = {},
@@ -43,6 +47,7 @@ public struct FeedScreen: View {
         self.customStatusChip = statusChip
         self.lens = lens
         self.hasSources = hasSources
+        self.sourceContextName = sourceContextName
         self.onChooseSources = onChooseSources
         self.onTryAgain = onTryAgain
         self.onAdjustInterests = onAdjustInterests
@@ -93,7 +98,8 @@ public struct FeedScreen: View {
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                    onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
+                    onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
+                    sourceContextName: sourceContextName)
             }
         }
     }
@@ -113,7 +119,8 @@ public struct FeedScreen: View {
     /// work state's own), filled and opaque so the reader never sees a half-composed screen beneath it.
     private var preparationSurface: some View {
         FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-            onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
+            onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
+            sourceContextName: sourceContextName)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.background)
     }
@@ -259,7 +266,8 @@ public struct FeedScreen: View {
             }
         } else {
             FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
+                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
+                sourceContextName: sourceContextName)
         }
     }
 

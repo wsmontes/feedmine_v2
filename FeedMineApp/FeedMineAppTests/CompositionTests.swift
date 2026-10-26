@@ -6214,3 +6214,75 @@ final class DeferredWorkSurfaceTests: XCTestCase {
             "a deferred attempt is never a search in flight; text=\(text)")
     }
 }
+
+/// H1 and the UX12-D copy, stated as values: the app's one binding derivation must give the durable and the visit
+/// registration the same namespace and the same SourceID for one feed, and the source-surface note must appear
+/// exactly where an absence belongs to a source.
+@MainActor
+final class S1SourceSurfaceTests: XCTestCase {
+    private func feed(principal: String, namespace: String?) -> TrustedFeed {
+        TrustedFeed(targetID: AcquisitionTargetID(), sourceID: SourceID(), bindingID: SourceBindingID(),
+            principal: principal, endpoint: URL(string: "https://example.test/rss")!,
+            displayName: "Fonte", principalNamespace: namespace)
+    }
+
+    /// A feed with no stated namespace is a catalogue feed (the only producer that leaves it nil), so the binding
+    /// carries the catalogue namespace even when the principal's text is not a URL. Deriving it from the text is
+    /// what H1 measured: a second namespace the promotion revalidation would not recognise.
+    func testACatalogueFeedWithNoStatedNamespaceUsesTheCatalogueNamespace() throws {
+        let feed = feed(principal: "chave-sem-esquema", namespace: nil)
+        let binding = try XCTUnwrap(FeedAssociation.binding(for: feed))
+        XCTAssertEqual(binding.externalPrincipal.namespace, LegacyCatalogImport.principalNamespace)
+        XCTAssertEqual(binding.sourceID, feed.sourceID, "the binding states the feed's own SourceID")
+        XCTAssertEqual(binding.id, feed.bindingID)
+        XCTAssertEqual(binding.externalPrincipal.value, feed.principal)
+    }
+
+    /// A reader's own source states its namespace explicitly, and the one derivation preserves it verbatim.
+    func testAReaderFeedKeepsItsReaderNamespace() throws {
+        let feed = feed(principal: "https://reader.example/rss", namespace: ReaderSourceIdentity.principalNamespace)
+        let binding = try XCTUnwrap(FeedAssociation.binding(for: feed))
+        XCTAssertEqual(binding.externalPrincipal.namespace, ReaderSourceIdentity.principalNamespace)
+        XCTAssertEqual(binding.sourceID, feed.sourceID)
+    }
+
+    func testTheSourceScopeNoteStatesTheFeedBoundaryOnlyForASourceAbsence() throws {
+        // The runtime note is localized; its language follows the host. The **copy criterion** is the shipped value
+        // in each language, so both are read from the app's own strings tables instead of depending on the runner's
+        // preferred language.
+        XCTAssertTrue(FeedLoadingView.sourceScopeNote(sourceContextName: "BBC News").contains("BBC News"),
+            "the note names the source it is about")
+
+        let key = "Você está vendo os itens que %@ publica no feed. O arquivo completo do site não faz parte dele."
+        XCTAssertTrue(key.contains("%@"), "the note names the source at the one place the surface knows it")
+        XCTAssertTrue(key.contains("publica no feed"), "it states the feed as the origin")
+        XCTAssertTrue(key.contains("arquivo completo do site"), "and states the archive it is not")
+        // The translation is a shipped artifact, read from the app's own table (the source language is the key).
+        let en = try XCTUnwrap(localized(key, language: "en"), "an English value ships")
+        XCTAssertTrue(en.contains("%@"), "the English value keeps the source slot: \(en)")
+        XCTAssertTrue(en.localizedCaseInsensitiveContains("publishes in its feed"),
+            "the English value states the feed as the origin: \(en)")
+        XCTAssertTrue(en.localizedCaseInsensitiveContains("complete archive"),
+            "and states the archive it is not: \(en)")
+
+        for work in [FeedPresentationState.Work.unavailable, .unreachable, .deferred,
+            .failed(message: "falha"), .endOfContent] {
+            XCTAssertTrue(FeedLoadingView.showsSourceScopeNote(work: work, sourceContextName: "BBC News"),
+                "an absence of a source draws the note: \(work)")
+            XCTAssertFalse(FeedLoadingView.showsSourceScopeNote(work: work, sourceContextName: nil),
+                "the main feed has no source boundary to state: \(work)")
+        }
+        for work in [FeedPresentationState.Work.idle, .pending] {
+            XCTAssertFalse(FeedLoadingView.showsSourceScopeNote(work: work, sourceContextName: "BBC News"),
+                "a surface that is still working states no bounded set: \(work)")
+        }
+    }
+
+    /// One key from one shipped language, read from the app bundle's own table.
+    private func localized(_ key: String, language: String) -> String? {
+        guard let path = Bundle.main.path(forResource: language, ofType: "lproj"),
+            let bundle = Bundle(path: path) else { return nil }
+        let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+        return value == key ? nil : value
+    }
+}

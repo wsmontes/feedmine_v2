@@ -10,14 +10,19 @@ public struct FeedLoadingView: View {
     private let onTryAgain: (() -> Void)?
     private let onAdjustInterests: (() -> Void)?
     private let onChooseSources: (() -> Void)?
+    /// F12/S1: the source whose surface this is, when the reader is on one. The absence surface states what such a
+    /// surface can ever show — the items the source publishes in its own feed, never the site's whole archive.
+    private let sourceContextName: String?
     @Environment(\.colorScheme) private var colorScheme
 
     public init(work: FeedPresentationState.Work, onTryAgain: (() -> Void)? = nil,
-        onAdjustInterests: (() -> Void)? = nil, onChooseSources: (() -> Void)? = nil) {
+        onAdjustInterests: (() -> Void)? = nil, onChooseSources: (() -> Void)? = nil,
+        sourceContextName: String? = nil) {
         self.work = work
         self.onTryAgain = onTryAgain
         self.onAdjustInterests = onAdjustInterests
         self.onChooseSources = onChooseSources
+        self.sourceContextName = sourceContextName
     }
 
     /// The host's closure as an action the end block may take on the main actor.
@@ -75,6 +80,7 @@ public struct FeedLoadingView: View {
             }
             .font(FeedDesignTokens.Typography.body)
             .multilineTextAlignment(.center)
+            sourceScopeNote
             recoveryActions
         }
         .padding(FeedDesignTokens.Spacing.page)
@@ -84,6 +90,36 @@ public struct FeedLoadingView: View {
         // keeps its children (V1 named its own loading surface the same way, `initial-feed-loading`).
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("feed-loading-surface")
+    }
+
+    /// F12/S1: the one sentence that states a source surface's limit — the items the source publishes in its own
+    /// feed, never the site's whole archive. Kept as a value so the criterion can be stated without rendering.
+    public static func sourceScopeNote(sourceContextName: String) -> String {
+        String(localized: "Você está vendo os itens que \(sourceContextName) publica no feed. O arquivo completo do site não faz parte dele.")
+    }
+
+    /// Where the note belongs: an absence **of a source** — not the main feed (no name) and not a surface that is
+    /// still preparing (no bounded set is being shown yet).
+    public static func showsSourceScopeNote(work: FeedPresentationState.Work,
+        sourceContextName: String?) -> Bool {
+        guard sourceContextName != nil else { return false }
+        switch work {
+        case .unavailable, .unreachable, .deferred, .failed, .endOfContent: return true
+        case .idle, .pending, .preparing: return false
+        }
+    }
+
+    /// F12/S1: what a source surface can and cannot show, stated where the absence is. Only an absence state draws
+    /// it — while preparing, the reader is not yet looking at a bounded set. Nil name (the main feed) draws nothing.
+    @ViewBuilder private var sourceScopeNote: some View {
+        if let sourceContextName, Self.showsSourceScopeNote(work: work, sourceContextName: sourceContextName) {
+            Text(Self.sourceScopeNote(sourceContextName: sourceContextName))
+                .font(FeedDesignTokens.Typography.label)
+                .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, FeedDesignTokens.Spacing.page)
+                .accessibilityIdentifier("feed-source-scope-note")
+        }
     }
 
     /// The actions the PO approved, and only where they are the honest next step: a walk that ended

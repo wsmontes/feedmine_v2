@@ -18,8 +18,10 @@ enum SurfaceTest {
     /// no onboarding. The caller may override or add variables; the namespace is always fresh.
     @MainActor
     static func launchFixture(_ extra: [String: String] = [:],
+        arguments: [String] = [],
         namespace: String = UUID().uuidString) -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchArguments += arguments
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"

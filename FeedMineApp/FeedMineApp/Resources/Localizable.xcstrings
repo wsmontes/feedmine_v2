@@ -2050,6 +2050,16 @@
         }
       }
     },
+    "Você está vendo os itens que %@ publica no feed. O arquivo completo do site não faz parte dele.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You are seeing the items %@ publishes in its feed. The site's complete archive is not part of it."
+          }
+        }
+      }
+    },
     "Nenhuma palavra sua ainda.": {
       "localizations": {
         "en": {
