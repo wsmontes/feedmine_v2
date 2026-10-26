@@ -91,6 +91,13 @@ final class SourceAbsenceJourneyUITests: XCTestCase {
         XCTAssertFalse(mainEmpty.exists,
             "the absence is the source's, not the empty-selection surface")
 
+        // Captured here, while the source context is still on screen: a screenshot taken after the way back
+        // shows the empty-selection surface instead, which is what the reader came *from*, not the absence.
+        let absenceShot = XCTAttachment(screenshot: app.screenshot())
+        absenceShot.name = "ux12d-source-absence-before-return"
+        absenceShot.lifetime = .keepAlways
+        add(absenceShot)
+
         // The reader's previous navigation is reachable: closing the source returns to the empty selection the
         // journey started from, and the source stays disabled.
         chip.tap()
@@ -117,7 +124,7 @@ final class SourceAbsenceJourneyUITests: XCTestCase {
         proof.lifetime = .keepAlways
         add(proof)
         let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "ux12d-absence-surface"
+        shot.name = "ux12d-main-empty-after-return"
         shot.lifetime = .keepAlways
         add(shot)
     }

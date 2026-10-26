@@ -107,8 +107,36 @@ seleção vazia desde o launch → Fontes (ação da superfície vazia) → nó 
 chip "BBC News" (origem declarada), nota de limite **"Você está vendo os itens que BBC News publica no feed. O
 arquivo completo do site não faz parte dele."**, 0 cartas, sem `feed-empty-title` (a ausência é da fonte, não da
 seleção); limpar restaura a superfície vazia anterior; reabrir Fontes volta ao mesmo nó e a fonte continua
-desabilitada. **PASS 126,285 s** (`/tmp/s1-ui-4.xcresult`), anexos `ux12d-disabled-source-absence` e screenshot
-`ux12d-absence-surface`.
+desabilitada. **PASS 126,285 s** (`/tmp/s1-ui-4.xcresult`) com o texto de prova `ux12d-disabled-source-absence`;
+o screenshot daquela execução estava mal atribuído — ver a correção logo abaixo.
+
+**Correção de atribuição da imagem (2026-10-26, sobre `4973f1c9`).** O screenshot `ux12d-absence-surface` de
+`/tmp/s1-ui-4.xcresult` foi tirado no **fim** do teste — depois de `chip.tap` → `reader-context-clear` → reabrir
+Fontes → `node-sources-done`. O que ele mostra é a **superfície vazia do principal** ("Nenhuma fonte habilitada",
+"Escolher fontes", chip "Sem histórias"), não a ausência da fonte. A imagem não provava o que o nome afirmava. O
+PASS e as asserções não são atingidos: `chip.label == "BBC News"`, a nota do limite, `cards() == 0` e a ausência de
+`feed-empty-title` foram afirmados na tela da fonte, **antes** do fechamento; o defeito era só de atribuição da
+prova visual.
+
+Correção aplicada no teste (produção, asserções e flags intocadas): captura `ux12d-source-absence-before-return`
+adicionada imediatamente após essas asserções e **antes** de `chip.tap`; a captura final renomeada para
+`ux12d-main-empty-after-return`, que é o que ela de fato mostra. Execução causal única do mesmo método
+(`-only-testing:FeedMineUITests/SourceAbsenceJourneyUITests/testADisabledCatalogueSourceWithNoPayloadStatesTheFeedBoundary`,
+mesmo DerivedData `FeedMineApp-elrtsjoinadyscatutssffaaecyb`): **PASS 130,159 s** em
+`/tmp/s1-ui-evidence-corrected.xcresult` (log `/tmp/s1-ui-evidence-corrected.log`). Anexos exportados em
+`/tmp/feedmine-source-absence-corrected-attachments/`:
+
+- `C07E98B4-19A4-4223-BB95-8805430F155D.png` (`ux12d-source-absence-before-return`) — header "Feedmine · BBC News",
+  0 cartas, alerta "Não foi possível atualizar / Não foi possível abrir o feed desta fonte." e "Tentar novamente".
+  É a ausência **da fonte**, com o chip nomeando-a; a superfície vazia do principal não aparece.
+- `A4477DB7-7319-4F3A-8454-E8EC1E947C07.png` (`ux12d-main-empty-after-return`) — "Nenhuma fonte habilitada" /
+  "Escolher fontes", o que a captura final de `/tmp/s1-ui-4.xcresult` já mostrava.
+- `1C179AD7-594E-472A-99BB-88C217319CF6.txt` (`ux12d-disabled-source-absence`) — chip, nota literal, `cards=0`,
+  `main-empty-restored=true`, `source-still-disabled=true`, `fontes-path=Wildlife&Nature`.
+
+Limite honesto da nova imagem: o alerta de falha de carga cobre parte da nota, então o texto exato da nota não é
+legível no PNG; ele é afirmado por asserção nessa mesma execução e carregado literalmente no `.txt` acima. Nenhum
+estado foi forçado para a captura e nenhuma imagem foi produzida fora da tela real do simulador.
 
 Duas execuções anteriores falharam e estão registradas: (1) com `FEEDMINE_LOCAL_FEEDS=1` o transporte de fixture
 respondia a fonte visitada e desenhava 12 cartas — premissa errada, corrigida removendo o flag; (2) a prova final
@@ -131,9 +159,11 @@ defeito de produto.
 | app: `FeedMineAppTests/S1SourceSurfaceTests` | **3/3 PASS** |
 | app: `FeedMineUITests/CardActionJourneyUITests` (UX12-A) | **PASS 48,0 s** |
 | app: `FeedMineUITests/SourceAbsenceJourneyUITests` (UX12-D) | **PASS 126,3 s** |
+| app: mesmo método, correção de evidência (`ux12d-source-absence-before-return`) | **PASS 130,2 s** |
 
 Artefatos: `/tmp/s1-package-full.log`, `/tmp/s1-red.log`, `/tmp/s1-green.log`, `/tmp/s1-app-unit.xcresult`,
-`/tmp/s1-ui-2.xcresult`, `/tmp/s1-ui-4.xcresult`. Build de app reutilizou o DerivedData existente
+`/tmp/s1-ui-2.xcresult`, `/tmp/s1-ui-4.xcresult`, `/tmp/s1-ui-evidence-corrected.xcresult` (+ `.log`),
+`/tmp/feedmine-source-absence-corrected-attachments/`. Build de app reutilizou o DerivedData existente
 (`FeedMineApp-elrtsjoinadyscatutssffaaecyb`); nenhum simulador de bench tocado.
 
 ## 10. Limites
