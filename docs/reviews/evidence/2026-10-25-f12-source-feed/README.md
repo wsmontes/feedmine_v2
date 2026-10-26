@@ -75,11 +75,15 @@ degradado; o sheet não expõe as linhas em nenhuma das árvores. **Isso não é
 
 **Limites declarados, sem aceite:**
 - A jornada de UI segue **skipada** com a medição (compila; `1 skipped, 0 failures`). Skip **não** é aceite: a
-  prova de UI da abertura não selecionada continua pendente enquanto o sheet não expuser as linhas — o próximo
-  passo é o modo degradado do catálogo (`hasCatalog`/fallback empacotado) ou um harness com a árvore do sheet.
-- **Relançamento:** abrir grava o contexto da fonte; num novo launch, `sessionState` (sem o flag explícito) ainda
+  prova de UI da abertura não selecionada continua pendente enquanto o sheet não expuser as linhas. ~~o próximo
+  passo é o modo degradado do catálogo (`hasCatalog`/fallback empacotado)~~ **SUPERADO em 25/10:** o modo degradado
+  foi corrigido (`7b201f7b`), as linhas são desenhadas e há captura antes/depois abaixo; o que resta é só a árvore
+  do sheet no cliente de UI.
+- ~~**Relançamento:** abrir grava o contexto da fonte; num novo launch, `sessionState` (sem o flag explícito) ainda
   converte `.source` fora da seleção em `.main`. Isso é uma lacuna conhecida do caminho de launch, **não** coberta
-  por esta rodada; não foi alterada para não mexer no fallback global sem a suíte completa.
+  por esta rodada.~~ **SUPERADO em 25/10 (rodada 8, continuação):** init, launch, warm e rebuilds passam
+  `allowsSourceOutsideSelection` para uma chave `.source`, e a segunda composição no mesmo contêiner mantém o
+  contexto (`7b201f7b`, `2c091bea`). O texto fica pelo histórico; vale a continuação abaixo.
 - `capacity-ready.json` preservado; nenhum gate/oráculo/limiar/corpus tocado; B03 segue FAIL mecânico.
 
 ## Rodada 8 (continuação) — a causa do sheet era **produto**, e foi corrigida
