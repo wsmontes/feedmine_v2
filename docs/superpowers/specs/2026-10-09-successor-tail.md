@@ -1,5 +1,12 @@
 # T5 — Sucessão da cauda
 
+> **SUPERSEDIDA (2026-10-26).** A revisão de 2026-10-10 do PD-5 revogou a permissão de re-preparar cartas
+> publicadas e não vistas enquanto o app está inativo, e o INV-17 passou a declarar o sufixo publicado imutável
+> inclusive antes da exposição. O mecanismo descrito abaixo (`hiddenTail`/`succeedTail`/`HiddenTailMaintenance`)
+> arquivava e substituía cartas de uma Edition publicada; foi removido. Uma edição material de ocorrência já
+> publicada espera a exposição e nasce como ocorrência nova em segmento posterior, pelo caminho de append
+> existente. Ver `docs/reviews/2026-10-26-pd5-published-tail.md`. O texto abaixo é histórico e não é contrato.
+
 Publication é o owner da substituição. A história vista mantém IDs, valores e posição; a cauda não vista pode receber IDs novos somente com autorização durável de tela oculta. A autorização é revogada antes de foreground ou de novo viewport. O high-water por Edition só avança, inclusive quando o cursor volta para trás.
 
 Persistence acrescenta edition_reading_state(edition_id, high_water_card_id, visible, generation) e arquivos retired_published_cards/retired_feed_segments que preservam os valores substituídos. A migração inicializa o high-water conservadoramente pelo checkpoint disponível. Não é possível inferir leitura anterior não registrada na base antiga; essa limitação fica documentada.
