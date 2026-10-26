@@ -153,15 +153,30 @@ limiar do critério, em t≈+61,3 s do traço:
 Nesse instante o suprimento **não** estava esgotado: `reserve_depth` em 5560,775 e 5561,328 registra
 `ready=4`, `preparing=0`, `pending=0`, `exhausted=0`; `replenishment_requested`/`arrived` aconteceram
 em 5561,140/5561,185 (antes da admissão). Em todo o laço de trinta minutos: 473 amostras de
-`reserve_depth`, **zero** com `exhausted != 0`, `ready` entre 0 e 96 (94 amostras em 0, sempre com
-`preparing > 0`), `pending` 0.
+`reserve_depth`, **zero** com `exhausted != 0` e **zero** com `pending != 0`, `ready` entre 0 e 96 —
+e **94 dessas amostras têm `ready=0` com `preparing=0`** (correção de 2026-10-26T14:52Z: este arquivo
+dizia "94 amostras em 0, sempre com `preparing > 0`"; remedido no container puxado, o `preparing`
+dessas 94 é 0 em todas).
 
 Leitura honesta: é **um** intervalo de 1,063 s entre o avanço e a admissão seguinte, medido no traço do
 app, não um artefato do instrumento — a fase chegou pelo anexo, o runner não travou e o teste
-terminou com sucesso. O que a evidência **não** sustenta é "falta de runway": havia cartas prontas e
-reabastecimento em voo. A pergunta que a execução de 2026-10-11 deixou aberta ("havia próximo card
-pronto e alcançável?") tem agora resposta medida para este evento: **sim**. A régua é mecânica e
-continua valendo como está; o veredito não é reclassificado.
+terminou com sucesso. O que a evidência **não** sustenta é "falta de runway": a reserva registrou
+`ready=4` e o reabastecimento foi pedido e concluído antes da admissão. Ressalva de campo (medida no
+container puxado): os contadores do `reserve_depth` **não são auto-consistentes** — nas 94 amostras com
+`ready=0` também são 0 `preparing`, `pending` e `exhausted` (93 delas com `outstanding=0`). Portanto
+nem `exhausted=0` nem `ready=4` provam "oferta sadia"; eles são contadores daquele instante, não
+atestado de saúde.
+
+Correção de 2026-10-26T14:52Z, sobre a pergunta que a execução de 2026-10-11 deixou aberta ("havia
+próximo card pronto e alcançável?"): este arquivo respondia **"sim"**, e a resposta era excessiva. O
+que está medido é o **lado do suprimento** — contador de reserva, reabastecimento, e a admissão
+seguinte 1,063 s depois, com a mesma âncora do avanço. Não há captura de frame no instante da parada
+(a única imagem é o `b03-end-of-trace`, tirada no fim do laço), `ready` é um contador e não uma carta
+renderizada, e `order`/`anchor` não dão correspondência carta-a-carta estável (a mesma âncora aparece
+com vários ordinais; 9.033 admissões em `order` 1..4.524). Portanto: **oferta e admissão, medidas;
+"pronto e alcançável" no viewport, não medido** — não afirmado. Detalhe e aritmética em
+`docs/reviews/2026-10-26-b03-independent-fidelity.md` §2. A régua é mecânica e continua valendo como
+está; o veredito não é reclassificado.
 
 ## Artefatos
 
