@@ -91,3 +91,40 @@ O congelamento vigente é `bench/EVALUATOR.sha256`. `bench/MANIFEST.sha256` (cor
 **A nota humana da revisão** está em `docs/reviews/2026-10-14-b04-b05-instrument-revision.md`.
 
 **Vereditos anteriores:** preservados em `bench/run/*` e **não comparáveis** aos novos.
+
+## 2026-10-26 — o registro de fases sai do caminho do host, nos dois modos
+
+**Motivo:** `bench/run.sh` pré-criava `$OUT/<gate>-<profile>.phases` no Mac e passava o caminho ao
+runner por `TEST_RUNNER_FEEDMINE_BENCH_PHASES`, **só** no modo simulador. Nas duas execuções de B03 de
+2026-10-26 (`20261026T085541Z`, `20261026T100032Z`) o **primeiro** `record` da jornada bloqueou dentro
+de `open(2)` nesse arquivo do host, na main thread, por 46 minutos: nenhum swipe, nenhum `advance`,
+veredito NOT_RUN nas duas. O modo aparelho nunca teve essa escrita — o driver escreve no próprio
+container e o `tearDown` anexa ao result bundle. A correção faz desse o único transporte; a razão no
+kernel do bloqueio **não** está estabelecida (ver a nota).
+
+**O que muda:** o driver não honra mais caminho vindo do ambiente e cria o próprio registro;
+`run.sh` extrai o anexo **nos dois modos com o mesmo código** e registra o que o transporte fez em
+`<gate>-<profile>.transport.log`; sem anexo não há `.phases` (NOT_RUN, nunca PASS). O `.xcresult` de
+cada portão passa a ser movido para `$OUT/<gate>-<profile>.xcresult` antes da limpeza de `derived` —
+antes ele era apagado junto, e as duas corridas travadas perderam o único relato do runner.
+
+**Nada da régua muda:** `oracle.py`, `serve.py`, `corpus/**` (incluindo `criteria.json`), `device/**`
+e `MANIFEST.sha256` ficam byte a byte; nenhum critério, limiar, duração ou gesto foi tocado.
+
+**O que está aqui:**
+
+| Arquivo | O que é |
+|---|---|
+| `EVALUATOR-pre-phases-transport.sha256` | o congelamento anterior, inteiro |
+| `run-pre-phases-transport.sh` | o `run.sh` anterior, verbatim — SHA-256 `966276836b6edf55f555ae25c0c15d5c23185c4894a43e92be24ea10ca0c0b3f`, que é o hash que aquele congelamento exigia |
+| `driver-pre-phases-transport.swift` | o driver anterior, verbatim — SHA-256 `e411f8fcdc8c738c937ec2ffd2b0929436ec42edd8ff6f134156ea55421476de` |
+
+O congelamento vigente é `bench/EVALUATOR.sha256`: `bench/run.sh` →
+`b027007d0fc7b2e3cb097b3f36e062738592f025bfb68b3f2bbb21fb30160b80`, driver →
+`c3ae03a40d6c03353fad25f8aaa7891a33cc62bdbc8e6bb6bcf5893de8eaac7e`. `bench/MANIFEST.sha256` não
+muda (ele não cobre o `run.sh` nem o driver).
+
+**A nota humana da revisão** está em `docs/reviews/2026-10-26-b03-instrument-transport.md`.
+
+**Vereditos anteriores:** preservados em `bench/run/*`. As duas corridas de 2026-10-26 são **NOT_RUN**
+de instrumento — não são FAIL nem PASS do produto, e não são comparáveis a uma execução corrigida.

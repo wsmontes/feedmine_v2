@@ -22,7 +22,7 @@ separadamente. O avaliador mudou para medir essa jornada:
 |`oracle.py`: B02 fica **NOT_RUN** sem a fase temática caminhada | B02 mede o feed **depois** das duas respostas; sem elas, o feed neutro seria outra medição |
 |`oracle.py`: a execução sem banco legível é **NOT_RUN** com a razão, não um erro | um aparelho que sumiu no meio é uma medição ausente; o relatório não pode se perder |
 |`run.sh`: o runner **nomeia o perfil** (`TEST_RUNNER_FEEDMINE_BENCH_PROFILE`) | sem isso as duas passagens rodariam o mesmo perfil e a cláusula "outro perfil muda as fontes consultadas" seria falsa por construção |
-|`run.sh`: `TEST_RUNNER_FEEDMINE_BENCH_PHASES` | o driver registra as fases que **realmente** caminhou; fase não caminhada não vira PASS |
+|`run.sh` + `DiscoveryBenchmarkTests`: o registro de fases vai do container do runner ao result bundle (`tearDown` → anexo `phases`) e o `run.sh` o extrai nos **dois** modos | o driver registra as fases que **realmente** caminhou, e fase não caminhada não vira PASS; nenhuma escrita do runner nomeia caminho do host — a que nomeava bloqueou em `open(2)` (medido 2026-10-26) |
 |`DiscoveryBenchmarkTests`: a jornada é a vigente (idiomas e lugares → feed → duas respostas no feed); perfil sem país não responde lugar; perfil B acrescenta resposta negativa e reversão; a geometria ao esconder as dicas é medida | o contrato mudou; o driver segue o contrato, e nunca injeta preferência nem escolhe fonte por caminho exclusivo de teste |
 
 O relatório de cada execução traz a identidade dos insumos (os hashes de `EVALUATOR.sha256`), o commit e o número
@@ -77,7 +77,8 @@ que está sob este selo.
   runner não nomeia caminho, o driver escreve dentro do **próprio container** e o `tearDown` **anexa o registro ao
   result bundle** (`lifetime = .keepAlways`, porque a vida útil padrão apaga anexos em caso de sucesso — que é
   exatamente o caso que isto existe para registrar). O runner extrai o anexo para o lugar onde o oráculo sempre leu,
-  então o caminho do oráculo não muda e não há descoberta de container.
+  então o caminho do oráculo não muda e não há descoberta de container. (A variável foi **removida** em 2026-10-26: o
+  caminho do host deixou de existir nos dois modos — ver a última entrada deste arquivo.)
 - **Recusa em vez de fallback silencioso.** `FEEDMINE_BENCH_CORPUS`, quando definido, é honrado; se o
   `profiles.json` dali não for legível, o driver **recusa antes de qualquer medição** — uma corrida cujos rótulos
   vieram de outro lugar não é a corrida que foi pedida.
@@ -140,3 +141,34 @@ leitor do produto reporta. A revisão segue 5, porque o corpus é uma fatia da r
 **O que não muda:** nenhum critério, nenhuma cláusula, nenhuma classificação. É a harness que passa a dizer a verdade
 sobre o que injeta — a mesma regra que o pipeline já escreveu para si: *"o descritor e o catálogo que ele declara são
 um par"*.
+
+## 2026-10-26 — o registro de fases sai do host nos dois modos, e o result bundle deixa de ser apagado
+
+**O que estava errado (medido):** `run.sh` pré-criava `$OUT/<gate>-<profile>.phases` no Mac e passava o caminho ao
+runner por `TEST_RUNNER_FEEDMINE_BENCH_PHASES`, **só** no modo simulador. Duas execuções de B03
+(`20261026T085541Z`, `20261026T100032Z`) pararam no **primeiro** `record` da jornada: a main thread do
+`FeedMineUITests-Runner` ficou 46 min dentro de `open(2)` — `record(_:to:)` → `-[NSConcreteFileHandle
+initWithURL:flags:createMode:error:]` → `_NSOpenFileDescriptor` → `open` —, o arquivo de fases ficou em 0 byte,
+nenhum swipe foi enviado e o traço do app não recebeu nenhum evento `advance`. O app estava vivo e publicando nas
+duas. Controlos: o mesmo inode aberto pelo shell em 0,000 s; sem negação de `tccd`/`sandboxd` nas janelas dos dois
+travamentos (zero linhas); `~/Documents` é diretório comum, sem flags, sem xattr e sem domínio de File Provider;
+disco com GB livres. A razão **no kernel** não está estabelecida — o que está é a operação que bloqueia, e que ela
+era a **única** escrita do runner para um caminho que não é dele.
+
+**O que muda:** o registro de fases vai para o container do próprio runner **nos dois modos**
+(`FileManager.default.temporaryDirectory`, sem variável de ambiente que nomeie caminho), é anexado ao result bundle
+no `tearDown` (`keepAlways`) como já era no aparelho, e o `run.sh` extrai o anexo com **o mesmo código** nos dois
+modos para o mesmo `$OUT/<gate>-<profile>.phases` que o oráculo lê. O `run.sh` não pré-cria mais o arquivo: sem
+anexo, a fase não existe e o portão lê NOT_RUN, nunca PASS. Um `<gate>-<profile>.transport.log` registra o que o
+transporte fez (exportação, extração, linhas/bytes, ou a razão da ausência).
+
+**Evidência que deixava de existir:** `$OUT/derived` (≈1 GB de produtos de build, regeneráveis) era apagado no fim do
+run e levava junto o `.xcresult` de cada portão — medido: as duas corridas travadas perderam o único relato do
+runner, e o detalhe do XCUITest além do log do portão não sobreviveu. Agora o bundle é movido para
+`$OUT/<gate>-<profile>.xcresult` antes da limpeza, junto do diretório de anexos exportados; os produtos de build
+continuam sendo apagados.
+
+**O que NÃO muda:** nenhum critério, limiar, corpus, duração, gesto ou cláusula do oráculo. `bench/oracle.py`,
+`bench/serve.py`, `bench/corpus/**`, `bench/MANIFEST.sha256` e os critérios congelados ficam byte a byte como
+estavam; o selo `bench/EVALUATOR.sha256` é regerado apenas para `bench/run.sh` e para o driver, e o congelamento
+anterior está verbatim em `bench/revisions/`.

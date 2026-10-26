@@ -21,10 +21,15 @@ final class DiscoveryBenchmarkTests: XCTestCase {
 
     private var environment: [String: String] { ProcessInfo.processInfo.environment }
 
-    /// Where this run's phase record is written. On the simulator `bench/run.sh` names a path on the Mac, which a
-    /// simulator can write because it reads the Mac's filesystem. A device cannot: the runner's container is not a
-    /// host path. So when the runner names no path the record goes to the runner's own container, and `tearDown`
-    /// attaches it to the result bundle, from which the runner extracts it into the place the oracle already reads.
+    /// Where this run's phase record is written: **always** the runner's own container, in both modes. `tearDown`
+    /// attaches it to the result bundle and `bench/run.sh` extracts it into the place the oracle already reads.
+    ///
+    /// It used to be a host path on the simulator (`TEST_RUNNER_FEEDMINE_BENCH_PHASES`), because a simulator process
+    /// can read the Mac's filesystem. That one host write wedged the runner twice: the journey's first `record`
+    /// call blocked inside `open(2)` on the host file, on the main thread, for 46 minutes, with the app alive and
+    /// publishing, so the gate never started (measured 2026-10-26, runs `20261026T085541Z` / `20261026T100032Z`;
+    /// the kernel's reason is unestablished, the blocking syscall is not). Both modes now use the transport the
+    /// device path already used, so no step of a journey depends on a filesystem the runner does not own.
     private var phasesURL: URL?
 
     /// The run's identity, provided by `bench/run.sh`: where the corpus is, where the transport's log lands, and
@@ -44,8 +49,10 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         precondition(FileManager.default.isReadableFile(atPath: corpus.appendingPathComponent("profiles.json").path),
             "the run's labels are unreadable at \(corpus.path) — refusing before any measurement")
         let namespace = try XCTUnwrap(environment["FEEDMINE_BENCH_NAMESPACE"])
-        let phases = environment["FEEDMINE_BENCH_PHASES"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("phases-\(namespace).txt")
+        // One transport, both modes: the record lives inside the runner's own container and leaves through the
+        // result bundle. No environment variable names a path — a runner that honoured one would be writing outside
+        // its container, which is what blocked (`open(2)`, 2026-10-26) and what a device can never do.
+        let phases = FileManager.default.temporaryDirectory.appendingPathComponent("phases-\(namespace).txt")
         phasesURL = phases
         return (corpus, namespace, phases, environment["FEEDMINE_BENCH_PROFILE"] ?? "A")
     }
@@ -468,11 +475,14 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         return nil
     }
 
-    /// The phases the driver actually walked, appended where the runner can read them. The oracle needs this: a
+    /// The phases the driver actually walked, appended inside the runner's own container. The oracle needs this: a
     /// journey that never reached a phase must be **NOT_RUN** there, never a quiet pass.
     /// The **throwing** `write(contentsOf:)` is deliberate: `NSFileHandle.write(_:)` raises an Objective-C
     /// exception when the syscall fails (measured: ENOSPC on a nearly full host volume aborted the app's own
     /// trace), and an exception on a full disk would take the whole runner down instead of losing one line.
+    /// The record is created here, by the driver: `bench/run.sh` no longer pre-creates it, because that meant a host
+    /// path. A file that cannot be written costs the phase record, and the gate reads NOT_RUN — never a pass, and
+    /// never a stalled journey: this is the only place the runner writes anything at all.
     private func record(_ phase: String, to file: URL?) {
         guard let file else { return }
         let data = Data((phase + "\n").utf8)

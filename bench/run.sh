@@ -386,8 +386,10 @@ curl -sf "http://$TRANSPORT_HOST/totals" > "$OUT/totals.json" || { echo "the loc
 run_gate() {
   local gate="$1" profile="$2" namespace="$3" log="$4"
   : > "$log"
-  # The phase record is rewritten by this run, never appended to a previous one's.
-  : > "$OUT/$gate-$profile.phases"
+  # The record of what this run's evidence transport did: what was exported, whether the phase record arrived, and
+  # why not. It is written even when the runner wedges, because it is written by this script.
+  local transport_log="$OUT/$gate-$profile.transport.log"
+  : > "$transport_log"
   local only="FeedMineUITests/DiscoveryBenchmarkTests"
   case "$gate" in
     B01) only="$only/testB01DiscoveryWithoutASubscription" ;;
@@ -404,15 +406,13 @@ run_gate() {
   # bundle. Passing a host path worked only because a simulator reads the Mac's filesystem; on a device it can
   # never work, and an asymmetry that exists only in one mode is exactly the kind of difference B06 exists to
   # measure. One path, both modes.
-  # `FEEDMINE_BENCH_PHASES` is deliberately absent on the device path: the runner names a path on the Mac, and a
-  # device has no view of the Mac's filesystem — the driver's `try?` write would fail silently and the oracle would
-  # read a phase record that never existed. There the driver writes the record inside its own container and attaches
-  # it to the result bundle, and the extraction below deposits it where the oracle already looks. `env` is used
-  # rather than a bare assignment prefix so that the variable can be present or absent without an array (bash 3.2
-  # treats an empty array as unbound under `set -u`).
-  PHASES_ASSIGN=""
-  [[ "$MODE" == "device" ]] || PHASES_ASSIGN="TEST_RUNNER_FEEDMINE_BENCH_PHASES=$OUT/$gate-$profile.phases"
-  env $PHASES_ASSIGN \
+  # `FEEDMINE_BENCH_PHASES` is gone, in **both** modes. That variable named a path on the Mac; the simulator honoured
+  # it, and the journey's first write then blocked inside `open(2)` on the host file for 46 minutes, on the main
+  # thread, with the app alive and publishing — twice (measured 2026-10-26, runs `20261026T085541Z` and
+  # `20261026T100032Z`). A device could never honour it. The driver now writes the record inside its own container in
+  # both modes and `tearDown` attaches it to the result bundle; the extraction below deposits it where the oracle
+  # already looks, from the same code for both modes. Nothing in a run names a host path to the runner.
+  env \
     TEST_RUNNER_FEEDMINE_BENCHMARK=1 \
     TEST_RUNNER_FEEDMINE_BENCH_NAMESPACE="$namespace" \
     TEST_RUNNER_FEEDMINE_BENCH_FULL_TRACE="$FULL_TRACE" \
@@ -420,31 +420,55 @@ run_gate() {
     xcodebuild test-without-building -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
       -destination "$DESTINATION" -derivedDataPath "$OUT/derived" \
       -only-testing:"$only" > "$OUT/$gate-$profile.log" 2>&1 || echo "($gate/$profile: xcodebuild exited non-zero — see $OUT/$gate-$profile.log)"
-  if [[ "$MODE" == "device" ]]; then
-    # A device has no `simctl`, and the driver's own screenshots are attached to the result bundle instead of
-    # being taken from the host. Exporting them keeps the evidence in the same place it has always been, and the
-    # phase record rides out with them: it is the one oracle input that has no host path on a device.
-    RESULT_BUNDLE="$(ls -dt "$OUT/derived/Logs/Test/"*.xcresult 2>/dev/null | head -1)"
-    if [[ -n "$RESULT_BUNDLE" ]]; then
-      xcrun xcresulttool export attachments --path "$RESULT_BUNDLE" \
-        --output-path "$OUT/$gate-$profile.shots" > "$OUT/$gate-$profile.shots.log" 2>&1 || true
-      python3 - "$OUT/$gate-$profile.shots" "$OUT/$gate-$profile.phases" <<'PY' || echo "($gate/$profile: no phase record in the result bundle)"
+  # The result bundle is the phase record's only way out, in both modes, and it is the run's own account of what the
+  # runner did (the driver's screenshots are attached to it too). It was exported on the device path only, and the
+  # bundle itself was then deleted along with `$OUT/derived` at the end of every run: measured 2026-10-26, both wedged
+  # runs lost theirs and the only surviving detail was the gate log.
+  RESULT_BUNDLE="$(ls -dt "$OUT/derived/Logs/Test/"*.xcresult 2>/dev/null | head -1 || true)"
+  # The three ways the phase record can fail to arrive are told apart, because they mean different things: no
+  # bundle at all (the runner died before it could write one), a bundle whose attachments could not be exported (the
+  # transport), and a bundle that arrived without a `phases` attachment (the journey itself recorded nothing). An
+  # empty trail is not a walked journey, so the distinction is written beside the oracle's inputs and never inferred.
+  local transport_status="no-result-bundle"
+  if [[ -n "$RESULT_BUNDLE" ]]; then
+    transport_status="attachment-export-failed"
+    if xcrun xcresulttool export attachments --path "$RESULT_BUNDLE" \
+      --output-path "$OUT/$gate-$profile.attachments" > "$OUT/$gate-$profile.attachments.log" 2>&1 \
+      && [[ -f "$OUT/$gate-$profile.attachments/manifest.json" ]]; then
+      if python3 - "$OUT/$gate-$profile.attachments" "$OUT/$gate-$profile.phases" <<'PY' 2>&1 | tee -a "$transport_log"
 import json, shutil, sys
-shots, destination = sys.argv[1], sys.argv[2]
+attachments, destination = sys.argv[1], sys.argv[2]
 try:
-    manifest = json.load(open(f"{shots}/manifest.json"))
+    manifest = json.load(open(f"{attachments}/manifest.json"))
 except Exception:
     sys.exit(1)
 for entry in manifest:
     for attachment in entry.get("attachments", []):
         name = attachment.get("suggestedHumanReadableName") or ""
         if name.startswith("phases"):
-            shutil.copyfile(f"{shots}/{attachment['exportedFileName']}", destination)
+            shutil.copyfile(f"{attachments}/{attachment['exportedFileName']}", destination)
             print(f"phase record extracted: {name} -> {destination}")
             sys.exit(0)
 sys.exit(1)
 PY
+      then
+        transport_status="phases: $(wc -l < "$OUT/$gate-$profile.phases" | tr -d ' ') lines,$(wc -c < "$OUT/$gate-$profile.phases" | tr -d ' ') bytes"
+      else
+        transport_status="no-phases-attachment"
+      fi
     fi
+    # Kept, not deleted: `$OUT/derived` goes away below, and with it the only account of what the runner did. A move
+    # that fails costs that account, never the verdict: the oracle and the report still run.
+    mv "$RESULT_BUNDLE" "$OUT/$gate-$profile.xcresult" \
+      || echo "($gate/$profile: could not move the result bundle out of $OUT/derived — it goes with the cleanup)" | tee -a "$transport_log"
+  fi
+  echo "transport $gate-$profile: $transport_status" | tee -a "$transport_log"
+  case "$transport_status" in
+    phases:*) : ;;
+    *) printf '%s\n' "$transport_status" > "$OUT/$gate-$profile.phases-missing" ;;
+  esac
+  if [[ "$MODE" == "device" ]]; then
+    : # a device has no `simctl`: the driver's screenshots came out of the bundle exported above
   else
     # The run's own acceptance (round 5, item 4), checked rather than assumed: the app under test must be installed
     # under the exclusive $BENCH_BUNDLE_ID. If the runner could not launch the rewritten identifier — the failure
@@ -580,12 +604,24 @@ for clause in result["clauses"]:
 PY
     echo
   done
+  echo
+  echo "## Transporte de evidência das fases"
+  for gate in "${GATES[@]}"; do
+    for profile in "${PROFILES[@]}"; do
+      if [[ -f "$OUT/$gate-$profile.transport.log" ]]; then
+        echo "- $gate-$profile: $(tr '\n' ' ' < "$OUT/$gate-$profile.transport.log")"
+      fi
+    done
+  done
+  echo
   echo "## Identidade dos insumos"
   cat "$OUT/inputs.sha256"
 } > "$OUT/report.md"
 # The derived data of a run is rebuildable and costs about a gigabyte per gate: the evidence is the logs, the
-# reports, the verdicts and the screenshots, never the build products. Leaving them filled the disk (measured:
-# 8.6 GB of runs, 121 MB free) and the next build failed with no space left.
+# reports, the verdicts, the screenshots and the result bundles, never the build products. Leaving them filled the
+# disk (measured: 8.6 GB of runs, 121 MB free) and the next build failed with no space left. Each gate's
+# `.xcresult` is moved out of `derived` as soon as its attachments are exported, so this line cannot take the
+# runner's own account of the run with it (it did, twice, measured 2026-10-26).
 rm -rf "$OUT/derived"
 echo "run written to $OUT (report.md)"
 print_restore_command "the run finished"
