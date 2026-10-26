@@ -181,7 +181,7 @@ enum MediaSkippedSupply {
     static func resolve(_ entries: [PendingMediaReconsideration.Entry], provider: CandidateProvider,
         plan: FeedPlan) throws -> Resolution {
         guard !entries.isEmpty else { return Resolution(ready: [], gone: []) }
-        // The bounded exact lookup the hidden tail already uses: the walk's cursor is not involved, so the skip is
+        // The bounded exact lookup the skip resolution uses: the walk's cursor is not involved, so the skip is
         // resolved without moving — or rewinding — any structural position.
         let window = try provider.candidates(for: plan, after: nil, examinedCapacity: entries.count,
             originIDs: entries.map(\.originRecordID))

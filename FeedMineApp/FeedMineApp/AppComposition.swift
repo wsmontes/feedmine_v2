@@ -3961,7 +3961,8 @@ final class FeedAssociation {
     ///   (`publicationConcluded`), and the cold bootstrap's own `.published` (the outcome `launch()` returns and the
     ///   evidence raised while slower feeds still answer);
     /// - a reader opportunity (`viewport`, `foreground`), which is the reader's own and is what carries a reserve
-    ///   the reader had no screen for (the hidden tail succeeded in `background()`).
+    ///   whose publication concluded while he had no screen: `background()` stops new rounds, but a round
+    ///   authorized while visible can still finish and commit.
     ///
     /// The bounded chain of timed reads that stood here is **gone**: it could not state when a publication
     /// concluded, so a publication that concluded after it — or while a driver drain awaited media and acquisition
@@ -4458,12 +4459,11 @@ final class FeedAssociation {
     }
 
     /// PM-028A §3: a publication the reserve did not drive still commits cards. The cold bootstrap's own first
-    /// Edition arrives as evidence (`receive`) and as `launch`'s outcome; a hidden-tail succession publishes inside
-    /// the store and hands back only its disposition. The revisions those committed cards carry leave the reserve's
-    /// competition here, so no path can leave a prepared presentation occupying depth and bytes for a card the feed
-    /// already shows. The publication commits up to 32 cards while the installed window projects only the anchor and
-    /// the forward capacity, so the marking reads the Edition's committed Segments — the receipt's own record — and
-    /// never infers the set from the window it happens to show.
+    /// Edition arrives as evidence (`receive`) and as `launch`'s outcome. The revisions those committed cards carry
+    /// leave the reserve's competition here, so no path can leave a prepared presentation occupying depth and bytes
+    /// for a card the feed already shows. The publication commits up to 32 cards while the installed window projects
+    /// only the anchor and the forward capacity, so the marking reads the Edition's committed Segments — the
+    /// receipt's own record — and never infers the set from the window it happens to show.
     private func markReservePublished(_ snapshot: FeedPresentationSnapshot) async {
         await reserve.markPublished(committedIn: snapshot.editionID, in: database)
     }
@@ -4594,9 +4594,10 @@ final class FeedAssociation {
             // não volta por cima disso: publicar zera o `readyAhead` da pista e sem ele o settlement não é o fim.
             try await installSettledEligibleOffer()
             // A leitura abaixo é a **oportunidade do leitor**, nunca um relógio: as publicações crescem a janela no
-            // fato, e o que ela pega é a reserva cujo fato o leitor não tinha tela para receber — a cauda oculta
-            // sucedida no `background()`, publicada com a tela desligada e materializada quando ele volta. Repetir é
-            // no-op: a admissão é append-only e limitada pelo teto congelado da âncora.
+            // fato, e o que ela pega é a reserva cujo fato o leitor não tinha tela para receber — uma publicação que
+            // concluiu depois de a tela apagar (o `background()` suspende rodadas novas; a já autorizada pode
+            // terminar) e que ele recebe ao voltar. Repetir é no-op: a admissão é append-only e limitada pelo teto
+            // congelado da âncora.
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
             #if DEBUG
@@ -4731,10 +4732,10 @@ final class FeedAssociation {
             // janela pelo fato, e o fim não se reinstala por cima disso.
             try await installSettledEligibleOffer()
             // A mesma oportunidade do leitor que o `viewport` oferece, no outro caminho por onde ele volta à tela: é
-            // aqui que a reserva publicada enquanto ele não tinha tela — a cauda oculta sucedida no `background()` —
-            // é materializada. A chamada não inventa um fato: o que a autoriza é haver publicação concluída
-            // (`admitPresentation(.publishedGrowth)` é um no-op sem espaço), e a cadência de foreground só repete a
-            // **oportunidade** — ela nunca é a razão pela qual uma carta entra.
+            // aqui que a reserva publicada enquanto ele não tinha tela — uma publicação que concluiu depois do
+            // `background()` — é materializada. A chamada não inventa um fato: o que a autoriza é haver publicação
+            // concluída (`admitPresentation(.publishedGrowth)` é um no-op sem espaço), e a cadência de foreground só
+            // repete a **oportunidade** — ela nunca é a razão pela qual uma carta entra.
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
         } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }

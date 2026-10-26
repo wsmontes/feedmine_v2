@@ -439,11 +439,11 @@ public actor PreparedReserve {
 }
 
 extension PreparedReserve {
-    /// A publication the reserve did not drive — the cold bootstrap's own first Edition, a hidden-tail succession —
-    /// still commits cards. The revisions those committed cards carry stop competing here, so a presentation that
-    /// became a card cannot keep `.ready` occupancy and retained bytes the reserve will never hand back. The card
-    /// identities are the publication's own committed fact, read from the store that holds them; nothing is stored
-    /// here beyond the phase this actor already owns.
+    /// A publication the reserve did not drive — the cold bootstrap's own first Edition — still commits cards. The
+    /// revisions those committed cards carry stop competing here, so a presentation that became a card cannot keep
+    /// `.ready` occupancy and retained bytes the reserve will never hand back. The card identities are the
+    /// publication's own committed fact, read from the store that holds them; nothing is stored here beyond the
+    /// phase this actor already owns.
     public func markPublished(cardIDs: [PublicationCardID], in database: RuntimeDatabase) {
         guard !cardIDs.isEmpty else { return }
         let publication = PublicationStore(database: database)

@@ -406,8 +406,7 @@ final class SourceDiversityContractTests: XCTestCase {
             "placed \(sequence.count) of \(Self.measuredWideWindow.count); greedy places 85, the rejected equal-share variant 75")
     }
 
-    /// The 256-candidate window the hidden-tail maintenance examined at the same moment (production
-    /// examines 32; the tail path examines 256), verbatim from the run: 32 sources, the largest holding
+    /// A 256-candidate window (production examines 32), verbatim from the run: 32 sources, the largest holding
     /// 64 candidates. The greedy rule met only 5 of the 32 sources before repeating one; this rule meets
     /// all 32. Its measured cost here is length: 223 of 256 placed, because after the scarce sources are
     /// served the surplus of the largest ones has no separators left — the held cards go back to the

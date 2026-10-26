@@ -94,7 +94,7 @@ public struct LocalProductionSlice: Sendable {
         /// Reader position; an origin with an occurrence after it is not published again (PD-1 rule 2).
         public let readerAnchorCardID: PublicationCardID?
         /// The replenishment attempt this slice belongs to, when a host decided one; nil for work that is not a
-        /// replenishment (the first Edition, hidden tail maintenance).
+        /// replenishment (the first Edition).
         public let operation: FeedReplenishmentOperationID?
 
         public init(plan: FeedPlan, policy: ResolvedSelectionPolicy, editionID: FeedEditionID,
