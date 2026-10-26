@@ -494,9 +494,23 @@ enum DevelopmentLocalFeeds {
     private static let recoveryAllowed = Mutex(false)
 
     static func allowRecovery() {
+        // NF-04: the reader's retry also retires the deferred-reporting journey, so the attempt that follows is the
+        // real opportunity and the surface must leave the deferred state.
+        consumeDeferredFirstAttempt()
         guard failsFirstAttempt else { return }
         recoveryAllowed.withLock { $0 = true }
     }
+
+    /// `FEEDMINE_DEFER_FIRST_FEED_ATTEMPT=1` (NF-04): a launch has **no** product path to `.deferred` — it comes
+    /// from resource denial or a generation conflict — so the surface's retry could not be exercised. With the
+    /// first-attempt fault above, the app reports the absence the launch really produced as the deferred attempt.
+    /// One launch only: the reader's retry consumes it. DEBUG only, behind a flag no product path reads.
+    private static let deferredFirstAttempt = Mutex(
+        ProcessInfo.processInfo.environment["FEEDMINE_DEFER_FIRST_FEED_ATTEMPT"] == "1")
+
+    static var reportsDeferredFirstAttempt: Bool { deferredFirstAttempt.withLock { $0 } }
+
+    private static func consumeDeferredFirstAttempt() { deferredFirstAttempt.withLock { $0 = false } }
 
     static var isRecovered: Bool {
         failsFirstAttempt && recoveryAllowed.withLock { $0 }

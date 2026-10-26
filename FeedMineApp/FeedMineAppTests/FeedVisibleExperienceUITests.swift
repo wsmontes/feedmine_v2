@@ -345,6 +345,102 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["feed-loading-surface"].exists)
     }
 
+    /// NF-04: the **deferred** surface, exercised by a real touch.
+    ///
+    /// Two launches over the proven onboarding path (`FEEDMINE_ONBOARDING=1` → `welcome-shape` →
+    /// `composer-start-broad`, the same sequence `PortabilityJourneyUITests` uses): the first run saves the reader's
+    /// profile while the fixture answers **no stories**, so nothing is published and nothing is checkpointed; the
+    /// second run, same namespace, has no presentation to restore and its first attempt fails — reported as the
+    /// deferred attempt by the DEBUG-only `FEEDMINE_DEFER_FIRST_FEED_ATTEMPT=1`. The retry retires that flag through
+    /// `allowRecovery()`, so what follows can only be the real opportunity.
+    func testDeferredSurfaceStatesTheWaitAndItsRetryBringsContent() throws {
+        let app = XCUIApplication()
+        let namespace = UUID().uuidString
+        app.launchArguments += ["-AppleLanguages", "(pt_BR)", "-AppleLocale", "pt_BR"]
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_DISABLE_DISCOVERY"] = "1"
+        app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = "12"
+
+        // 1. The reader's own profile, saved with nothing to publish.
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launchEnvironment["FEEDMINE_EMPTY_FEEDS"] = "1"
+        let started = Date()
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 120),
+            "o primeiro passo precisa aparecer; árvore=\(app.debugDescription)")
+        app.buttons["welcome-shape"].tap()
+        XCTAssertTrue(app.buttons["composer-start-broad"].waitForExistence(timeout: 30),
+            "o compositor oferece a entrada ampla; árvore=\(app.debugDescription)")
+        app.buttons["composer-start-broad"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["feed-loading-surface"].waitForExistence(timeout: 120),
+            "sem histórias, o leitor fica na ausência do feed; árvore=\(app.debugDescription)")
+        XCTAssertFalse(app.descendants(matching: .any)["feed-empty-state"].exists,
+            "o perfil respondido faz a superfície ser a do feed, não a de fontes vazias")
+        app.terminate()
+
+        // 2. Same namespace, no saved presentation: the launch's own fault, reported as the deferred attempt.
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "0"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "0"
+        app.launchEnvironment["FEEDMINE_EMPTY_FEEDS"] = "0"
+        app.launchEnvironment["FEEDMINE_FAIL_FIRST_FEED_ATTEMPT"] = "1"
+        app.launchEnvironment["FEEDMINE_DEFER_FIRST_FEED_ATTEMPT"] = "1"
+        app.launch()
+
+        let title = app.staticTexts["Aguardando nova oportunidade"]
+        XCTAssertTrue(title.waitForExistence(timeout: 120),
+            "a superfície adiada precisa chegar à tela; árvore=\(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["Nada está sendo buscado agora."].exists,
+            "o estado diz que nada está sendo buscado, em vez de afirmar uma busca")
+        XCTAssertFalse(app.staticTexts["Procurando mais novidades…"].exists,
+            "a frase que afirmava busca ativa não pode voltar")
+        XCTAssertTrue(app.descendants(matching: .any)["feed-loading-surface"].exists,
+            "o estado adiado vive na superfície de ausência que o leitor vê")
+        let retry = app.buttons["Tentar novamente"]
+        XCTAssertTrue(retry.exists, "o estado adiado oferece a tentativa do host")
+        XCTAssertFalse(app.buttons["Ajustar interesses"].exists,
+            "adiar não é uma oferta recusada: nada pede para ajustar interesses")
+        let titleText = title.label
+        let before = try launchRecord(app, name: "deferred", waitForCards: false)
+        XCTAssertEqual(before.cards, 0, "o estado adiado não carrega cartas")
+        let deferredAt = milliseconds(since: started)
+
+        // The retry is the act under test: it must run the real opportunity and leave the deferred state.
+        retry.tap()
+        let card = app.descendants(matching: .any).matching(Self.cardIdentifier).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 120),
+            "Tentar novamente precisa trazer conteúdo de verdade; árvore=\(app.debugDescription)")
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+            object: app.descendants(matching: .any)["feed-loading-surface"])
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 60), .completed,
+            "a superfície de espera sai quando o conteúdo chega")
+        let cardCount = app.descendants(matching: .any).matching(Self.cardIdentifier).count
+        XCTAssertGreaterThan(cardCount, 0, "a tentativa de verdade publica cartas")
+        let recoveredAt = milliseconds(since: started)
+
+        let evidence: [String: Any] = [
+            "test": "deferred-surface-retry",
+            "namespace": namespace,
+            "deferred_at_ms": deferredAt,
+            "recovered_at_ms": recoveredAt,
+            "title": titleText,
+            "before_cards": before.cards,
+            "card_count_after_retry": cardCount,
+            "loading_surface_after_retry": app.descendants(matching: .any)["feed-loading-surface"].exists,
+            "app_state": "\(app.state.rawValue)"
+        ]
+        let line = jsonLine(evidence)
+        print("DEFERRED_SURFACE_JSON=\(line)")
+        attach(app, name: "deferred-surface-retry", json: line)
+
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertFalse(title.exists, "o conteúdo substitui a superfície adiada")
+        XCTAssertFalse(app.descendants(matching: .any)["feed-loading-surface"].exists)
+    }
+
     /// A failure behind content that is already on screen. The same namespace is opened once with the local fixture
     /// (content is admitted and its window is durable), then relaunched with every transport refused
     /// (`FEEDMINE_BLOCK_RSS_NETWORK=1`, no local fixture): the acquisition fails while the reader's own window is
@@ -513,7 +609,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         let placeholders = [
             "Descobrindo histórias para você…",
             "Ainda não encontramos histórias para você.",
-            "Procurando mais novidades…",
+            "Aguardando nova oportunidade",
             "Nenhuma fonte habilitada"
         ].filter { app.staticTexts[$0].exists }
         return FirstScreen(

@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
 import UIKit
+import Vision
 import SwiftUI
 import Synchronization
 import CryptoKit
@@ -5262,5 +5263,55 @@ final class FeedFrameBudgetTests: XCTestCase {
             FeedFrameMeter.budgetMilliseconds(target: 1.0 / 120), accuracy: 0.005)
         XCTAssertEqual(onOneTwenty["severe"], "2")
         XCTAssertEqual(onOneTwenty["worst_ms"], "235.6")
+    }
+}
+
+/// NF-04 on the app/simulator surface (round 4). The package's OCR test renders the view through `NSHostingView`
+/// on macOS; this one hosts the same public view in a real `UIHostingController` inside the app's own test host on
+/// the simulator and reads the **pixels it draws there**. What it proves: the deferred surface, as the app target
+/// renders it on iOS, states the wait, states that nothing is being searched, and offers the retry control.
+///
+/// What it does not prove, stated honestly: a unit-test host has no accessibility client, so SwiftUI does not
+/// materialise its AX tree (`accessibilityElementCount() == 0` — measured) and the control cannot be activated
+/// from here. The retry's **action** plumbing is shared with the connection-failure surface through the same
+/// `recoveryActions → actions(tryAgain:)` path and the same host closure, and that path is proven end-to-end on
+/// the device by `FeedVisibleExperienceUITests.testConnectionFailureSurfaceOffersARetryThatBringsContent`.
+@MainActor
+final class DeferredWorkSurfaceTests: XCTestCase {
+    private func renderedText(_ view: UIView) throws -> [String] {
+        let host = UIViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        view.frame = window.bounds
+        host.view.addSubview(view)
+        window.layoutIfNeeded()
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        view.layoutIfNeeded()
+        let renderer = UIGraphicsImageRenderer(bounds: view.bounds)
+        let image = renderer.image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["pt-BR", "en-US"]
+        try VNImageRequestHandler(cgImage: try XCTUnwrap(image.cgImage)).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+    }
+
+    func testDeferredSurfaceRendersTheWaitAndItsRetryOnTheAppHost() throws {
+        // The host locale is the run's; the product's source language is pt-BR. Pinning the locale makes the
+        // assertion deterministic and proves the sentence the catalogue holds for the source language.
+        let hosting = UIHostingController(rootView: FeedLoadingView(work: .deferred, onTryAgain: {})
+            .environment(\.locale, Locale(identifier: "pt_BR")))
+        let text = try renderedText(hosting.view)
+        XCTAssertTrue(text.contains { $0.contains("Aguardando nova oportunidade") },
+            "the absence surface states the wait; text=\(text)")
+        XCTAssertTrue(text.contains { $0.contains("Nada está sendo buscado agora") },
+            "and states that nothing is being searched; text=\(text)")
+        XCTAssertTrue(text.contains { $0.contains("Tentar novamente") },
+            "the host's attempt is offered; text=\(text)")
+        XCTAssertFalse(text.contains { $0.localizedCaseInsensitiveContains("procurando") },
+            "a deferred attempt is never a search in flight; text=\(text)")
     }
 }

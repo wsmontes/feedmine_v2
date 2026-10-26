@@ -3818,8 +3818,27 @@ final class FeedAssociation {
                 backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
             // The early first-presentation handoff may already have driven and admitted growth while slower
             // bootstrap sources were pending. Its original snapshot must not replace that newer projection.
+            // NF-04 journey (DEBUG): a launch has no product path to `deferred`, so the surface's retry could not be
+            // exercised. With the fixture's first-attempt fault, this reports the absence the launch really produced
+            // as the deferred attempt; the reader's retry retires the flag (`DevelopmentLocalFeeds.allowRecovery()`),
+            // so what follows is the real opportunity. Inert when the flag is unset.
+            let reportsDeferred: Bool = {
+                #if DEBUG
+                guard DevelopmentLocalFeeds.reportsDeferredFirstAttempt, store.state.presentation == nil else {
+                    return false
+                }
+                // Only an absence is reported: a bootstrap that published already has content to show, and
+                // replacing its state here would contradict the publication branch below.
+                if case .published = outcome { return false }
+                return true
+                #else
+                return false
+                #endif
+            }()
             let received: FeedPresentationState
-            if case .published = outcome, let current = await session.currentPresentation() {
+            if reportsDeferred {
+                received = store.state.reporting(.deferred)
+            } else if case .published = outcome, let current = await session.currentPresentation() {
                 received = try FeedPresentationHandoff.receive(snapshot: current, into: store.state).reporting(.idle)
             } else {
                 received = try FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state)
