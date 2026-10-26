@@ -11,7 +11,7 @@ lacuna: “a linha de fonte na taxonomia oferece toggle, sem ação própria de 
 |---|---|
 | `Sources/FeedMineUI/Sources/NodeSourcesView.swift` | `NodeSourceRowView` ganha `onOpen` opcional: quando existe destino, o trecho de título vira um `Button` (`node-source-<key>`); sem destino, nenhum controle é desenhado. O `Toggle` (`node-source-toggle-<key>`) permanece irmão, com área própria |
 | `FeedMineApp/FeedMineApp/AppComposition.swift` | `openSourceFeed(forKey:)`: adota a seleção pendente (os toggles do sheet são duráveis), casa a **chave do catálogo** com o `TrustedFeed` resolvido pelo próprio owner e seleciona `.source(sourceID)`. Devolve `false` quando a chave não está na seleção — sem derivar identidade e sem cair no feed principal |
-| `FeedMineApp/FeedMineApp/FeedMineApp.swift` | as duas chamadas de `NodeSourcesView` (fontes e árvore dos filtros) passam `onOpenSource`; o host fecha o sheet e, em falha, declara “Não foi possível abrir o feed desta fonte.” O caminho interno do sheet é preservado, então reabrir Fontes volta ao mesmo nó |
+| `FeedMineApp/FeedMineApp/FeedMineApp.swift` | **só** o call site da superfície de Fontes passa `onOpenSource` — o sheet de filtros mantém apenas a própria navegação, porque abrir uma fonte ali fecharia o sheet e descartaria o rascunho do leitor, fora do F12. O host **abre primeiro e fecha depois** (o `onDismiss` do sheet adota a seleção e marcaria `replacingSession`, recusando a transição legítima se as duas corressem juntas), preserva `sourcesPath` (reabrir volta ao mesmo nó) e, quando a chave selecionada não é resolvível, declara “Não foi possível abrir o feed desta fonte.” em vez de silêncio |
 
 **Por que a fonte precisa estar na seleção:** `sessionState(for:)` converte `.source(id)` em `.main` quando a
 fonte não está entre os feeds ativos. Abrir uma fonte fora da seleção mostraria o feed principal com o rótulo de
@@ -27,12 +27,14 @@ fora da seleção não existe), não como funcionalidade inventada.
 | Pacote: `SourceManagementStoreTests` + `FeedScreenRenderingTests` | 47 testes, 0 falhas |
 | Oráculo UX12-B (membership) | já provado em `CandidateProviderTests.testSourceFilteringPreservesExaminedCountAndRelativeOrder`: com itens de a e de b no banco, `candidates(plan(.source(a)))` devolve somente a — nenhuma identidade é filtrada por título ou URL |
 | App (simulador, integrado) | `CompositionTests.testF12SourceRowOpensTheSelectedSourceAndRefusesAKeyOutsideTheSelection` — **PASS**: chave fora da seleção devolve `false` e não mexe no contexto nem na seleção; chave selecionada leva a `.source(sourceID)` e a seleção permanece idêntica |
-| UI (jornada) | `SourceFeedOpeningUITests` — **SKIPPED com medição**, não PASS: neste device/runtime o conteúdo de **sheets** não entra na árvore de acessibilidade (árvore só com `Application`, app em foreground, 181 s). O controle negativo confirma que não é desta superfície: o teste existente `FeedMineUITests.testBookmarkBoxesManageAndOpenTheirOwnList` falha do mesmo modo (nav bar do sheet e conteúdo ausentes). Controle positivo: uma jornada sem sheet (`PortabilityJourneyUITests.testOnboardingComposerResetAndStartBroad`, e a jornada `deferred`) passa no mesmo device |
+| UI (jornada) | `FeedMineUITests.testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot` — **SKIPPED com medição**, não PASS. No `FeedMine Reserve 1024` a árvore do sheet fica `Application`-only (app em foreground, `state=4`, inalterada aos 181 s). No **iPhone 17 ocioso** (device diferente, mesma jornada): o sheet abre (`sources-done` presente), mas **nenhuma linha do catálogo aparece em 90 s** — falha diferente, mesmo efeito. Controle positivo: jornadas **sem sheet** (`PortabilityJourneyUITests.testOnboardingComposerResetAndStartBroad` e a jornada `deferred`) passam no Reserve. Controle negativo: o teste **existente** `FeedMineUITests.testBookmarkBoxesManageAndOpenTheirOwnList` falha com o **mesmo sintoma de título/conteúdo do sheet ausente** (nav bar `Caixas de salvos` e `Salvos` ausentes) — e a árvore **não** estava vazia ali: o campo de texto do alerta apareceu (`Emoji`, `dictate`). Ou seja, o que se mede é a ausência do título/conteúdo do sheet, não “sheet sem árvore alguma”. |
 
-A jornada preservada (`SourceFeedOpeningUITests.testTheSourceRowOpensItsOwnFeedAndTheToggleDoesNot`) descreve o
-fluxo completo: Fontes → seção → nó real do catálogo → linha da fonte (sem controle enquanto não selecionada) →
-toggle sem navegar → linha abre o feed → rótulo do contexto é o nome da fonte → cartas só daquela fonte →
-reabrir Fontes volta ao mesmo nó. Ela roda e exige tudo isso num harness cujo sheet exponha a árvore.
+A jornada preservada (`FeedMineUITests.testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot`, dentro da mesma
+classe dos helpers comprovados — `scrollIntoView` com `app.tables`, e o toggle como `app.switches`, não botão)
+descreve o fluxo completo: superfície vazia → Fontes → seção → nó real do catálogo → linha da fonte (sem controle
+enquanto não selecionada) → toggle sem navegar → linha abre o feed → rótulo do contexto é o nome da fonte → cartas
+só daquela fonte → reabrir Fontes volta ao mesmo nó. Verificada nesta árvore: **compila e skipa** com a medição
+acima (`1 skipped, 0 failures`).
 
 ## Limites
 
