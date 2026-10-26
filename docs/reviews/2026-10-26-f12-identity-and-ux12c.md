@@ -84,6 +84,21 @@ defeito, então a remoção é a forma correta (API pública do módulo, sem con
    recusando a história na frente do leitor. `EditorialRevision.userSelectionVersion` continua separando as
    *identidades* de Editions publicadas sob seleções diferentes; deixou de invalidar a história da outra.
 
+**Alavancas consideradas, e por que as outras duas foram rejeitadas.** Além da semântica de `mayShow`, havia dois
+caminhos e ambos custam um contrato durável:
+
+- *Não incrementar `selectionVersion` em `changeSources`*: `Tests/FeedMinePersistenceTests/ReaderPreferencesStoreTests.swift`
+  fixa o incremento (linhas 43, 49, 68 — inclusive "removing the last source remains a legal intent" com versão +1).
+  Além de emendar essa asserção, perder-se-ia o registro de que a escolha mudou, que é o que identifica Editions
+  publicadas sob seleções diferentes. Rejeitado.
+- *Derrubar a sessão e publicar Edition nova a cada toggle* (o comportamento medido): é exatamente o que remove e
+  reordena cartas publicadas — o oráculo de UX12-C proíbe. Rejeitado.
+
+O que ficou: a seleção é **suprimento** (`supply(selection:discovery:)` no construtor já separa isso das versões de
+revisão), as regras de apresentação que a Edition congela continuam gateadas por `mayShow` (contexto, eligibility,
+scoring), e a posição sobrevive porque o checkpoint não é mais descartado. Nada do contrato de publicação foi
+afrouxado: o append continua exigindo a revisão exata da Edition alvo.
+
 **Green medido** (`testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply`, reescrito como a jornada do
 oráculo): multisource → uma fonte (a última é **recusada** por `invalidSelection`, e a recusa não move nada),
 cartas reais dos dois feeds de desenvolvimento, âncora avançada para a 4ª carta antes do toggle. Asserções:
