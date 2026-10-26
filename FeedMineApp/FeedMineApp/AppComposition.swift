@@ -91,7 +91,7 @@ final class AppComposition {
     /// neither is in memory, the attribution this feed itself last published — one indexed row, the same string
     /// its cards carry. A catalogue walk at launch is forbidden (INV-07), and nil states "no name yet" instead of
     /// inventing one.
-    @ObservationIgnored private var persistedContextSourceName: (request: FeedContextRequest, name: String?)?
+    @ObservationIgnored private var persistedContextSourceName: (request: FeedContextRequest, name: String)?
     var sourceContextDisplayName: String? {
         guard case .source(let id) = currentContextKey.request else { return nil }
         // The live feeds are re-read on every access: a collection's or the selection's name may arrive after the
@@ -102,7 +102,10 @@ final class AppComposition {
             return persistedContextSourceName.name
         }
         let name = persistedSourceDisplayName(of: id)
-        persistedContextSourceName = (currentContextKey.request, name)
+        // Only a fact is remembered. Caching an absence would freeze "no name yet" for the whole request, so a
+        // publication that lands later in this same context could never be read back — the stale name would
+        // outlive the fact that contradicts it.
+        if let name { persistedContextSourceName = (currentContextKey.request, name) }
         return name
     }
     /// The feed's own last published attribution for one source: one bounded row, no catalogue walk.
