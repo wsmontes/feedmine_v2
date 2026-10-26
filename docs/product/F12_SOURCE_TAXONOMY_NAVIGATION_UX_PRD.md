@@ -62,8 +62,13 @@ sem navegação acidental; o host adota a seleção pendente e resolve a chave p
 fonte fora da seleção não desenha o controle e não navega para o feed principal — habilitar continua sendo o ato do
 toggle (R4), e o contexto de fonte única fora da seleção não existe no modelo de sessão (registrado como lacuna).
 O oráculo de UX12-B (só memberships de S) permanece provado no provider editorial; a rota tem teste integrado no app.
-A jornada XCUITest completa está preservada e **skipada com medição**: neste device o conteúdo de sheets não entra
-na árvore de acessibilidade, e o mesmo ocorre ao teste existente de outro sheet. Evidência e limites:
+A fonte catalogada **não selecionada** também abre (identidade canônica pelo owner; sessão mantém os feeds do
+leitor, então nada é habilitado; só as memberships locais dela são elegíveis), e o relançamento conserva esse
+contexto. No caminho, o modo degradado do catálogo foi corrigido: sem snapshot verificado, a superfície de Fontes
+agora lê o **catálogo empacotado** que a composição já servia, em vez de declarar o catálogo indisponível
+(antes/depois em `docs/reviews/evidence/2026-10-25-f12-source-feed/`).
+A jornada XCUITest completa está preservada e **skipada com medição**: neste device a árvore de acessibilidade do
+sheet não expõe as linhas mesmo com elas desenhadas (captura no diretório de evidência). Evidência e limites:
 `docs/reviews/evidence/2026-10-25-f12-source-feed/README.md`. UX12-A/C/D seguem sem prova nesta rodada.
 
 ## Referências técnicas externas — F12

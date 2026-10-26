@@ -81,3 +81,33 @@ degradado; o sheet não expõe as linhas em nenhuma das árvores. **Isso não é
   converte `.source` fora da seleção em `.main`. Isso é uma lacuna conhecida do caminho de launch, **não** coberta
   por esta rodada; não foi alterada para não mexer no fallback global sem a suíte completa.
 - `capacity-ready.json` preservado; nenhum gate/oráculo/limiar/corpus tocado; B03 segue FAIL mecânico.
+
+## Rodada 8 (continuação) — a causa do sheet era **produto**, e foi corrigida
+
+A suspeita anterior (catálogo degradado) foi fechada com artefato visual, sem XCTest e sem depender da árvore AX:
+o app foi lançado no Reserve com namespace novo e `SKIP_ONBOARDING=1`, e o teste de diagnóstico capturou a tela
+com `XCTAttachment(screenshot:)`. A captura mostrou **“The source catalogue isn't available.”** e nenhuma seção —
+enquanto o feed lia o catálogo empacotado. Logo, a ausência de linhas era estado de produto, não do harness.
+
+**Causa:** `SourceManagementCoordinator.catalog` só usava `installation.activeSnapshot()` (snapshot verificado).
+Com a revisão remota rejeitada por `sha256 mismatch`, não havia snapshot verificado, e a superfície declarava o
+catálogo indisponível embora a composição servisse o **catálogo empacotado em modo degradado** (o próprio ledger
+diz “serving the bundled catalogue unverified”).
+
+**Correção (owner existente, sem catálogo alternativo):** sem snapshot verificado, o coordenador lê o
+`bundledCatalogue` do build (o mesmo que a composição já serve), e `hasCatalog` passa a ser verdadeiro. A
+verificação continua sendo um fato declarado no ledger, não um motivo para esconder a árvore (R2).
+
+**Provas:**
+- captura antes/depois: `2026-10-25-sources-unavailable-before-fix.png` (indisponível) e
+  `2026-10-25-sources-sections-after-fix.png` (“Sections (18)”, Arts & Culture … Countries 63.894 feeds);
+- `CompositionTests.testF12DegradedCatalogueStillExposesTheBundledTree` — **PASS** (diretório sem snapshot
+  verificado: `hasCatalog` verdadeiro e a seção `15-nature-animals` presente);
+- o **relançamento** deixou de cair em `main`: o init agora carrega o contexto persistido com o mesmo flag do
+  open, e `testF12OpensAnUnselectedCatalogueSourceWithOnlyItsLocalMemberships` verifica uma nova composição no
+  mesmo diretório (contexto `.source(id)`, seleção e feeds inalterados) — **PASS**.
+
+**O que continua fora de alcance:** a **árvore de acessibilidade do sheet** neste device/runtime continua
+Application-only mesmo com as linhas desenhadas (medido pelo mesmo diagnóstico). A jornada de UI segue skipada com
+essa medição; a interação e o conteúdo estão provados no nível de app e a tela está provada por captura. Skip não
+é aceite e está registrado como tal.
