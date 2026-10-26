@@ -97,13 +97,13 @@ Quando F13 for implementado, o lugar é o owner da exclusão (pré-filtro do sup
 
 | Prova | Resultado |
 |---|---|
-| `swift test --filter VisitAcquisitionTests` (servidor HTTP real em `127.0.0.1`, sem `URLProtocol`) | **5/5 PASS** |
+| `swift test --filter VisitAcquisitionTests` (servidor HTTP real em `127.0.0.1`, sem `URLProtocol`) | **6/6 PASS** |
 | `SourceIdentityIndexTests` (novo caso de alias) | executado no pacote |
 | app: `testF12OpeningAnUnselectedSourcePullsOnlyItsOwnEndpointByExplicitGesture` | **PASS** |
 | app: `testF12TogglingAnotherSourceWhileReadingADormantOneKeepsTheVisit` | **PASS** |
 | app: `testF12AnEmptiedSelectionKeepsPublishedHistoryAndStatesTheEmptySelection` | **PASS** |
 | app: classe `CompositionTests` completa | **134/134 PASS** |
-| `swift test` (pacote completo) | **1735 testes, 1 skip, 0 falhas** |
+| `swift test` (pacote completo) | **1736 testes, 1 skip, 0 falhas** |
 | app: `testF12AConstrainedVisitStatesAbsenceWithoutInventingOrSubstituting` (UX12-D) | **PASS** |
 | app: alvo `FeedMineAppTests` completo | **206/206 PASS** |
 
@@ -111,12 +111,22 @@ Incidente medido na primeira passada da suíte completa: 9 falhas, todas em fenc
 **durável**. Causa: a releitura defensiva da autoridade antes do admit interceptava a recusa e devolvia `.cancelled` em
 vez do erro estrutural que os callers esperam. Correção: a releitura passou a valer só para o caminho `.visit`; o
 caminho durável mantém exatamente o erro do admission. Os 4 arquivos afetados (161 testes) voltaram a PASS e a suíte
-completa foi repetida (1735/1 skip/0).
+completa foi repetida (1736/1 skip/0).
 
 Os testes de pacote provam, sobre socket real: só a fonte visitada é buscada; a admissão é canônica e durável (duas
 memberships da fonte visitada, nenhuma da outra); **nenhum** `acquisition_target` é criado; um alvo durável habilitado
 mantém seu próprio cursor; uma linha durável `revoked` não é ressuscitada; sem arming o snapshot recusa a registration;
 após `revokeAll` a elegibilidade fica vazia e uma execução obsoleta não admite nada.
+
+**Dedupe canônico medido** (`testASecondPullOfTheSameVisitChangesNoCanonicalSupply`): a segunda execução do mesmo
+alvo armado, sobre o mesmo XML, devolve `selectableSupplyChanged == false` e o store continua com **2** registros
+canônicos (a contagem é o juiz, não o número de requests). É o que sustenta a promessa de que recomprar a visita não
+duplica supply.
+
+**Paridade de promoção** (`visitRegistration(_:from:)`): a visita segue a regra do irmão durável — o endpoint é
+trocado só quando a **mesma identidade** resolve; registro ausente no catálogo promovido **mantém** o arming, em vez
+de retirar em silêncio a licença de um gesto que a atualização pública não conhece (o caso de uma fonte renomeada, cujo
+principal é o anchor key). Retirada continua sendo `revoked` durável, recusada pelo ledger.
 
 ## 7. Limites e não-objetivos
 

@@ -188,6 +188,42 @@ final class VisitAcquisitionTests: XCTestCase {
         }
     }
 
+    /// Canonical dedupe, measured across a second pull of the same visited source: the visit deliberately re-pulls
+    /// from its in-memory cursor, so a revisit must converge on the same canonical supply rather than duplicate it.
+    /// The store is the judge, not the request count: same two records, and the second settlement reports no new
+    /// selectable supply.
+    func testASecondPullOfTheSameVisitChangesNoCanonicalSupply() async throws {
+        let fixture = try fixture()
+        let visitedTarget = AcquisitionTargetID()
+        let visitRegistration = registration(targetID: visitedTarget, source: visitedSource,
+            endpoint: fixture.server.url(for: "visited.xml"))
+        let visit = VisitTargetAuthority()
+        _ = visit.arm(targetID: visitedTarget, authorizedSources: [visitedSource], sourceID: visitedSource)
+        let snapshot = try snapshot(fixture, durable: [], visit: [visitRegistration], authority: visit)
+        let coordinator = snapshot.makeCoordinator()
+        let target = try XCTUnwrap(visit.target(id: visitedTarget))
+        let work: AcquisitionPlannedWork = .start(target: target,
+            bounds: .init(batchCapacity: 1, observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!)
+
+        let first = try await coordinator.execute(work)
+        XCTAssertTrue(first.selectableSupplyChanged, "premise: the first pull admits new supply")
+        func canonicalCount() throws -> Int {
+            try ContentStore(database: fixture.database)
+                .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 32).records.count
+        }
+        XCTAssertEqual(try canonicalCount(), 2)
+
+        let second = try await coordinator.execute(work)
+        XCTAssertFalse(second.selectableSupplyChanged,
+            "a second pull of the same bytes is not new supply (stop=\(second.stop))")
+        XCTAssertEqual(try canonicalCount(), 2, "and it duplicates no canonical record")
+        XCTAssertEqual(Set(try ContentStore(database: fixture.database)
+            .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 32).records.flatMap(\.sourceIDs)),
+            [visitedSource])
+        XCTAssertNil(try AcquisitionTargetAuthority(database: fixture.database).target(id: visitedTarget),
+            "still no durable target after two pulls")
+    }
+
     func testAnEnabledDurableRowKeepsItsOwnGenerationAndCursor() async throws {
         let fixture = try fixture()
         let target = try AcquisitionTargetAuthority(database: fixture.database).register(

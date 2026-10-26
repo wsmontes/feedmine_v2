@@ -281,16 +281,18 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         return discovery?.connector(for: target, using: transport)
     }
 
-    /// A visit registration survives a catalogue promotion only while the source it names still resolves to the
-    /// same identity. It is deliberately **not** filtered by selection or by `defaultEnabled`: the reader's explicit
-    /// gesture is the licence, and a public update may not silently withdraw it while the surface is being read.
+    /// A visit registration survives a catalogue promotion, exactly as a reader-selected one does: the armed
+    /// endpoint is swapped only when the **same identity** still resolves, and a missing record keeps the armed
+    /// registration instead of silently withdrawing a licence a public update knows nothing about. (A renamed source
+    /// is the case that made this matter: its binding principal is the anchor key, which the promoted catalogue no
+    /// longer contains.) Retirement is durable `revoked` — refused by the ledger, not by this function.
     private func visitRegistration(_ registration: SyndicationTargetRegistration,
         from catalogue: LegacyCatalogReader?) -> SyndicationTargetRegistration? {
         guard let catalogue,
             let identity = registration.bindings.first?.externalPrincipal,
             identity.namespace == LegacyCatalogImport.principalNamespace else { return registration }
-        guard let record = try? catalogue.source(key: identity.value),
-            let updated = LegacyCatalogImport.entry(record),
+        guard let record = try? catalogue.source(key: identity.value) else { return registration }
+        guard let updated = LegacyCatalogImport.entry(record),
             updated.targetID == registration.targetID else { return nil }
         return SyndicationTargetRegistration(targetID: registration.targetID,
             targetGeneration: registration.targetGeneration, endpoint: updated.endpoint,
