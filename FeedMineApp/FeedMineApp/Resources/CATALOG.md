@@ -108,12 +108,15 @@ execução, e seis testes de catálogo da suíte de app falhavam por isso.
 
 **Varredura (a parte que a primeira tentativa errou):** procurar só em `~/Documents`, `/tmp` e
 DerivedData não encontra os bytes do build 56, que estão em worktrees de outras sessões. A varredura
-correta cobriu `~/.codex/worktrees`, `~/Documents`, `/tmp`, `~/Desktop`, `~/Downloads` e
-`~/Library/Developer/Xcode/Archives`: **55** arquivos chamados `catalog.sqlite`; **33** com o tamanho
-esperado (117.993.472 B) foram hasheados; **11** são `1825fdae…` — `feedmine-bisect`,
-`-bisect-base`, `-bisect-pre`, `-bisect-reader`, `-churn`, `-reserve2`, e, em `-reader-position` e
-`-reserve`, tanto `Resources` quanto o staging e o `.xcarchive`. Os outros 22 desse tamanho são
-`e6da170e…` (build 55). Nenhum arquivo de outro tamanho foi contado como candidato.
+correta cobriu `~/.codex/worktrees`, `~/Documents`, `/tmp`, `~/Desktop`, `~/Downloads`,
+`~/Library/Developer/Xcode/Archives` e uma passada separada dentro de `.build` (que o primeiro filtro
+excluía): **66** arquivos chamados `catalog.sqlite`; **43** com o tamanho esperado (117.993.472 B)
+foram hasheados; **15** são `1825fdae…` — `feedmine-bisect`, `-bisect-base`, `-bisect-pre`,
+`-bisect-reader`, `-churn`, `-reserve2`, e, em `-reader-position` e `-reserve`, `Resources`, staging e
+`.xcarchive`, mais quatro dentro de `.build` (incluindo `feedmine-reserve/.build/dd-audit` e
+`dd-candidate`). Os outros **28** desse tamanho são `e6da170e…` — entre eles o IPA e o `.xcarchive` da
+release 55, cujo descritor declara e cujo `.sqlite` hasheia para `e6da170e…`. Nenhum arquivo de outro
+tamanho (o snapshot de 117.891.072 B, por exemplo) foi contado como candidato.
 
 **Staging válido encontrado e usado:**
 `~/.codex/worktrees/feedmine-reserve/feedmine_v2/build/catalog-bootstrap` — `state.json` registra

@@ -200,7 +200,7 @@ O conserto integrado tem **um** dono, `AppComposition.sourceContextDisplayName`,
 
 `FeedAssociation.presentationNames(supply:contextKey:contextSourceDisplayName:)` acrescenta a fonte do contexto
 **apenas ao mapa de atribuição**. `supply`, `registrations`, elegibilidade, `acquisition_targets` e endpoints não
-mudaram: abrir a fonte continua sem habilitar nada, e o teste afirma a identidade do target antes/depois.
+mudaram: abrir a fonte continua sem habilitar nada, e o teste afirma a identidade do target antes/depois. O memo do fato persistido guarda só um nome **encontrado**, nunca a ausência: um `nil` congelado impediria ler o fato que uma publicação posterior criasse no mesmo contexto.
 
 ### Regressão nova, com controle vermelho
 
@@ -239,18 +239,29 @@ e seis testes de catálogo falhavam.
 bytes só em `~/Documents`, `/tmp` e DerivedData, não achou `1825fdae` e instalou o par antigo,
 reescrevendo `CATALOG.md`. Isso estava **errado**: a varredura não cobria `~/.codex/worktrees`. A
 varredura correta (`~/.codex/worktrees`, `~/Documents`, `/tmp`, `~/Desktop`, `~/Downloads`,
-`~/Library/Developer/Xcode/Archives`) encontrou **55** arquivos `catalog.sqlite`; **33** com o
-tamanho esperado (117.993.472 B) foram hasheados; **11** são `1825fdae…`:
-`feedmine-bisect`, `-bisect-base`, `-bisect-pre`, `-bisect-reader`, `-churn`, `-reserve2`, e — em
-`feedmine-reader-position` e `feedmine-reserve` — `Resources`, staging e `.xcarchive`. Os outros 22
-desse tamanho são `e6da170e…` (build 55). O commit errado foi revertido (`22e2716c`).
+`~/Library/Developer/Xcode/Archives`, e uma passada separada dentro de `.build`, que o primeiro filtro
+excluía) encontrou **66** arquivos `catalog.sqlite`; **43** com o tamanho esperado (117.993.472 B)
+foram hasheados; **15** são `1825fdae…` — 11 fora de `.build` (`feedmine-bisect`, `-bisect-base`,
+`-bisect-pre`, `-bisect-reader`, `-churn`, `-reserve2`, e, em `-reader-position` e `-reserve`,
+`Resources`, staging e `.xcarchive`) e 4 dentro dele (`feedmine-reserve/.build/dd-audit` e
+`dd-candidate`, `feedmine-reader-position/.build/feedmine-v2.xcarchive`, e o `baseline-app` de
+`jobs/continuity-fix`). Os outros **28** desse tamanho são `e6da170e…` — entre eles o **IPA e o
+`.xcarchive` da release 55** (`.build/omp-reader-controls-20261021/private-release55/…`), cujo
+descritor declara e cujo `.sqlite` hasheia para `e6da170e…`. O commit errado foi revertido
+(`22e2716c`).
 
-**Par verdadeiro, com proveniência do próprio pipeline:**
+**O par que o descritor commitado declara, com proveniência do próprio pipeline:**
 `~/.codex/worktrees/feedmine-reserve/feedmine_v2/build/catalog-bootstrap` — `state.json` registra
 `catalog.sqlite 1825fdae…` (117.993.472 B), descritor `4cc9cba6…` (byte-idêntico ao commitado),
 `build-report.json cf885af7…`, `builtAt 2026-10-24T19:06:40Z`, compilador `build_catalog.py
 e3c9fcf2…` + `catalog_identity.py 2a83b833…` (Python 3.11.1), árvore `846b1720…` e manifesto público
 `2a4f754f…` (revisão 5).
+
+Os **dois** pares são válidos: o IPA da release 55 (extraído em
+`.build/omp-reader-controls-20261021/private-release55/…/ipa-extract/Payload/FeedMine.app/catalog.manifest.json` e
+no `.xcarchive` preservado) carrega o descritor que declara `e6da170e…`; o descritor commitado em `55c097ab` é o do
+build 56 e declara `1825fdae…`. Este checkout passa a honrar o descritor commitado; o par do build 55 fica como
+backup e como a configuração em que a suíte de app deu 197/0 (ver a seção da reserva).
 
 **Instalação:** o `.sqlite` e o descritor foram copiados para `Resources` (o descritor não mudou em
 relação ao commit, porque o commit já era o certo) e `scripts/bootstrap_catalog.py` foi rodado com os
@@ -301,9 +312,9 @@ degradado deixa de ser o normal deste build.
 
 | Medição | Resultado |
 |---|---|
-| isolado, árvore final (6 execuções: 5 antes da instrumentação, 1 depois) | **FAIL** 1 vs 17 em todas |
-| suíte de app completa, **par de catálogo do build 56** (o commitado) | **197 testes, 1 falha — exatamente este caso** |
-| suíte de app completa, par errado do build 55 (medida intermediária, descartada) | PASS — o catálogo degradado mudava a ordem de aquisição e **mascarava** o caso |
+| isolado, 6 execuções no total: 1 sem sonda (bg_7), 4 com sondas apenas de `print` (bg_8–bg_11, mesma árvore) e 1 na árvore final limpa (bg_14) | **FAIL** 1 vs 17 nas 6; as sondas foram removidas |
+| suíte de app completa, árvore final com o par `1825fdae…`/`4cc9cba6…` (o do descritor commitado), simulador recém-apagado | **197 testes, 1 falha — exatamente este caso (linha 647)** |
+| suíte de app completa, mesma árvore, par `e6da170e…`/`c2c0f0e7…` do build 55 (também casado e verificado; os 6 testes de catálogo passavam), simulador já aquecido | **197 testes, 0 falhas** |
 | sonda em `LocalProductionSlice.run` (removida) | `structural=24 window=24 eligible=24 ready=24 publishedInWindow=1 cursor=false` |
 | sonda de uma segunda oportunidade (removida) | `after-first=1`, `after-second=1`, **sem** segunda linha de slice local |
 
@@ -312,8 +323,10 @@ mesma fonte são proibidas, e a janela só oferecia essa fonte); após a libera�
 examina uma janela de 24 candidatos de **uma** fonte com o tail da edição na mesma fonte, e `MaximumDistanceSequencing`
 (v6) não coloca nada; o runway passa a ver `ready_cards=0`, pede rede, recebe `up_to_date`, e a oportunidade seguinte
 **não emite slice local** — a janela fica em 1. O desfecho depende de qual fonte tem as linhas mais novas (ordem de
-aquisição, diferença de microssegundos) — e o par de catálogo errado bastava para mudar essa ordem e
-fazer a suíte passar. Com o par correto, isolado e suíte concordam no vermelho.
+aquisição, diferença de microssegundos). As duas execuções da suíte usaram **pares válidos e verificados** (o do
+build 55 e o do build 56), então a diferença **não é integridade nem degradação**: é dependência de
+ordem/temporização, cuja causa específica não foi medida. O que se pode afirmar é o resultado do gate: **1 falha
+conhecida** na árvore final, reproduzida isolada 6/6; o 197/0 anterior não é o resultado desta entrega.
 
 Não é aceitável declarar verde: a decisão que falta é de **planejamento do runway** (depois de uma slice que não
 coloca nada, continuar a página local seguinte enquanto a caminhada não estiver exausta e houver suprimento pronto,
