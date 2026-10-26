@@ -104,7 +104,8 @@ Quando F13 for implementado, o lugar é o owner da exclusão (pré-filtro do sup
 | app: `testF12AnEmptiedSelectionKeepsPublishedHistoryAndStatesTheEmptySelection` | **PASS** |
 | app: classe `CompositionTests` completa | **134/134 PASS** |
 | `swift test` (pacote completo) | **1735 testes, 1 skip, 0 falhas** |
-| app: alvo `FeedMineAppTests` completo | ver relatório da sessão (`/tmp/feedmine-s1-f12-final.md`) |
+| app: `testF12AConstrainedVisitStatesAbsenceWithoutInventingOrSubstituting` (UX12-D) | **PASS** |
+| app: alvo `FeedMineAppTests` completo | **206/206 PASS** |
 
 Incidente medido na primeira passada da suíte completa: 9 falhas, todas em fences de generation/revogação do caminho
 **durável**. Causa: a releitura defensiva da autoridade antes do admit interceptava a recusa e devolvia `.cancelled` em
@@ -125,6 +126,16 @@ após `revokeAll` a elegibilidade fica vazia e uma execução obsoleta não admi
 - Janela aceita: um batch já buscado pode ser admitido no instante da aposentadoria; a releitura imediatamente antes do
   admit fecha a janela para um arming já revogado, e nenhuma publicação entra numa associação aposentada (fence de
   runway). Testado no nível de admissão.
-- `reconcile` continua não-fiado (ver §3). UX12-A/UX12-D não foram reabertos nesta rodada.
+- **UX12-D — estado factual medido, captura de tela NOT_RUN.** A visita a uma fonte sem payload local, com a
+  rede recusada (`FixtureTransport.rejecting`), apresenta ausência **na própria fonte**: contexto `.source`, zero
+  cards, nenhuma Edition substituta, `surfaceHasSources == true` (a ausência é da fonte, não da seleção),
+  `work != .endOfContent` (uma falha de rede não é "você leu tudo"), `startupFailure == nil` e o chip ainda nomeando
+  a fonte. O caminho de copy é o gate já pinado para `unreachable`/`failed` em `FirstScreenPresentationTests`; o que
+  falta — e é o bloqueador real — é a captura antes/depois: esta rodada não executou jornada de UI (o sheet de Fontes
+  não expõe as linhas na árvore de acessibilidade neste device, já documentado em
+  `docs/reviews/evidence/2026-10-25-f12-source-feed/README.md`), então nenhuma tela é alegada.
+- UX12-A não foi reaberto: a rota card→detalhe→assunto→país→lista→fonte continua dependendo do sheet que não expõe
+  linhas; o que esta rodada prova é o **destino** da fonte (`.source` correto, card/âncora preservados), não o percurso
+  completo.
 - `bench/**`, oráculo congelado, driver, `criteria.json`, `capacity-ready.json`, corpus: intocados. B03 permanece o
   resultado congelado (não é PASS) e B06 não é declarado provado.

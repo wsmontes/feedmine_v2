@@ -5561,6 +5561,48 @@ final class CompositionTests: XCTestCase {
         await reopened.association?.close()
     }
 
+    /// F12/UX12-D: a source the reader opened that has **no local payload** and whose network is refused states the
+    /// absence in its own terms. It does not invent cards, does not substitute the main feed's Edition and does not
+    /// claim the end of content (an outage is not "you have read everything"). `surfaceHasSources` stays true, so the
+    /// surface asks about *this source*, never about an empty selection.
+    func testF12AConstrainedVisitStatesAbsenceWithoutInventingOrSubstituting() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let key = "https://feeds.npr.org/1001/rss.xml"
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(
+            try XCTUnwrap(LegacyCatalogReader(catalogURL: catalogue).source(key: key))))
+        FixtureTransport.rejecting.withLock { $0 = true }
+        addTeardownBlock { FixtureTransport.rejecting.withLock { $0 = false } }
+        let composition = root(directory: directory, feeds: [])
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+        XCTAssertNil(composition.association?.store.state.presentation, "premise: nothing local to restore")
+
+        let opened = try await composition.openSourceFeed(forKey: key)
+        XCTAssertTrue(opened)
+        let association = try XCTUnwrap(composition.association)
+        _ = try? await association.driver.drive(resources: association.resources)
+        try await Task.sleep(for: .milliseconds(600))
+
+        XCTAssertEqual(association.contextKey.request, .source(entry.source.id),
+            "the surface is the source the reader opened, not a repaired `.main`")
+        XCTAssertTrue(composition.surfaceHasSources,
+            "the absence belongs to this source, not to an empty selection")
+        XCTAssertFalse(composition.hasSelectedSources, "and opening it selected nothing")
+        XCTAssertTrue(composition.feeds.isEmpty)
+        XCTAssertNil(association.store.state.presentation,
+            "no card is invented and no other Edition is substituted for an outage")
+        XCTAssertNotEqual(association.store.work, .endOfContent,
+            "an unreachable source is not the end of its content")
+        XCTAssertNil(composition.startupFailure, "a constrained feed is not a startup failure")
+        XCTAssertEqual(composition.sourceContextDisplayName, entry.source.displayName,
+            "the chip still names the source it is about")
+        XCTAssertNil(try AcquisitionTargetStore(database: database).target(id: entry.targetID),
+            "the constrained visit registered nothing durable either")
+        await association.close()
+    }
+
     /// F12/R1: a card from a **collection's** source, which the reader has not selected, opens that source's own
     /// context. `feeds` inside a collection holds the collection's sources, so a "is this id readable here?" guard
     /// admits it and `sessionState` rewrites the request to `.main` — the silent fallback class this fix exists to
