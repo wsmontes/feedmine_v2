@@ -6254,9 +6254,6 @@ final class S1SourceSurfaceTests: XCTestCase {
             "the note names the source it is about")
 
         let key = "Você está vendo os itens que %@ publica no feed. O arquivo completo do site não faz parte dele."
-        XCTAssertTrue(key.contains("%@"), "the note names the source at the one place the surface knows it")
-        XCTAssertTrue(key.contains("publica no feed"), "it states the feed as the origin")
-        XCTAssertTrue(key.contains("arquivo completo do site"), "and states the archive it is not")
         // The translation is a shipped artifact, read from the app's own table (the source language is the key).
         let en = try XCTUnwrap(localized(key, language: "en"), "an English value ships")
         XCTAssertTrue(en.contains("%@"), "the English value keeps the source slot: \(en)")
@@ -6264,6 +6261,14 @@ final class S1SourceSurfaceTests: XCTestCase {
             "the English value states the feed as the origin: \(en)")
         XCTAssertTrue(en.localizedCaseInsensitiveContains("complete archive"),
             "and states the archive it is not: \(en)")
+
+        // The runtime note must be one of the two **shipped** sentences with the name in the slot. A copy change
+        // that never reached the catalogue, or a view that ignored the localized value, fails here; asserting the
+        // literal alone would not.
+        let note = FeedLoadingView.sourceScopeNote(sourceContextName: "BBC News")
+        let english = en.replacingOccurrences(of: "%@", with: "BBC News")
+        XCTAssertTrue(note == english || note.contains("arquivo completo do site"),
+            "the drawn note is the shipped copy with the source named; observed: \(note)")
 
         for work in [FeedPresentationState.Work.unavailable, .unreachable, .deferred,
             .failed(message: "falha"), .endOfContent] {

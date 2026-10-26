@@ -1,5 +1,10 @@
 # S1/F12 — correções da revisão de autoridade e UX12-A/D executados
 
+> **Este documento prevalece sobre o §7 de `2026-10-26-f12-s1-visit-acquisition.md`** nos pontos de UX12-A e
+> UX12-D: aquela seção registrava ambas as jornadas como não executadas, e as duas foram executadas aqui (UI real,
+> com evidência em `.xcresult`). O texto antigo permanece como registro daquela rodada; as notas de correção foram
+> acrescentadas lá apontando para cá.
+
 Base: `d199553b` (árvore limpa salvo `capacity-ready.json`). Rodada de 2026-10-26, um executor, sem push/merge.
 Escopo: os defeitos D1–D3 e as hipóteses H1/H3/H5 de `/tmp/feedmine-s1-f12-authority-review.md`, revalidados
 contra o texto real de INV-11/12 (`docs/architecture/PRODUCT_INVARIANTS.md:124/:132`) e o código em HEAD; depois
