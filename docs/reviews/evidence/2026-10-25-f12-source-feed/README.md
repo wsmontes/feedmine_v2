@@ -220,47 +220,71 @@ container com `feeds: []` e exige contexto `.source`, o mesmo nome no chip e nas
 
 ### Jornada de UI estrita, sem skip
 
-`FeedMineUITests.testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot` — **PASS (482,96 s)** no device
-`39EA1733`. As cláusulas que antes aceitavam vazio agora exigem: ≥1 carta depois de abrir a fonte desabilitada
+`FeedMineUITests.testF12TheSourceRowOpensItsOwnFeedAndTheToggleDoesNot` — **PASS (472,63 s)** no device
+`39EA1733` com o par de catálogo do build 56 (482,96 s com o par antigo do build 55). As cláusulas que antes aceitavam vazio agora exigem: ≥1 carta depois de abrir a fonte desabilitada
 **e** ≥1 carta depois do relançamento; a atribuição é lida **dentro do nó da carta** (`cardCarries("BBC News")`), não
 pelo `staticTexts["BBC News"]` que casa o chip; o chip do relançamento é exigido `BBC News` (não mais `"Uma fonte"`).
 O helper de rolagem continua tentando `tables` **e** `collectionViews` antes do swipe do app (runtime iOS 26 expõe a
 lista do sheet como collection). `NodeSourcesView` mantém `onClose` no próprio nó (`node-sources-done`), e a jornada
 prova que reabrir a superfície volta ao **mesmo** nó.
 
-### O par de catálogo local foi refeito pelo pipeline original
+### O par de catálogo do build 56 existe e foi instalado (com uma correção de rota)
 
-Medição: o descritor commitado em `55c097ab` declarava `catalogue sha256 1825fdae…`; **nenhum byte com esse checksum
-existia na máquina** (busca por tamanho+SHA em `~/Documents/GitHub`, `/tmp` e DerivedData). O `catalog.sqlite` local
-(gitignored) era `e6da170e…`, o mesmo do staging verificado de 2026-10-16 e o que este documento declara.
+**Sintoma:** este checkout trazia o descritor commitado em `55c097ab` (`sha256 4cc9cba6…`, que declara
+`catalogue 1825fdae…`) ao lado de um `catalog.sqlite` gitignored `e6da170e…`. Esse `.sqlite` é o par do
+**build 55** (o IPA de release já distribuído), anterior ao descritor; o app recusava o par em execução
+e seis testes de catálogo falhavam.
 
-Reparo executado, sem atalho e sem reescrever checksum para acomodar bytes:
+**Varredura que decidiu (e o erro que ela corrigiu):** a primeira tentativa desta rodada procurou os
+bytes só em `~/Documents`, `/tmp` e DerivedData, não achou `1825fdae` e instalou o par antigo,
+reescrevendo `CATALOG.md`. Isso estava **errado**: a varredura não cobria `~/.codex/worktrees`. A
+varredura correta (`~/.codex/worktrees`, `~/Documents`, `/tmp`, `~/Desktop`, `~/Downloads`,
+`~/Library/Developer/Xcode/Archives`) encontrou **55** arquivos `catalog.sqlite`; **33** com o
+tamanho esperado (117.993.472 B) foram hasheados; **11** são `1825fdae…`:
+`feedmine-bisect`, `-bisect-base`, `-bisect-pre`, `-bisect-reader`, `-churn`, `-reserve2`, e — em
+`feedmine-reader-position` e `feedmine-reserve` — `Resources`, staging e `.xcarchive`. Os outros 22
+desse tamanho são `e6da170e…` (build 55). O commit errado foi revertido (`22e2716c`).
 
-```
-/usr/bin/env python3.11 scripts/bootstrap_catalog.py \
-  --compiler .../_legacy_feedmine_v1/scripts/build_catalog.py \
-  --compiler-sha256 e3c9fcf2… --identity-sha256 2a83b833…
-```
+**Par verdadeiro, com proveniência do próprio pipeline:**
+`~/.codex/worktrees/feedmine-reserve/feedmine_v2/build/catalog-bootstrap` — `state.json` registra
+`catalog.sqlite 1825fdae…` (117.993.472 B), descritor `4cc9cba6…` (byte-idêntico ao commitado),
+`build-report.json cf885af7…`, `builtAt 2026-10-24T19:06:40Z`, compilador `build_catalog.py
+e3c9fcf2…` + `catalog_identity.py 2a83b833…` (Python 3.11.1), árvore `846b1720…` e manifesto público
+`2a4f754f…` (revisão 5).
 
-- manifesto público lido agora: `revision 5`, `schemaVersion 1`, 118 arquivos, 77.443 fontes,
-  `sha256 2a4f754f…` (21.223 bytes);
-- inventário **118/118** OPML reconferido por tamanho e SHA-256 contra ele (tree identity `846b1720…`);
-- compilador V1 com os hashes pinados acima (`build_catalog.py` e `catalog_identity.py` adjacente, Python 3.11.1);
-- artefato **reusado** pelo gate de idempotência (entradas idênticas ⇒ mesmo checksum), não recompilado;
-- relatório de build concordando: `file_count 118`, `source_count 77443`, `node_count 6450`,
-  `placement_count 77443`, `size_bytes 117993472`;
-- descritor regenerado do staging (`sha256 c2c0f0e7…`) e instalado **com** o `.sqlite`; o par commitado passa a
-  declarar `e6da170e…`.
+**Instalação:** o `.sqlite` e o descritor foram copiados para `Resources` (o descritor não mudou em
+relação ao commit, porque o commit já era o certo) e `scripts/bootstrap_catalog.py` foi rodado com os
+hashes pinados neste checkout: o gate de idempotência respondeu *“reused: catalog.sqlite compiled at
+2026-10-24T19:06:40Z”*, o descritor saiu **inalterado**, e `state.json`/`provenance.json` foram
+reescritos pelo próprio script com os caminhos deste workspace — sem recompilar e sem trocar checksum.
 
-Backup dos bytes e do descritor pré-reparo: `/tmp/feedmine-omp-final-integration/catalog-bootstrap-repair/pre-repair/`
-(descritor + SHA-256 + estado do staging) e o log do pipeline no mesmo diretório. `CATALOG.md` ganhou a seção
-“Reparo do par local (2026-10-25)” com a mesma cadeia.
+**Verificação:** `scripts/verify_catalog_release.py preflight --head <SHA>` →
+`P0C preflight verified: revision 5 / manifest 2a4f754f… / sqlite 1825fdae…` (exit 0); metadata do
+banco `schema_version=2`, `catalog_version=1792868795281916`, 77.443 fontes, 6.450 nós, 77.443
+placements. Backup do par antigo (build 55) e do staging anterior:
+`/tmp/feedmine-omp-final-integration/catalog-bootstrap-repair/pre-repair/` e `…/e6da17-staging/`.
 
-As 6 falhas de catálogo da rodada 10 eram **deste par**, e não de regressão: com o par casado, passam
-`testBundledCatalogHasRealBytesAndStableBoundedDefaults`, `testPD10StandardPublicAuthorityChecksFirstForegroundAfterLocalPaint`,
-`testPD10RelaunchRespects23And25HourWindowAndConsistent304`, `testPD10FailedInstallNeverPersistsTheOfferedETag`,
+As 6 falhas de catálogo da rodada 10 eram **deste par**, e não regressão: com o par do build 56
+passam `testBundledCatalogHasRealBytesAndStableBoundedDefaults`,
+`testPD10StandardPublicAuthorityChecksFirstForegroundAfterLocalPaint`,
+`testPD10RelaunchRespects23And25HourWindowAndConsistent304`,
+`testPD10FailedInstallNeverPersistsTheOfferedETag`,
 `testPD10B1B3ForegroundActivatesSixWithoutChangingCompletePublishedPresentation` e
 `CatalogueUpdateAcceptTests.testForegroundAcceptsTheAuthoritiesNewerRevisionWithoutTouchingTheReadersStore`.
+
+### D2 no banco do run real
+
+A jornada de UI deixou, no container do próprio app (copiado para
+`/tmp/feedmine-omp-final-integration/ui-journey-runtime-truepair/`), a prova persistida de D2:
+
+```
+reader_preferences: request.source(3714853F…), source_keys = []
+feed_editions:     2 edições de contexto `source`
+published_cards:   12 cartas — todas source_display_name = "BBC News", todas do source 3714853f…
+```
+
+Ou seja: com a seleção vazia, as cartas publicadas **na fonte desabilitada** carregam o nome, em duas
+gerações (antes e depois do relançamento) — o `NULL` medido no diagnóstico original não aparece.
 
 **Fronteira de confiança do fallback bundled (reavaliada):** `SourceManagementCoordinator` só cai para
 `installation.bundledCatalogue` quando não há snapshot verificado, e esse caminho lê um recurso do **próprio bundle
@@ -278,7 +302,8 @@ degradado deixa de ser o normal deste build.
 | Medição | Resultado |
 |---|---|
 | isolado, árvore final (6 execuções: 5 antes da instrumentação, 1 depois) | **FAIL** 1 vs 17 em todas |
-| suíte de app completa (197 testes) | **PASS** — logo a suíte **não** é prova do caso; ele é dependente de ordem |
+| suíte de app completa, **par de catálogo do build 56** (o commitado) | **197 testes, 1 falha — exatamente este caso** |
+| suíte de app completa, par errado do build 55 (medida intermediária, descartada) | PASS — o catálogo degradado mudava a ordem de aquisição e **mascarava** o caso |
 | sonda em `LocalProductionSlice.run` (removida) | `structural=24 window=24 eligible=24 ready=24 publishedInWindow=1 cursor=false` |
 | sonda de uma segunda oportunidade (removida) | `after-first=1`, `after-second=1`, **sem** segunda linha de slice local |
 
@@ -287,7 +312,8 @@ mesma fonte são proibidas, e a janela só oferecia essa fonte); após a libera�
 examina uma janela de 24 candidatos de **uma** fonte com o tail da edição na mesma fonte, e `MaximumDistanceSequencing`
 (v6) não coloca nada; o runway passa a ver `ready_cards=0`, pede rede, recebe `up_to_date`, e a oportunidade seguinte
 **não emite slice local** — a janela fica em 1. O desfecho depende de qual fonte tem as linhas mais novas (ordem de
-aquisição, diferença de microssegundos), o que explica FAIL isolado × PASS na suíte.
+aquisição, diferença de microssegundos) — e o par de catálogo errado bastava para mudar essa ordem e
+fazer a suíte passar. Com o par correto, isolado e suíte concordam no vermelho.
 
 Não é aceitável declarar verde: a decisão que falta é de **planejamento do runway** (depois de uma slice que não
 coloca nada, continuar a página local seguinte enquanto a caminhada não estiver exausta e houver suprimento pronto,

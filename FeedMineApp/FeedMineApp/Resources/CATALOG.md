@@ -3,14 +3,17 @@
 Snapshot read-only derivado da **revisão pública 5** de `wawasoft/feed-repository`: 77.443 fontes, 6.450 nós e
 77.443 placements. 117.993.472 bytes.
 
-SHA-256: `e6da170eb9bd139ee9acd95f09940b9c999e3870ce5b70b8f1cace2be076e54c`.
-Metadata schema_version=2; catalog_version=1792180662394189; SQLite user_version=0.
+SHA-256: `1825fdae1d68fc5f6c22f1c1574d9930b8e6e88947f841519c12a9d1554d01b8`.
+Metadata schema_version=2; catalog_version=1792868795281916; SQLite user_version=0.
 
 > **Builds 46–48** embarcaram o mesmo snapshot com outro par de bytes — SHA-256
 > `42e602341d18f47290b06615eb9d49a25a693e36f3e9a4c327bbecd83e923b66` e
 > `catalog_version=1792122546765159`. As **builds ≤ 45** embarcaram um par ainda mais antigo — SHA-256
 > `72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71` e
-> `catalog_version=1791736083355950`. As três versões têm o mesmo tamanho, o mesmo inventário
+> `catalog_version=1791736083355950`. O **build 55** (IPA de release já distribuído) embarcou
+> `e6da170eb9bd139ee9acd95f09940b9c999e3870ce5b70b8f1cace2be076e54c` com
+> `catalog_version=1792180662394189`; o par descrito no topo é o do **build 56**, compilado depois e
+> o único que casa com o descritor commitado. Todas as versões têm o mesmo tamanho, o mesmo inventário
 > (118 OPML, 77.443 fontes, 6.450 nós) e a mesma revisão pública 5: o compilador V1 não é
 > reprodutível byte a byte, e o `catalog_version` é um relógio de parede. Os relatórios anteriores
 > de `docs/reviews/` mantêm, corretamente, os números das builds que mediram.
@@ -95,3 +98,45 @@ substituir conteúdo após fixar o SHA da build. O preflight e o archive usam a 
 pública fresca e confirmam o SHA-256 dos bytes realmente distribuíveis; sem acesso à
 autoridade, não se declara uma revisão antiga como atual. Nada disso ocorre no primeiro paint.
 O antigo `fetch-catalog.sh` agora recusa explicitamente instalar `catalog-v1`.
+
+## Reparo do par local (2026-10-26)
+
+**Sintoma medido:** este checkout trazia o descritor commitado (`sha256 4cc9cba6…`, o mesmo de
+`55c097ab`, que declara o catálogo `1825fdae…`) ao lado de um `catalog.sqlite` gitignored
+`e6da170e…` — o par do **build 55**, anterior ao descritor. `CatalogInstallation` recusava o par em
+execução, e seis testes de catálogo da suíte de app falhavam por isso.
+
+**Varredura (a parte que a primeira tentativa errou):** procurar só em `~/Documents`, `/tmp` e
+DerivedData não encontra os bytes do build 56, que estão em worktrees de outras sessões. A varredura
+correta cobriu `~/.codex/worktrees`, `~/Documents`, `/tmp`, `~/Desktop`, `~/Downloads` e
+`~/Library/Developer/Xcode/Archives`: **55** arquivos chamados `catalog.sqlite`; **33** com o tamanho
+esperado (117.993.472 B) foram hasheados; **11** são `1825fdae…` — `feedmine-bisect`,
+`-bisect-base`, `-bisect-pre`, `-bisect-reader`, `-churn`, `-reserve2`, e, em `-reader-position` e
+`-reserve`, tanto `Resources` quanto o staging e o `.xcarchive`. Os outros 22 desse tamanho são
+`e6da170e…` (build 55). Nenhum arquivo de outro tamanho foi contado como candidato.
+
+**Staging válido encontrado e usado:**
+`~/.codex/worktrees/feedmine-reserve/feedmine_v2/build/catalog-bootstrap` — `state.json` registra
+`catalog.sqlite 1825fdae…` (117.993.472 B), descritor `4cc9cba6…`, `build-report.json cf885af7…`,
+`builtAt 2026-10-24T19:06:40Z`, compilador `build_catalog.py e3c9fcf2…` +
+`catalog_identity.py 2a83b833…` (Python 3.11.1), árvore de entrada
+`846b17206806ee02dd3f0556e4aa3b9cf514374d591502879246361c36139550` e manifesto público
+`2a4f754f…`, revisão 5. É o par do build 56, produzido pelo pipeline.
+
+**O que foi feito:** copiar o `.sqlite` e o descritor daquele staging para `Resources` (o descritor é
+byte-idêntico ao commitado, então nada de rastreado mudou por isso) e rodar
+`scripts/bootstrap_catalog.py` com os hashes pinados neste checkout. O gate de idempotência
+confirmou entradas inalteradas — *“reused: catalog.sqlite compiled at 2026-10-24T19:06:40Z”* — e
+reescreveu `state.json`/`provenance.json` com os caminhos deste workspace, sem recompilar e sem
+trocar checksum. O `catalog.sqlite` continua gitignored.
+
+**Verificação:** `scripts/verify_catalog_release.py preflight --head <SHA>` →
+`P0C preflight verified: revision 5 / manifest 2a4f754f… / sqlite 1825fdae…` (exit 0); metadata do
+banco `schema_version=2`, `catalog_version=1792868795281916`, 77.443 fontes, 6.450 nós, 77.443
+placements; e os testes de catálogo da suíte de app passam com estes bytes.
+
+**Correção de uma conclusão errada desta mesma rodada:** a primeira tentativa afirmou que “nenhum
+byte com `1825fdae` existia na máquina” e instalou o par antigo (`e6da17`), reescrevendo este
+documento. A afirmação era falsa porque a varredura não cobria `~/.codex/worktrees`; o commit foi
+revertido e esta seção o substitui. A origem do número antigo é legítima — o IPA do build 55 —
+mas ele não é o par do descritor commitado, que é o do build 56.
