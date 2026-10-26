@@ -342,12 +342,15 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertTrue(f.publications.values.isEmpty, "um produtor cancelado não abre trabalho local")
     }
 
-    /// O mesmo fato vindo de outra revisão editorial não abre trabalho local: o escopo que a sessão carrega não é o
-    /// que este driver serve, e `validateCurrentScope` — a mesma cerca de todo drive — é o que recusa.
+    /// O mesmo fato vindo de outra revisão editorial não abre trabalho local. A caminhada é posta em `exhausted`
+    /// pela própria API do controlador — o driver não pode dirigir este escopo, porque a sessão carrega outra
+    /// revisão —, e o discriminante é `localSupplyExhausted` continuar verdadeiro: sem a cerca,
+    /// `noteLocalSupplyChanged` zeraria a caminhada e autorizaria uma fatia num contexto que este driver não serve.
     func testADurableSupplyFactFromAnotherEditorialRevisionStatesNothing() async throws {
         let f = try fixture(differentRevision: true)
         let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 4, contextKey: f.plan.context.key)
-        _ = try await f.session.admitPresentation(.restore(bounds))
+        let restored = try await f.session.admitPresentation(.restore(bounds))
+        let presentation = try XCTUnwrap(restored)
         let currentScope = await f.session.currentRunwayScope()
         let sessionScope = try XCTUnwrap(currentScope)
         // A premissa, medida na mesma cerca que o fato usa: o drive recusa esta revisão antes de ativar a pista.
@@ -362,12 +365,29 @@ final class FeedRunwayDriverTests: XCTestCase {
             XCTAssertEqual(actual, sessionScope.editorialRevisionID,
                 "premissa: a sessão carrega a revisão que o driver não serve")
         }
-        // A pista é ativada com o escopo **da sessão**: sem a cerca, o fato encontraria um escopo ativo e armado.
+        // A caminhada é esgotada pela API do controlador: a única forma de movê-la aqui, já que o drive recusa.
         await f.runway.activate(sessionScope)
+        let anchor = presentation.window.anchor.cardID
+        let observation = RunwayObservation(editionID: presentation.editionID, anchorCardID: anchor,
+            sampledAt: .init(seconds: 1)!, activity: .explicitTailApproach)
+        try await f.runway.submitObservation(observation)
+        try await f.runway.acceptMeasurement(.init(observation: observation,
+            readyAhead: PublicationHistory(database: f.database).readyAhead(editionID: presentation.editionID,
+                anchorCardID: anchor, probeBound: 8), advanceFromHighWater: nil))
+        guard case .runLocalSlice(let intent) = try await f.runway.reconsider(resources: resources().runway,
+            at: .init(seconds: 2)!) else { return XCTFail("premissa: a pista tem de pedir uma fatia local") }
+        try await f.runway.completeLocalSlice(intent,
+            outcome: .advancedWithoutPublication(.init(examinedCount: 0, nextCursor: nil, exhausted: true)),
+            at: .init(seconds: 3)!)
+        let exhausted = await f.runway.snapshot()
+        XCTAssertTrue(exhausted.localSupplyExhausted, "premissa: a caminhada está esgotada")
+
         _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
         await f.driver.noteLocalSupplyFact()
         let after = await f.runway.snapshot()
-        XCTAssertFalse(after.pendingSupplyReset, "o fato de outra revisão não arma a caminhada")
+        XCTAssertTrue(after.localSupplyExhausted,
+            "o fato de outra revisão não reinicia a caminhada que ele não serve")
+        XCTAssertFalse(after.pendingSupplyReset)
         XCTAssertFalse(after.localSliceInFlight)
         XCTAssertTrue(f.publications.values.isEmpty)
     }
