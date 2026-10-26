@@ -163,10 +163,54 @@ Depois do OK, a execução reafirma o mesmo chip (`BBC News`), a mesma nota lite
 falha esperada da fonte; um alerta não relacionado não é dispensado. Nenhum produto, flag, critério ou asserção
 existente foi alterado — só a prova foi adicionada.
 
-**Não são screenshots limpos de produto:** os dois PNGs carregam, no canto superior direito, o overlay de depuração
-`received=0 completed=0 backward=0` que o app desenha na build de teste; ele fica sobre a barra de status e não
-esconde chip, cartas ou o corpo das superfícies. Somado a isso, é o alerta — não o overlay — que cobre a nota no
-frame de antes do retorno.
+**Guarda de alerta ausente e execução terminal (2026-10-26, sobre `cea974fd`).** A captura legível só vale se
+nada estiver por cima dela, então o teste passou a afirmar explicitamente, imediatamente antes da captura
+`ux12d-source-absence-after-alert`: `waitForAbsence(app.alerts.firstMatch, timeout: 20)` mais
+`XCTAssertFalse(app.alerts.firstMatch.exists, "a captura legível é feita sem alerta por cima; árvore=…")`. São
+quatro linhas de prova, sem tocar produto, flags, oráculos ou asserções preexistentes.
+
+A execução terminal desse estado é a de `/tmp/s1-ui-evidence-readable-final.xcresult` (log
+`/tmp/s1-ui-evidence-readable-final.log`): mesmo device (iPhone 17 Pro Max,
+`220FD546-698A-4DFE-A9E6-DD40135DED72`) e mesmo DerivedData (`FeedMineApp-elrtsjoinadyscatutssffaaecyb`),
+comando idêntico ao das execuções anteriores — **PASS 130,435 s**, 1 teste executado, 0 falhas,
+`** TEST SUCCEEDED **`. Anexos em `/tmp/feedmine-source-absence-readable-final-attachments/`
+(`manifest.json` + 3 PNG + 1 TXT):
+
+- `C8B5F692-EE18-4C4F-8E79-EBCA323B201F.png` (`ux12d-source-absence-after-alert`) — header
+  "Feedmine · BBC News", 0 cartas, nota do limite ("Você está vendo os itens que BBC News publica no feed. O
+  arquivo completo do site não faz parte dele.") legível por inteiro, "Não foi possível conectar." e
+  "Tentar novamente"; **nenhum alerta na tela**, que é o que a guarda afirma.
+- `740BE8AE-FC98-46D9-B743-6A0DCA4F63CC.png` (`ux12d-source-absence-before-return`) — o alerta esperado antes
+  do OK, preservado.
+- `7FBC839A-3DFA-4171-9C18-359374B7A30F.txt` (`ux12d-disabled-source-absence`) — chip, nota literal, `cards=0`,
+  `main-empty-restored=true`, `source-still-disabled=true`, `fontes-path=Wildlife&Nature`.
+- `49724851-4BE7-4D15-B10A-480FDBCE8005.png` (`ux12d-main-empty-after-return`) — retorno intacto.
+
+Essa guarda está de fato no binário executado, provado por comportamento e por literal — não por mtime, que aqui
+é enganoso (o `.o` e o `.xctest` preservam mtime 10:51:53 apesar do `SwiftCompile` das 10:57:52):
+
+- O run anterior à guarda (`/tmp/s1-ui-evidence-readable-2.log`) não tem **nenhum** frame de
+  `Alert (First Match)` e produz **3** anexos — o `ux12d-source-absence-after-alert` não existe nele.
+- O run que compilou a guarda (`/tmp/s1-ui-evidence-readable-3.log`, interrompido depois) traz
+  `SwiftCompile normal arm64 Compiling\ SourceAbsenceJourneyUITests.swift` (linha 201) e já produz o anexo
+  `ux12d-source-absence-after-alert` em `t = 70,84 s`.
+- A execução terminal reutiliza esse build (nenhuma tarefa de compilação no log) e executa a guarda:
+  `t = 70,22 s Checking Expect predicate exists == 0 for object Alert (First Match)` seguido de
+  `t = 70,52 s Added attachment named 'ux12d-source-absence-after-alert'`.
+- `strings` devolve `nenhum alerta permanece sobre a superfície` tanto em
+  `…/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests` quanto em
+  `Objects-normal/arm64/SourceAbsenceJourneyUITests.o`.
+
+**Execução interrompida, registrada e não contada.** Uma terceira execução iniciada às 10:57 foi cortada pelo
+limite de 12 min do executor no instante `t = 89,53 s` do teste, terminando o log em `** BUILD INTERRUPTED **`
+(`/tmp/s1-ui-evidence-readable-3.log`), no meio do gesto de rolagem em Fontes. Não é falha de produto nem de
+teste e não é PASS: o resultado válido é o da execução terminal acima. Nada foi apagado, resetado ou
+desinstalado entre as execuções.
+
+**Não são screenshots limpos de produto:** os três PNGs desta seção carregam, no canto superior direito, o
+overlay de depuração `received=0 completed=0 backward=0` que o app desenha na build de teste; ele fica sobre a
+barra de status e não esconde chip, cartas ou o corpo das superfícies. Somado a isso, é o alerta — não o overlay —
+que cobre a nota no frame de antes do retorno.
 
 Duas execuções anteriores falharam e estão registradas: (1) com `FEEDMINE_LOCAL_FEEDS=1` o transporte de fixture
 respondia a fonte visitada e desenhava 12 cartas — premissa errada, corrigida removendo o flag; (2) a prova final
@@ -191,12 +235,16 @@ defeito de produto.
 | app: `FeedMineUITests/SourceAbsenceJourneyUITests` (UX12-D) | **PASS 126,3 s** |
 | app: mesmo método, correção de evidência (`ux12d-source-absence-before-return`) | **PASS 130,2 s** |
 | app: mesmo método, prova legível após OK (`ux12d-source-absence-after-alert`) | **PASS 128,2 s** |
+| app: mesmo método, guarda de alerta ausente antes da captura (execução terminal) | **PASS 130,4 s** |
+| app: terceira execução do mesmo método às 10:57 | **interrompida pelo limite do executor em `t = 89,5 s`** — não é PASS nem FAIL |
 
 Artefatos: `/tmp/s1-package-full.log`, `/tmp/s1-red.log`, `/tmp/s1-green.log`, `/tmp/s1-app-unit.xcresult`,
 `/tmp/s1-ui-2.xcresult`, `/tmp/s1-ui-4.xcresult`, `/tmp/s1-ui-evidence-corrected.xcresult` (+ `.log`),
 `/tmp/feedmine-source-absence-corrected-attachments/`, `/tmp/s1-ui-evidence-readable.xcresult` (+ `.log`),
-`/tmp/feedmine-source-absence-readable-attachments/`. Build de app reutilizou o DerivedData existente
-(`FeedMineApp-elrtsjoinadyscatutssffaaecyb`); nenhum simulador de bench tocado.
+`/tmp/feedmine-source-absence-readable-attachments/`, `/tmp/s1-ui-evidence-readable-final.xcresult` (+ `.log`),
+`/tmp/feedmine-source-absence-readable-final-attachments/`, `/tmp/s1-ui-evidence-readable-3.log` (interrompida).
+Build de app reutilizou o DerivedData existente (`FeedMineApp-elrtsjoinadyscatutssffaaecyb`); nenhum simulador de
+bench tocado.
 
 ## 10. Limites
 

@@ -114,6 +114,10 @@ final class SourceAbsenceJourneyUITests: XCTestCase {
         failureAlert.buttons["OK"].tap()
         XCTAssertTrue(failureAlert.waitForNonExistence(timeout: 20),
             "o OK reconhecido remove o alerta esperado")
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.alerts.firstMatch, timeout: 20),
+            "nenhum alerta permanece sobre a superfície")
+        XCTAssertFalse(app.alerts.firstMatch.exists,
+            "a captura legível é feita sem alerta por cima; árvore=\(app.debugDescription)")
         XCTAssertEqual(chip.label, sourceName, "the chip still names the same source after the alert")
         XCTAssertTrue(note.exists, "the source-boundary note is still present after the alert")
         XCTAssertEqual(note.label, noteText, "the note is the same after the alert; observed: \(note.label)")
