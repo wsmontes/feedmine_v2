@@ -2816,25 +2816,86 @@ final class CompositionTests: XCTestCase {
         await refreshed.close()
     }
 
+    /// UX12-C (F12 benchmark) + R4/R6: enabling or disabling a source while a feed containing it is published.
+    /// The choice has to **appear** (durable, one source fewer), **change future production** (the disabled source
+    /// leaves the acquisition inputs) and **not remove or reorder the cards already published** — same Edition,
+    /// same published card ids in the same order, same destination, same anchor — through the toggle and through a
+    /// relaunch. The behaviour before this was measured: the destination was rewritten to `.source(remaining)`, a
+    /// new Edition was published and all eight cards were replaced.
     func testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let first = root(directory: directory)
         await first.launch()
+        let association = try XCTUnwrap(first.association)
+        let initial = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(Set(initial.window.items.compactMap(\.sourceID)), Set(TrustedFeed.development.map(\.sourceID)),
+            "premise: the published feed carries both selected sources")
+        // The reader is deeper into the feed than the anchor the Edition started at.
+        let deeper = try XCTUnwrap(initial.window.items.count > 3 ? initial.window.items[3] : nil,
+            "premise: there is a card to advance the anchor to")
+        await association.viewport(.init(anchor: .init(cardID: deeper.id, placement: .top)), activity: .forward)
+        let atRest = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(atRest.window.anchor.cardID, deeper.id, "premise: the reader's position moved")
+        let destination = first.currentContextKey.request
+        let preferences = ReaderPreferencesStore(database: association.database)
+        let versionBefore = try XCTUnwrap(preferences.load()?.selectionVersion)
+        let publishedBefore = try PublicationStore(database: association.database)
+            .segments(editionID: atRest.editionID).flatMap(\.cardIDs)
+        XCTAssertFalse(publishedBefore.isEmpty, "premise: the Edition has published history")
+        let eligibleBefore = try association.acquisition
+            .eligibleTargets(for: FeedContext(key: association.contextKey)).map(\.id)
+
         try await first.searchSources("")
-        try await first.toggleSource(TrustedFeed.development[0].sourceID)
-        XCTAssertEqual(first.feeds.map(\.sourceID), [TrustedFeed.development[1].sourceID])
-        XCTAssertEqual(first.currentContext, .source(TrustedFeed.development[1].sourceID))
-        XCTAssertTrue(try XCTUnwrap(first.association?.store.state.presentation).window.items.allSatisfy { $0.sourceDisplayName == "BBC Science" })
-        await first.association?.background()
-        await first.association?.close()
+        try await first.toggleSource(TrustedFeed.development[1].sourceID)
+
+        // (a) The choice appears: one source left, and the selection version is durable.
+        XCTAssertEqual(first.feeds.map(\.sourceID), [TrustedFeed.development[0].sourceID])
+        XCTAssertEqual(try preferences.load()?.selectionVersion, versionBefore + 1,
+            "the toggle is a durable selection change")
+        // (b) It changes future production: the disabled source is no longer an acquisition input.
+        let current = try XCTUnwrap(first.association)
+        XCTAssertTrue(eligibleBefore.contains(TrustedFeed.development[1].targetID),
+            "control: the disabled source was an acquisition input before the toggle")
+        let eligibleAfter = try current.acquisition
+            .eligibleTargets(for: FeedContext(key: current.contextKey)).map(\.id)
+        XCTAssertFalse(eligibleAfter.contains(TrustedFeed.development[1].targetID),
+            "the disabled source stops being a future opportunity")
+        XCTAssertTrue(eligibleAfter.contains(TrustedFeed.development[0].targetID),
+            "the remaining source still supplies")
+        // (c) …and it is not a navigation: destination, Edition, published cards and anchor stay where they were.
+        XCTAssertEqual(first.currentContextKey.request, destination,
+            "managing a source does not move the reader (UX12-C/R6)")
+        let now = try XCTUnwrap(current.store.state.presentation)
+        XCTAssertEqual(now.editionID, atRest.editionID, "the Edition being read is not replaced")
+        let publishedAfter = try PublicationStore(database: association.database)
+            .segments(editionID: now.editionID).flatMap(\.cardIDs)
+        XCTAssertEqual(Array(publishedAfter.prefix(publishedBefore.count)), publishedBefore,
+            "no published card is removed or reordered; the tail only grows")
+        XCTAssertEqual(now.window.anchor, atRest.window.anchor, "the reader's anchor is where they left it")
+
+        // (d) A relaunch restores the same history at the same position, with the reader's own selection.
+        await current.background()
+        await current.close()
         let reopened = root(directory: directory)
         XCTAssertEqual(reopened.feeds.map(\.sourceID), first.feeds.map(\.sourceID))
         await reopened.launch()
-        XCTAssertEqual(reopened.currentContext, first.currentContext)
-        XCTAssertEqual(reopened.association?.store.state.presentation?.editionID, first.association?.store.state.presentation?.editionID)
+        XCTAssertEqual(reopened.currentContextKey.request, destination)
+        let restored = try XCTUnwrap(reopened.association?.store.state.presentation)
+        XCTAssertEqual(restored.editionID, atRest.editionID, "the relaunch shows that history, not a successor")
+        XCTAssertEqual(restored.window.anchor, atRest.window.anchor, "the position survives the relaunch")
+        let reopenedDatabase = try XCTUnwrap(reopened.association).database
+        let publishedRestored = try PublicationStore(database: reopenedDatabase)
+            .segments(editionID: restored.editionID).flatMap(\.cardIDs)
+        XCTAssertEqual(Array(publishedRestored.prefix(publishedBefore.count)), publishedBefore,
+            "the relaunch keeps every published card in its published order")
+        // (e) The last selected source cannot be removed: an empty selection is refused and nothing moves.
         try await reopened.searchSources("")
-        do { try await reopened.toggleSource(TrustedFeed.development[1].sourceID); XCTFail("Empty selection") }
+        do { try await reopened.toggleSource(TrustedFeed.development[0].sourceID); XCTFail("Empty selection") }
         catch { XCTAssertEqual(reopened.feeds.count, 1) }
+        XCTAssertEqual(reopened.currentContextKey.request, destination, "the refusal moves nothing either")
         await reopened.association?.close()
     }
 
@@ -2931,8 +2992,11 @@ final class CompositionTests: XCTestCase {
         await back.close()
     }
 
-    /// T6: the compatibility predicate is the whole decision — identity first, then the policy versions that
+    /// T6: the compatibility predicate is the whole decision — identity first, then the presentation rules that
     /// make a restored Edition reusable. A foreign identity is refused even when everything else matches.
+    /// UX12-C adds the complement, stated here rather than implied: the reader's **selection version** is not one
+    /// of those rules. It names which sources future production may use, not how published cards are presented, so
+    /// an Edition published under an older selection is still the history the reader is reading.
     func testT6RevisionCompatibilityRequiresTheWholeIdentity() throws {
         let key = ContextKey(request: .main, filter: ReaderFilter(languages: ["pt"]))
         let foreign = ContextKey(request: .main, filter: ReaderFilter(languages: ["en"]))
@@ -2945,18 +3009,18 @@ final class CompositionTests: XCTestCase {
                 exposurePolicyVersion: PolicyVersion(rawValue: 2),
                 selectionSchemaVersion: .init(rawValue: 1))
         }
-        XCTAssertTrue(FeedAssociation.mayShow(revision(key), for: key, selectionVersion: 7))
-        XCTAssertFalse(FeedAssociation.mayShow(revision(foreign), for: key, selectionVersion: 7),
+        XCTAssertTrue(FeedAssociation.mayShow(revision(key), for: key))
+        XCTAssertFalse(FeedAssociation.mayShow(revision(foreign), for: key),
             "an edition from another filter is never shown")
-        XCTAssertFalse(FeedAssociation.mayShow(revision(ContextKey(request: .main)), for: key, selectionVersion: 7),
+        XCTAssertFalse(FeedAssociation.mayShow(revision(ContextKey(request: .main)), for: key),
             "the plain identity is not the filtered one either")
-        XCTAssertFalse(FeedAssociation.mayShow(revision(key, selection: 6), for: key, selectionVersion: 7),
-            "an older selection version is refused")
-        XCTAssertFalse(FeedAssociation.mayShow(revision(key, eligibility: 1), for: key, selectionVersion: 7),
+        XCTAssertTrue(FeedAssociation.mayShow(revision(key, selection: 6), for: key),
+            "an Edition published under an older selection is the history being read, not a policy to re-run")
+        XCTAssertFalse(FeedAssociation.mayShow(revision(key, eligibility: 1), for: key),
             "an older eligibility policy is refused")
         // Equivalent selections are the same identity, so they are compatible.
         let equivalent = ContextKey(request: .main, filter: ReaderFilter(languages: ["pt"], mood: .all))
-        XCTAssertTrue(FeedAssociation.mayShow(revision(equivalent), for: key, selectionVersion: 7))
+        XCTAssertTrue(FeedAssociation.mayShow(revision(equivalent), for: key))
     }
 
     /// R2 review: the mapping is exact, never a threshold. A version this build does not know must not be
@@ -3048,7 +3112,7 @@ final class CompositionTests: XCTestCase {
             eligibilityPolicyVersion: PolicyVersion(rawValue: 2), scoringPolicyVersion: PolicyVersion(rawValue: 1),
             sequencingPolicyVersion: PolicyVersion(rawValue: 2), exposurePolicyVersion: PolicyVersion(rawValue: 2),
             selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
-        XCTAssertTrue(FeedAssociation.mayShow(v2, for: ContextKey(request: .main), selectionVersion: 2),
+        XCTAssertTrue(FeedAssociation.mayShow(v2, for: ContextKey(request: .main)),
             "an Edition published under v2 is still shown, and keeps running under v2")
         await association.close()
     }
@@ -4939,7 +5003,11 @@ final class CompositionTests: XCTestCase {
         let coordinator = SourceManagementCoordinator(catalogURL: catalogue, database: database)
         try coordinator.setSourceEnabled(key: key, enabled: true)
         await composition.adoptSelectionChange()
-        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
+        // UX12-C/R4: the act was "follow this source", not "go somewhere". The destination stays what it was; the
+        // choice appears in the selection and in what the plain feed publishes.
+        XCTAssertEqual(composition.currentContextKey.request, .main,
+            "enabling a source is a management act, not a navigation")
+        XCTAssertEqual(composition.feeds.map(\.sourceID), [sourceID], "premise: the enable reached the session")
         let enabledCards = try await waitForCards(1, timeout: 60)
         XCTAssertGreaterThan(enabledCards.count, 0, "the enabled source publishes its local memberships")
         XCTAssertEqual(Set(enabledCards.compactMap(\.sourceID)), [sourceID])
@@ -5229,6 +5297,33 @@ final class CompositionTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// F12/R1: the identity table records an authority the binding **states**, and only a declared one. The first
+    /// visit pins the row (`INSERT OR IGNORE`), so a namespace this build does not know must record nothing rather
+    /// than be guessed as the catalogue's — the guess would then be permanent. The control is the catalogue's own
+    /// binding (no namespace), which records `catalog`.
+    func testF12AnUndeclaredNamespaceRecordsNoAuthority() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let undeclared = "https://undeclared.example/feed"
+        let catalogueBound = "https://catalogue-bound.example/feed"
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: [undeclared, catalogueBound])
+        let feeds = [undeclared, catalogueBound].map { key in
+            TrustedFeed(targetID: AcquisitionTargetID(), sourceID: SourceID(), bindingID: SourceBindingID(),
+                principal: key, endpoint: URL(string: key)!, displayName: "Fonte \(key)",
+                principalNamespace: key == undeclared ? "feedmine-future-authority" : nil)
+        }
+        let composition = root(directory: directory, feeds: feeds)
+        await composition.launch()
+        let association = try XCTUnwrap(composition.association)
+        let links = try ReaderLibraryStore(database: association.database).sourceLinks()
+        XCTAssertNil(links[undeclared],
+            "an undeclared namespace records no authority instead of guessing the catalogue's")
+        XCTAssertEqual(links[catalogueBound]?.authority, "catalog",
+            "the catalogue's own binding is recorded as the catalogue's")
+        await association.close()
+    }
+
     /// One published card of a catalogue source the reader **disabled**: the reader enables it through the
     /// surface's own owner (so a real card is published), then disables it. The identity row the owner wrote is
     /// what survives, not a selection.
@@ -5258,7 +5353,9 @@ final class CompositionTests: XCTestCase {
         let coordinator = SourceManagementCoordinator(catalogURL: catalogue, database: database)
         try coordinator.setSourceEnabled(key: key, enabled: true)
         await composition.adoptSelectionChange()
-        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID))
+        XCTAssertEqual(composition.currentContextKey.request, .main,
+            "premise: the enable is a management act and does not move the reader")
+        XCTAssertEqual(composition.feeds.map(\.sourceID), [sourceID], "premise: the enable reached the session")
         var published: [PresentationCard] = []
         let deadline = Date().addingTimeInterval(60)
         while Date() < deadline, published.isEmpty {
@@ -5293,6 +5390,9 @@ final class CompositionTests: XCTestCase {
         await composition.launch()
         let database = try XCTUnwrap(composition.association).database
 
+        // The transport is the evidence S1 asks for ("requests feitos por ação explícita"): the log is the
+        // fixture's own record of the calls that reached it, not the URL the app was handed.
+        FixtureTransport.requests.withLock { $0 = [] }
         let openedSource = try await composition.openSourceFeed(forKey: key)
         XCTAssertTrue(openedSource)
         let association = try XCTUnwrap(composition.association)
@@ -5307,8 +5407,12 @@ final class CompositionTests: XCTestCase {
         let health = await association.coordinator.healthSnapshot()
         XCTAssertNil(health[entry.targetID],
             "no request was made for the opened source: \(health.keys.map(\.rawValue.uuidString))")
+        let requestsAfterOpening = FixtureTransport.requests.withLock { $0 }
+        XCTAssertFalse(requestsAfterOpening.contains { $0.contains("science_and_environment") },
+            "opening is explicit and still re-enables no endpoint: \(requestsAfterOpening)")
 
         // Control: the same measurement, once the reader's own act selects the source.
+        FixtureTransport.requests.withLock { $0 = [] }
         try SourceManagementCoordinator(catalogURL: catalogue, database: database)
             .setSourceEnabled(key: key, enabled: true)
         await composition.adoptSelectionChange()
@@ -5317,6 +5421,21 @@ final class CompositionTests: XCTestCase {
         let controlled = try enabled.acquisition.eligibleTargets(for: FeedContext(key: enabled.contextKey))
         XCTAssertEqual(controlled.map(\.id), [entry.targetID],
             "control: a selected source is exactly what eligibility names (so the empty set above discriminates)")
+        _ = try? await enabled.driver.drive(resources: enabled.resources)
+        let requestsAfterEnabling = FixtureTransport.requests.withLock { $0 }
+        XCTAssertTrue(requestsAfterEnabling.contains { $0.contains("science_and_environment") },
+            "control at the transport: the selected source is the one the coordinator fetches: "
+                + "\(requestsAfterEnabling)")
+
+        // The retired scope is fenced: the session that read that source without selecting it is not active, and
+        // once closed it issues nothing — the ephemeral opportunity dies with the context, not with a durable
+        // enable.
+        XCTAssertFalse(association.active, "the previous session is retired, not still reading")
+        await association.close()
+        FixtureTransport.requests.withLock { $0 = [] }
+        _ = try? await association.driver.drive(resources: association.resources)
+        XCTAssertTrue(FixtureTransport.requests.withLock { $0 }.isEmpty,
+            "a retired scope issues no request: \(FixtureTransport.requests.withLock { $0 })")
         await composition.association?.close()
     }
 
@@ -5401,7 +5520,8 @@ final class CompositionTests: XCTestCase {
         await composition.adoptSelectionChange()
         XCTAssertNil(composition.startupFailure)
         XCTAssertEqual(composition.currentContextKey.preset, .everything)
-        XCTAssertEqual(composition.currentContextKey.request, .source(a.sourceID))
+        XCTAssertEqual(composition.currentContextKey.request, .main,
+            "leaving a collection keeps the plain feed; one remaining source is not a destination")
         XCTAssertEqual(composition.feeds.map(\.principal), [a.principal])
         XCTAssertEqual(composition.association?.feeds.map(\.principal), [a.principal])
         XCTAssertEqual(try preferences.load()?.activeContextKey, composition.currentContextKey)

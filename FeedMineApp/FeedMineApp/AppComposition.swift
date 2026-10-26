@@ -565,9 +565,8 @@ final class AppComposition {
                 let resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: feeds,
                     readerSources: Self.readerSourceEntries(in: database), catalogueURL: self.catalogueURL,
                     identities: identityStore.sourceLinks())
-                try identityStore.rememberResolvedSources(resolved.map {
-                    (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
-                        ? "reader" : "catalog")
+                try identityStore.rememberResolvedSources(resolved.compactMap { feed in
+                    Self.sourceAuthority(of: feed).map { (key: feed.principal, authority: $0) }
                 })
                 self.selectedFeeds = resolved
                 // A persisted source context is a reading place, not a selection: the launch honors it with the
@@ -885,10 +884,8 @@ final class AppComposition {
                     let resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys,
                         fallback: selectedFeeds, readerSources: Self.readerSourceEntries(in: database),
                         catalogueURL: snapshot.catalogueURL, identities: identities.sourceLinks())
-                    try identities.rememberResolvedSources(resolved.map {
-                        (key: $0.principal,
-                            authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
-                                ? "reader" : "catalog")
+                    try identities.rememberResolvedSources(resolved.compactMap { feed in
+                        Self.sourceAuthority(of: feed).map { (key: feed.principal, authority: $0) }
                     })
                     selectedFeeds = resolved
                 }
@@ -979,6 +976,20 @@ final class AppComposition {
             .sorted { left, right in left.selected != right.selected ? left.selected : left.name.localizedStandardCompare(right.name) == .orderedAscending }
     }
 
+    /// UX12-C/R6: where the reader is after their **selection** changed. Managing sources is not navigation — the
+    /// place being read stays the place being read, and the published cards in front of the reader keep their
+    /// Edition, order and anchor (the toggle reaches the feed through its supply, not by replacing its history).
+    /// The one surface that cannot survive is a source context whose source left the selection: that would be a
+    /// fence around nothing, so the reader lands on the plain feed. Gaining or losing the *last other* source is
+    /// not a move either — `.source` is entered by opening that source, never as a side effect of a toggle.
+    private func destinationAfterSelectionChange() -> FeedContextRequest {
+        if case .source(let current) = currentContextKey.request,
+            !selectedFeeds.contains(where: { $0.sourceID == current }) {
+            return .main
+        }
+        return currentContextKey.request
+    }
+
     /// Changing the reader's selection exits a collection: it cannot keep filtering against
     /// collection membership while the newly selected sources belong to the reader's plain feed.
     private func presetAfterSelectionChange() -> ReaderPresetID {
@@ -1006,14 +1017,13 @@ final class AppComposition {
         let saved = try preferences.changeSources(adding: removing == nil ? [choice.principal] : [],
             removing: removing == nil ? [] : [choice.principal])
         if let database = libraryDatabase() {
-            try ReaderLibraryStore(database: database).rememberResolvedSources(next.map {
-                (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
-                    ? "reader" : "catalog")
+            try ReaderLibraryStore(database: database).rememberResolvedSources(next.compactMap { feed in
+                Self.sourceAuthority(of: feed).map { (key: feed.principal, authority: $0) }
             })
         }
         selectedFeeds = next
         selectionVersion = saved.selectionVersion
-        let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
+        let request = destinationAfterSelectionChange()
         currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
             filter: currentContextKey.filter)
         _ = try preferences.setContext(currentContextKey)
@@ -1528,13 +1538,22 @@ final class AppComposition {
         if let contextSource, contextSource.sourceID == sourceID { return contextSource.principal }
         guard let database = libraryDatabase(),
             let links = try? ReaderLibraryStore(database: database).sourceLinks() else { return nil }
-        for link in links.values {
-            let minted = link.authority == "reader"
-                ? ReaderSourceIdentity.sourceID(forKey: link.anchorKey)
-                : LegacyCatalogImport.sourceID(forKey: link.anchorKey)
-            if minted == sourceID { return link.sourceKey }
+        // The identity owner answers, not this host: a verified alias keeps both the anchor (the id a card published
+        // before a catalogue rename carries) and the current catalogue key (the id a card published after it
+        // carries), and the owner returns the one key that resolves today for either.
+        return SourceIdentityIndex.key(for: sourceID, links: links)
+    }
+
+    /// The authority the identity table records for a resolved feed, read off the binding's own namespace.
+    /// `nil` for a namespace this build does not declare: the first visit pins the value (`INSERT OR IGNORE`), so
+    /// an unknown namespace must record nothing rather than be guessed as the catalogue's.
+    private static func sourceAuthority(of feed: TrustedFeed) -> String? {
+        switch feed.principalNamespace {
+        case nil: return "catalog" // resolution leaves it nil for a catalogue binding
+        case LegacyCatalogImport.principalNamespace?: return "catalog"
+        case ReaderSourceIdentity.principalNamespace?: return "reader"
+        default: return nil
         }
-        return nil
     }
 
     /// A source's own surface outside the reader's selection, mirroring `selectContext`'s transition: the reader's
@@ -1557,9 +1576,9 @@ final class AppComposition {
         // keeps a card of it addressable after the reader leaves (F12/R1) — it writes no selection and enables
         // nothing.
         if let database = libraryDatabase() {
-            try? ReaderLibraryStore(database: database).rememberResolvedSources([(key: feed.principal,
-                authority: feed.principalNamespace == ReaderSourceIdentity.principalNamespace
-                    ? "reader" : "catalog")])
+            try? ReaderLibraryStore(database: database).rememberResolvedSources(Self.sourceAuthority(of: feed).map {
+                [(key: feed.principal, authority: $0)]
+            } ?? [])
         }
         currentContextKey = ContextKey(request: .source(feed.sourceID), preset: currentContextKey.preset,
             filter: resolvedFilter(at: Date()))
@@ -1894,15 +1913,12 @@ final class AppComposition {
         let resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: selectedFeeds,
             readerSources: readerSourceEntries(), catalogueURL: catalogueURL, identities: links)) ?? []
         if let database = libraryDatabase() {
-            try? ReaderLibraryStore(database: database).rememberResolvedSources(resolved.map {
-                (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
-                    ? "reader" : "catalog")
+            try? ReaderLibraryStore(database: database).rememberResolvedSources(resolved.compactMap { feed in
+                Self.sourceAuthority(of: feed).map { (key: feed.principal, authority: $0) }
             })
         }
         selectedFeeds = resolved
-        // One selected source is its own surface, exactly as `toggleSource` decides; a context pointing at a
-        // source that is no longer selected would be a fence around nothing.
-        let request: FeedContextRequest = resolved.count == 1 ? .source(resolved[0].sourceID) : .main
+        let request = destinationAfterSelectionChange()
         currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
             filter: currentContextKey.filter)
         _ = try? preferences.setContext(currentContextKey)
@@ -3024,13 +3040,21 @@ final class FeedAssociation {
 
     /// T6: whether a restored Edition may be shown for the identity the reader is on. It must belong to that
     /// identity — a foreign filter, preset or search scope is a silent swap, even when the policy versions
-    /// happen to match — and it must have been published under the current selection, eligibility *and scoring*
-    /// policies. The scoring version is what makes an edit to a curated recipe a new behaviour: the Edition
-    /// published before the edit ranked by a recipe the reader has since changed, so it is not shown again.
+    /// happen to match — and it must have been published under the current eligibility *and scoring* policies. The
+    /// scoring version is what makes an edit to a curated recipe a new behaviour: the Edition published before the
+    /// edit ranked by a recipe the reader has since changed, so it is not shown again.
+    ///
+    /// The reader's **selection** is deliberately not compared here, and that is a contract, not an omission
+    /// (UX12-C/R6): following, enabling or disabling a source changes the opportunities **future** production may
+    /// use; it does not remove or reorder cards already published. `PUBLICATION_RESTORE_CONTRACT` makes published
+    /// history the restorable unit and the Edition immutable, and the session continues that Edition under the
+    /// revision it froze — so a selection change reaches the feed through its **supply**
+    /// (`FeedAssociation` reads the reader's selection plus discovery), never by refusing the history being read.
+    /// `EditorialRevision.userSelectionVersion` still separates the *identities* of Editions published under
+    /// different selections; it just no longer invalidates the other's history.
     static func mayShow(_ revision: EditorialRevision, for contextKey: ContextKey,
-        selectionVersion: UInt64, eligibilityVersion: UInt64 = 2, scoringVersion: UInt64 = 1) -> Bool {
+        eligibilityVersion: UInt64 = 2, scoringVersion: UInt64 = 1) -> Bool {
         revision.contextKey == contextKey
-            && revision.userSelectionVersion == PolicyVersion(rawValue: selectionVersion)
             && revision.eligibilityPolicyVersion == PolicyVersion(rawValue: eligibilityVersion)
             && revision.scoringPolicyVersion == PolicyVersion(rawValue: max(1, scoringVersion))
     }
@@ -3151,9 +3175,9 @@ final class FeedAssociation {
         }
         var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
         if let restored = saved, !Self.mayShow(restored.edition.editorialRevision, for: contextKey,
-            selectionVersion: selectionVersion, scoringVersion: scoringVersion) {
+            scoringVersion: scoringVersion) {
             // The position goes with the behaviour: the archived checkpoint of this identity holds an Edition
-            // published under the policy that just changed, and the runtime would install it as the scope.
+            // published under presentation rules that just changed, and the runtime would install it as the scope.
             try checkpoints.clearActiveCheckpoint()
             try checkpoints.clearCheckpoint(for: contextKey)
             saved = nil
