@@ -432,11 +432,13 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
             acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { selection in
                 f.journal.append("prepare"); return Self.prepared(selection)
-            })
+            }, onDurableSupply: { f.journal.append("supply") })
         let outcome = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 8)
         guard case .noPublicationAfterAcquisition(let progress, let results) = outcome else { return XCTFail("Expected no publication") }
         XCTAssertTrue(progress.exhausted); XCTAssertEqual(progress.examinedCount, 0)
         XCTAssertEqual(results.map(\.targetID), [f.target.id]); XCTAssertFalse(results[0].selectableSupplyChanged)
+        XCTAssertFalse(f.journal.values.contains("supply"),
+            "uma resposta igual (304/checkpoint sem novidade) não é fato de suprimento: nada é declarado ao dono do trabalho local")
         if status == 304 { XCTAssertEqual(results[0].stop, .upToDate); XCTAssertTrue(results[0].receipts.isEmpty) }
         else { XCTAssertEqual(results[0].receipts.count, 1); XCTAssertEqual(try AcquisitionTargetAuthority(database: db).target(id: f.target.id)?.checkpointRevision, 1) }
         XCTAssertEqual(http.calls, 1); XCTAssertFalse(f.journal.values.contains("prepare"))
@@ -444,6 +446,45 @@ final class ColdFeedBootstrapTests: XCTestCase {
     }
     func testC7UpToDateDoesNotRunSecondLocalAttempt() async throws { try await noChangeProof(status: 304, items: 0) }
     func testC8CheckpointOnlyDoesNotRunSecondLocalAttempt() async throws { try await noChangeProof(status: 200, items: 0) }
+    /// P0 (fiação): o resultado durável de uma fonte que responde **depois** da primeira Edição tem de entregar o
+    /// fato ao dono que decide o trabalho local. O gate é o evento positivo de ingestão
+    /// (`selectableSupplyChanged`), nunca a publicação: `first.snapshot == nil` é condição de este run publicar, não
+    /// de o suprimento existir, e usá-la como gate deixava o suprimento tardio sem consumidor.
+    func testDurableSupplyIsDeclaredForAnIngestionThatArrivesAfterTheFirstEdition() async throws {
+        let f = try fixture(), id = identity(), db = f.database
+        let b = ColdHTTPFixture(items: 2, paused: true, label: "B")
+        addTeardownBlock { b.remove() }
+        let authority = AcquisitionTargetAuthority(database: db)
+        let targetB = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication,
+            authorizedSources: [f.source])
+        let acquisition = try snapshot(db, [registration(f.target, source: f.source, http: f.http),
+            registration(targetB, source: f.source, http: b)])
+        let facts = ColdJournal()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(),
+            prepare: { selection in Self.prepared(selection) },
+            onDurableSupply: { facts.append("supply") })
+        let running = Task {
+            try await bootstrap.run(identity: id, resources: resources(targets: 2),
+                backwardCapacity: 0, forwardCapacity: 8)
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while (try? PublicationStore(database: db).edition(id: id.editionID)) == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(try PublicationStore(database: db).edition(id: id.editionID),
+            "premissa: a fonte rápida publica com a lenta suspensa")
+        XCTAssertEqual(facts.values.count, 1, "a ingestão da fonte rápida declara o próprio fato")
+        XCTAssertEqual(b.calls, 1, "premissa: a fonte lenta foi consultada e está pendente")
+        b.release()
+        let outcome = try await running.value
+        guard case .published = outcome else { return XCTFail("expected the fast publication") }
+        XCTAssertEqual(facts.values.count, 2,
+            "a ingestão que chega depois da primeira Edição também se declara — é o suprimento que a fatia local "
+                + "consumirá na próxima chamada, e sem esta declaração ele ficava sem consumidor")
+        XCTAssertEqual(try PublicationStore(database: db).segments(editionID: id.editionID).count, 1,
+            "declarar o fato não publica: a Edição não cresce por esta chegada")
+    }
     func testC9SupplyChangeRunsOneSecondLocalAttemptFromCanonicalHead() async throws {
         let f = try fixture(sourceContext: true), id = identity()
         // First capacity-two window contains one unrelated record and is exhausted. Remote observation is newer than its cursor.

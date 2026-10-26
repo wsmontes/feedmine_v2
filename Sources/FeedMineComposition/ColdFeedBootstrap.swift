@@ -132,6 +132,10 @@ public struct ColdFeedBootstrap: Sendable {
     private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let evidence: (@Sendable (ColdFeedEvidence) async -> Void)?
+    /// The durable ingestion fact of every per-target result whose selectable supply changed. It is stated to the
+    /// owner that decides local work, for **every** result — see the call site for why publication is not the
+    /// condition. Nil records nothing.
+    private let onDurableSupply: (@Sendable () async -> Void)?
 
     /// The external composition supplies a coordinator over the snapshot's same runtime database.
     public init(session: FeedSession, plan: FeedPlan, policy: ResolvedSelectionPolicy,
@@ -145,10 +149,15 @@ public struct ColdFeedBootstrap: Sendable {
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
         // The same cap the live walk uses: the first publication may not publish more cards than the reserve target
         // the host states. Nil keeps the uncapped first publication; a capped one leaves the rest ready.
-        publicationLimit: Int? = nil) throws {
+        publicationLimit: Int? = nil,
+        // The ingestion receipt this run produces for the consumer that owns local work. `selectableSupplyChanged` is
+        // the same durable fact this bootstrap uses to reopen its own examination; the composition states it to the
+        // driver so the walk the first drive declared exhausted can be reopened by supply that arrived later.
+        onDurableSupply: (@Sendable () async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
+        self.onDurableSupply = onDurableSupply
         self.evidence = evidence
         self.session = session
         self.plan = plan
@@ -219,7 +228,14 @@ public struct ColdFeedBootstrap: Sendable {
         let first = FirstPublication()
         let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { result in
             await evidence?(.settled(result.targetID, stop: result.stop, supplyChanged: result.selectableSupplyChanged))
-            guard result.selectableSupplyChanged, first.snapshot == nil else { return }
+            guard result.selectableSupplyChanged else { return }
+            // The ingestion fact is stated to its consumer **before** the attempt below and whether or not this run
+            // still publishes. `first.snapshot == nil` is a condition of *this* bootstrap publishing, never of the
+            // supply existing: once the first Edition was installed, a slower source's durable result used to be
+            // dropped here, so the walk the first drive had already declared exhausted was never reopened and the
+            // next opportunities spent themselves on a network round that answered `up_to_date`.
+            await self.onDurableSupply?()
+            guard first.snapshot == nil else { return }
             // New canonical supply may precede the cursor. Only a real change reopens the head.
             try self.authority.restartExamination()
             if case .published(let snapshot) = try await self.attemptFirstPublication(identity: identity, resources: resources,

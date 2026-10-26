@@ -298,6 +298,80 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(current?.window.anchor, start.window.anchor)
     }
 
+    /// P0 (fiação): a ingestão durável que chega **depois** de o drive ter declarado a caminhada esgotada tem de
+    /// reabri-la pelo mesmo vocabulário da prontidão — sem gesto, sem cadência e sem uma segunda oportunidade do
+    /// leitor. É o consumidor que faltava: `noteLateDurableFact` sozinho não reinicia a caminhada, porque só agenda o
+    /// dreno; a caminhada continua esgotada e `takeLocalSlice` devolve `nil`.
+    func testALateDurableSupplyFactReopensAnExhaustedWalkWithoutCadence() async throws {
+        let f = try fixture(registrations: false)
+        let initial = try await restore(f)
+        // Uma oportunidade real do leitor: o dreno percorre o pool vazio e o declara esgotado.
+        _ = try await f.driver.submitViewport(.init(anchor: initial.window.anchor),
+            activity: .explicitTailApproach, resources: resources())
+        let exhausted = await f.runway.snapshot()
+        XCTAssertTrue(exhausted.localSupplyExhausted, "premissa: a caminhada local terminou esgotada")
+        XCTAssertTrue(f.publications.values.isEmpty, "premissa: o pool estava vazio no primeiro dreno")
+
+        _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        await f.driver.noteLocalSupplyFact()
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(f.publications.values.count, 1,
+            "a ingestão durável reabre a caminhada esgotada sem uma nova oportunidade do leitor")
+        // A carta publicada é do candidato que a ingestão trouxe: o dreno reaberto andou com dinheiro novo, não com
+        // o estado velho. Depois de publicar, a caminhada volta a se declarar esgotada — só havia uma carta.
+        XCTAssertEqual(f.publications.values.first?.cardIDs.count, 1)
+    }
+
+    /// O fato é de quem o produziu, e é o escopo do driver que o valida. Um produtor cancelado (a pista já
+    /// aposentada) não reabre trabalho local: nada publica e nada fica armado.
+    func testADurableSupplyFactAfterRetirementStatesNothing() async throws {
+        let f = try fixture(registrations: false)
+        let initial = try await restore(f)
+        _ = try await f.driver.submitViewport(.init(anchor: initial.window.anchor),
+            activity: .explicitTailApproach, resources: resources())
+        _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        await f.driver.deactivate()
+        await f.driver.noteLocalSupplyFact()
+        let after = await f.runway.snapshot()
+        XCTAssertNil(after.scope, "a pista aposentada não é reativada pelo fato")
+        XCTAssertFalse(after.localSliceInFlight)
+        XCTAssertFalse(after.pendingSupplyReset)
+        XCTAssertTrue(f.publications.values.isEmpty, "um produtor cancelado não abre trabalho local")
+    }
+
+    /// O mesmo fato vindo de outra revisão editorial não abre trabalho local: o escopo que a sessão carrega não é o
+    /// que este driver serve, e `validateCurrentScope` — a mesma cerca de todo drive — é o que recusa.
+    func testADurableSupplyFactFromAnotherEditorialRevisionStatesNothing() async throws {
+        let f = try fixture(differentRevision: true)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 4, contextKey: f.plan.context.key)
+        _ = try await f.session.admitPresentation(.restore(bounds))
+        let currentScope = await f.session.currentRunwayScope()
+        let sessionScope = try XCTUnwrap(currentScope)
+        // A premissa, medida na mesma cerca que o fato usa: o drive recusa esta revisão antes de ativar a pista.
+        do {
+            _ = try await f.driver.activateCurrentPresentation(resources: resources())
+            return XCTFail("a revisão stale tem de ser recusada pelo drive")
+        } catch {
+            guard case .sessionEditorialRevisionMismatch(let expected, let actual) = error as? FeedRunwayDriverError else {
+                return XCTFail("erro errado: \(error)")
+            }
+            XCTAssertNotEqual(expected, actual, "premissa: o driver serve outra revisão editorial")
+            XCTAssertEqual(actual, sessionScope.editorialRevisionID,
+                "premissa: a sessão carrega a revisão que o driver não serve")
+        }
+        // A pista é ativada com o escopo **da sessão**: sem a cerca, o fato encontraria um escopo ativo e armado.
+        await f.runway.activate(sessionScope)
+        _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        await f.driver.noteLocalSupplyFact()
+        let after = await f.runway.snapshot()
+        XCTAssertFalse(after.pendingSupplyReset, "o fato de outra revisão não arma a caminhada")
+        XCTAssertFalse(after.localSliceInFlight)
+        XCTAssertTrue(f.publications.values.isEmpty)
+    }
+
     /// PD-9/F06: the skip persisted by one opportunity must be the revision the production driver asks media to
     /// prepare on a later opportunity, and readiness must then publish it without a new viewport. This is the seam
     /// between the durable store and `nextEditorialRevisions`; the slice tests seeded readiness by hand and could

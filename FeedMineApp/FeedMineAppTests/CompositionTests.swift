@@ -652,6 +652,103 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// P0 (fiação): o suprimento durável que a fonte lenta admite **depois** da primeira Edição tem de reabrir a
+    /// caminhada local que o primeiro drive declarou esgotada. A ordem é forçada, não sorteada: a fonte lenta fica
+    /// retida até `RunwayController.localSupplyExhausted` — o estado que hoje latcheia — e só então é liberada. O
+    /// vermelho medido antes da correção é a janela parada em 1 carta (7 de 7 execuções isoladas, `:647`).
+    ///
+    /// O que este caso mede é *suprimento reabre a fatia*: nenhum gesto, nenhum refresh, nenhum `foreground()`.
+    /// Os 17 são lidos da apresentação admitida, depois do fato; nenhuma espera aqui ordena a chegada.
+    func testHeldDurableSupplyReopensTheExhaustedWalkAndFillsTheReserveWithoutAGesture() async throws {
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let root = root()
+        let launch = Task { await root.launch() }
+        for _ in 0..<200 where root.association?.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let association = try XCTUnwrap(root.association)
+        let first = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(first.window.items.count, 1,
+            "premissa: com uma fonte pronta, PD-4 publica a âncora e nada mais")
+        let published = PublicationStore(database: association.database)
+        func publishedAroundAnchor() throws -> [PublicationCardID] {
+            try published.cards(editionID: first.editionID, around: first.window.anchor.cardID,
+                backwardCapacity: 0, forwardCapacity: 400).map(\.id)
+        }
+        // A premissa do caso: a caminhada local já se declarou esgotada **enquanto** a fonte lenta está retida.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        var exhausted = await association.driver.runway.snapshot().localSupplyExhausted
+        while !exhausted, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+            exhausted = await association.driver.runway.snapshot().localSupplyExhausted
+        }
+        XCTAssertTrue(exhausted,
+            "premissa: a caminhada local tem de se declarar esgotada com a fonte lenta ainda retida")
+        XCTAssertTrue(FixtureTransport.holdingScience.withLock { $0 },
+            "premissa: a fonte lenta ainda está retida — o fato medido é a chegada dela, não uma corrida")
+        XCTAssertEqual(try publishedAroundAnchor().count, 1,
+            "premissa: nada além da âncora foi publicado antes da chegada")
+
+        FixtureTransport.releaseScience()
+        await launch.value
+        let grew = await Self.waitUntil(30) {
+            (association.store.state.presentation?.window.items.count ?? 0) >= 17
+        }
+        let window = try XCTUnwrap(association.store.state.presentation).window
+        let publishedCards = try publishedAroundAnchor()
+        XCTAssertTrue(grew,
+            "o suprimento durável que a fonte lenta admitiu depois da primeira Edição tem de reabrir a fatia local: "
+                + "a janela admitida ficou em \(window.items.count) cartas e a edição carrega "
+                + "\(publishedCards.count) publicadas — "
+                + root.diagnosticsForTheWiringTest(association))
+        let anchorIndex = try XCTUnwrap(window.items.firstIndex { $0.id == window.anchor.cardID },
+            "a âncora do leitor tem de estar na janela")
+        XCTAssertLessThanOrEqual(window.items.count - anchorIndex - 1, association.bounds.forwardCapacity,
+            "o crescimento não passa do teto congelado à frente da âncora")
+        for (left, right) in zip(window.items, window.items.dropFirst()) {
+            XCTAssertNotEqual(left.sourceDisplayName, right.sourceDisplayName,
+                "PD-4: a reserva reaberta alterna as duas fontes")
+        }
+        await association.close()
+    }
+
+    /// Controle da mesma fiação: com a fonte lenta retida o run inteiro, a única resposta honesta é **uma** carta.
+    /// Nenhum caminho pode inventar alternância para chegar a 17 — e nada cresce só porque o tempo passou.
+    func testAFeedHeldForTheWholeRunPublishesOneHonestCardAndNeverInventsAlternation() async throws {
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let root = root()
+        let launch = Task { await root.launch() }
+        for _ in 0..<200 where root.association?.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let association = try XCTUnwrap(root.association)
+        let first = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(first.window.items.count, 1,
+            "PD-4: uma fonte pronta publica a âncora e nada mais")
+        XCTAssertEqual(first.window.items.first?.sourceDisplayName, "BBC World")
+        let published = PublicationStore(database: association.database)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        var snapshot = await association.driver.runway.snapshot()
+        while !snapshot.localSupplyExhausted, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+            snapshot = await association.driver.runway.snapshot()
+        }
+        XCTAssertTrue(snapshot.localSupplyExhausted,
+            "com a fonte lenta retida, a caminhada local tem de se declarar esgotada")
+        // A metade negativa: tempo decorrido não publica nem cresce a janela.
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(association.store.state.presentation?.window.items.count, 1,
+            "nada cresce a janela por tempo: a fonte lenta ainda está retida")
+        XCTAssertEqual(try published.cards(editionID: first.editionID, around: first.window.anchor.cardID,
+            backwardCapacity: 0, forwardCapacity: 400).count, 1,
+            "nada publica além da âncora sem o suprimento que a segunda fonte traria")
+        FixtureTransport.releaseScience()
+        await launch.value
+        await association.close()
+    }
+
     /// R6-E — a publicação legitimamente concluída depois da janela antiga tem de fazer a apresentação crescer
     /// sozinha. O caso nasceu vermelho e é a regressão do gate: o crescimento tem de seguir o **fato da publicação**,
     /// não o relógio.

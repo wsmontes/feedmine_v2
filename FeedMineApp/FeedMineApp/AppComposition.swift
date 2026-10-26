@@ -3510,7 +3510,7 @@ final class FeedAssociation {
         // end of this initializer) is always in place before the first fact.
         let publicationRelay = PublicationRelay()
         self.publicationRelay = publicationRelay
-        driver = try FeedRunwayDriver(session: session, runway: runway, plan: plan, policy: policy,
+        let driver = try FeedRunwayDriver(session: session, runway: runway, plan: plan, policy: policy,
             acquisition: acquisition, coordinator: coordinator,
             monotonicNow: monotonicNow,
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
@@ -3523,6 +3523,7 @@ final class FeedAssociation {
             // what the reserve exists to hold ahead of the reader. The rest stays ready and eligible, so the next
             // opportunity publishes it — a burst that publishes every ready candidate was the defect this states away.
             publicationLimit: Self.runwayMinimumReserveCards)
+        self.driver = driver
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,
@@ -3538,7 +3539,12 @@ final class FeedAssociation {
             makeMediaOpportunity: makeMediaOpportunity,
             // The first publication obeys the same cap: at most the reserve target in one opportunity, with the
             // remainder left ready (R6-E then grows the admitted window from what was published, not from a burst).
-            publicationLimit: Self.runwayMinimumReserveCards)
+            publicationLimit: Self.runwayMinimumReserveCards,
+            // The cold round's own durable-ingestion fact goes to the one owner that decides local work. The driver
+            // validates the live scope and revision, so this channel cannot authorize a retired context; it exists
+            // because publication is not the condition under which supply arrives — a source that answers after the
+            // first Edition used to leave its supply with no consumer at all.
+            onDurableSupply: { await driver.noteLocalSupplyFact() })
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }

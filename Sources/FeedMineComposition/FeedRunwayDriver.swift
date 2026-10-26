@@ -188,6 +188,23 @@ public actor FeedRunwayDriver {
     /// offered to that opportunity regardless of which transition arrived — and a transition that finds the queue
     /// empty (a story the walk had not passed yet) simply lets the normal window select it.
     public func noteMediaReadinessChanged() async {
+        await noteLocalSupplyFact()
+    }
+
+    /// The **one** vocabulary for a durable local-supply fact, whatever produced it: a media readiness transition
+    /// (B/§3) or the durable ingestion a cold-bootstrap target result carries
+    /// (`ColdFeedEvidence.settled(..., supplyChanged: true)`). Two producers, one statement — the second one used to
+    /// have no consumer at all once the first Edition existed, and the walk this driver had already declared
+    /// exhausted stayed exhausted.
+    ///
+    /// It states exactly what a committed acquisition receipt states to the runway (`noteLocalSupplyChanged`) and
+    /// arms the existing late opportunity, so a reader with no gesture still receives what the fact unlocked.
+    /// Nothing here publishes: the drain that runs is the same causal executor every opportunity uses.
+    ///
+    /// The fence is the driver's own scope validation. A callback that outlived its presentation, or that belongs to
+    /// another context or editorial revision, validates to nothing and states nothing; and the controller rejects a
+    /// retired scope, so a stale or cancelled producer cannot open local work in a context it does not serve.
+    public func noteLocalSupplyFact() async {
         guard let scope = try? await validateCurrentScope() else { return }
         do { try await runway.noteLocalSupplyChanged(scope: scope) }
         catch RunwayControllerError.noActiveScope { return }
