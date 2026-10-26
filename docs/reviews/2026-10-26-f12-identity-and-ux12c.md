@@ -102,7 +102,7 @@ inalterados; relançamento na **mesma** Edition, **mesma** âncora e **mesma** o
 
 `CompositionTests`: **132 testes**, 4 falhas na primeira passada (todas as quatro acima), **0** nas demais;
 depois do ajuste, os quatro casos + UX12-C + S1 verdes (`Executed 4 tests, with 0 failures`, `Executed 6 tests,
-with 0 failures`).
+with 0 failures`) e, com o alvo de app inteiro, `CompositionTests` **132/0** dentro de **204/0**.
 
 ## 3. C — S1 no transporte (evidência acrescentada, comportamento não alterado)
 
@@ -136,8 +136,10 @@ depois, a entrada própria no gate. Nada do produto mudou por causa deste item.
 ## 5. Limites desta rodada
 
 - Nada foi enviado: commit local `9b359d47`, sem push/merge/deploy.
-- Suíte de app: classe `CompositionTests` completa (132) e os casos citados; as demais classes do alvo do app não
-  foram reexecutadas nesta rodada.
+- Alvo de app **inteiro** (`-only-testing:FeedMineAppTests`) depois das emendas: **204 testes, 0 falhas** (EXIT=0,
+  430,3 s; `/tmp/f12b-apptarget.xcresult`), com `CompositionTests` 132/0 inteira, `ReadingCompositionTests` (13),
+  `CatalogueUpdateAcceptTests`, `FilterConfirmationBoundaryTests` e as composições de leitura/mídia.
+- Alvos **de UI** (`FeedMineUITests`, jornadas XCUITest): **não** executados nesta rodada.
 - Pacote: `swift test` completo depois das mudanças de `FeedMineComposition` → **1729 testes, 1 skip, 0 falhas**
   (EXIT=0, 109,3 s).
 - UX12-A (card/âncora no retorno) continua sem teste que afirme o card; UX12-B segue como estava; B03/B05/B06 não
