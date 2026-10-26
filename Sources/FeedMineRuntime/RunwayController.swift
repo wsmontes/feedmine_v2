@@ -391,7 +391,7 @@ public actor RunwayController {
         }
         if allowFreshSupply, freshSupplyOpportunity, evaluation.action == .hold, resources.localWorkAllowed,
             let intent = takeLocalSlice(scope: scope, resources: resources, now: now,
-                coverage: evaluation.coverage, observation: observation) {
+                coverage: evaluation.coverage, observation: observation, trigger: .freshSupply) {
             return .runLocalSlice(intent)
         }
         if let intent = acquisitionIntentIfEligible(coverage: evaluation.coverage) {
@@ -410,13 +410,22 @@ public actor RunwayController {
             return measurementRequest(observation, scope: scope, bound: bound, advanceBound: nil)
         case .requestLocalSlice:
             guard let intent = takeLocalSlice(scope: scope, resources: resources, now: now,
-                coverage: evaluation.coverage, observation: observation) else { return .none }
+                coverage: evaluation.coverage, observation: observation, trigger: .policy) else { return .none }
             return .runLocalSlice(intent)
         }
     }
 
+    /// Which rule authorized a local slice. `coverage` is the policy's own verdict and only one of them: a fresh
+    /// supply grants one bounded slice while the policy says `hold`, so a `replenishment_requested` carrying
+    /// `coverage: healthy` is not a contradiction — it is a request the coverage did not drive. The trace names
+    /// the trigger, so a reader never has to infer it from the code.
+    private enum LocalSliceTrigger: String {
+        case policy
+        case freshSupply = "fresh_supply"
+    }
+
     private func takeLocalSlice(scope: RunwayScope, resources: RunwayResourceFacts, now: RunwayMonotonicTime,
-        coverage: RunwayCoverage, observation: RunwayObservation) -> RunwayLocalSliceIntent? {
+        coverage: RunwayCoverage, observation: RunwayObservation, trigger: LocalSliceTrigger) -> RunwayLocalSliceIntent? {
         // The fresh authorization belongs to the head reconsideration, even when fairness walks the episode lane
         // first. Consuming it on that older pass would let a healthy `.hold` strand the pending head.
         guard let readyAhead, let lane = selectLane() else { return nil }
@@ -433,7 +442,7 @@ public actor RunwayController {
         if coverage == .unknown { bootstrapObservation = observation }
         if let trace {
             trace.record(ReplenishmentEvent.requested, Self.requestFields(intent, coverage: coverage,
-                ready: readyAhead.amount))
+                ready: readyAhead.amount, trigger: trigger))
         }
         return intent
     }
@@ -459,11 +468,12 @@ public actor RunwayController {
     }
 
     private static func requestFields(_ intent: RunwayLocalSliceIntent, coverage: RunwayCoverage,
-        ready: ReadyAheadAmount?) -> [String: String] {
+        ready: ReadyAheadAmount?, trigger: LocalSliceTrigger) -> [String: String] {
         var fields = requestFields(operation: intent.operation, kind: "local", scope: intent.scope,
             coverage: coverage, ready: ready)
         fields["lane"] = intent.lane == .episode ? "episode" : "head_reconsideration"
         fields["examined_capacity"] = String(intent.examinedCapacity)
+        fields["trigger"] = trigger.rawValue
         return fields
     }
 

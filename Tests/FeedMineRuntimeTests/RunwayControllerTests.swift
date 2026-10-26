@@ -700,4 +700,47 @@ extension RunwayControllerTests {
         try await sut.failLocalSlice(third, failure: .cancelled, at: at(25))
         snap = await sut.snapshot(); XCTAssertNil(snap.localRetryEligibleAt)
     }
+
+    /// B03 owner trace (2026-10-25). A trace `replenishment_requested` carrying `coverage: healthy` is not a
+    /// contradiction: the policy returns `hold` for healthy, and a **fresh supply** grants one bounded local slice
+    /// anyway (`freshSupplyOpportunity` in `RunwayController`). Before the `trigger` field the trace could not say
+    /// which rule asked, so a healthy request read like an instrumentation defect. The branch now names itself.
+    private func traced() -> (RunwayController, () -> [(String, [String: String])]) {
+        final class Sink: @unchecked Sendable { var events: [(String, [String: String])] = [] }
+        let sink = Sink()
+        let sut = RunwayController(configuration: RunwayControllerConfiguration(
+            policyInputs: RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!,
+            trace: ReplenishmentTrace { event, fields in sink.events.append((event, fields)) })
+        return (sut, { sink.events })
+    }
+
+    func testAFreshSupplySliceNamesItsTriggerInsteadOfReadingAsAHealthyRequest() async throws {
+        let (sut, events) = traced()
+        let moved = try await learnFacts(sut, at: 0)
+        // Learned facts: 4 cards/s and p95 5 s, so a ready reserve of 25 cards is `healthy` (threshold 20).
+        try await sut.acceptMeasurement(facts(moved, amount: .exact(25)))
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        let before = events().count
+        let action = try await sut.reconsider(resources: resources(), at: time(20))
+        guard case .runLocalSlice = action else { return XCTFail("Expected the fresh-supply slice: \(action)") }
+        let request = try XCTUnwrap(events().dropFirst(before).last { $0.0 == ReplenishmentEvent.requested }?.1)
+        XCTAssertEqual(request["coverage"], "healthy", "the policy did not drive this slice")
+        XCTAssertEqual(request["trigger"], "fresh_supply", "the trace states which rule asked")
+    }
+
+    func testAPolicySliceNamesThePolicyAsItsTrigger() async throws {
+        let (sut, events) = traced()
+        let moved = try await learnFacts(sut, at: 0)
+        // The learned walk ended exhausted; a fresh supply reopens the local lane, and the empty reserve then
+        // pressures it. Acquisition is not eligible, so the policy's own slice is what runs.
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        try await sut.acceptMeasurement(facts(moved, amount: .exact(0)))
+        let before = events().count
+        let action = try await sut.reconsider(resources: resources(), at: time(20))
+        guard case .runLocalSlice = action else { return XCTFail("Expected a pressured slice: \(action)") }
+        let request = try XCTUnwrap(events().dropFirst(before).last { $0.0 == ReplenishmentEvent.requested }?.1)
+        XCTAssertEqual(request["coverage"], "pressured")
+        XCTAssertEqual(request["trigger"], "policy")
+    }
 }
