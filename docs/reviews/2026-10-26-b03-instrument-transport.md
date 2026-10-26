@@ -118,4 +118,59 @@ build continuam sendo apagados.
 | `bench/EVALUATOR.sha256` (selo vigente) | `shasum -a 256 -c` = 6/6 OK |
 | `bench/MANIFEST.sha256` (corpus + serve + build) | inalterado |
 
-<!-- RESULTADO DA MEDIÇÃO -->
+## Execução medida (uma vez, contra o mesmo produto)
+
+`bench/run.sh --gate B03 --full-trace`, run **`bench/run/20261026T143646Z`**, commit
+**`c9942340`**, iniciada 14:36:46Z e terminada 15:09:24Z (1.957 s de parede; sessão de teste
+1.870 s), perfil A, device dedicado `FeedMine Bench` (8E541C9E-…), transporte `127.0.0.1:8757`.
+`manifest: OK` (2.314 linhas, 0 falhas), `evaluator: OK` (6/6), par do corpus injetado
+(`sourceCount 2305`), `packaged labels: OK`. O XCUITest terminou **`TEST EXECUTE SUCCEEDED`** — a
+jornada de trinta minutos correu inteira.
+
+**Veredito congelado: B03 = FAIL.**
+
+| cláusula | observado | veredito |
+|---|---|---|
+| trinta minutos de avanço com oferta suficiente | 3.465 avanços (esperado ≥1.800) | **PASS** |
+| zero repetição para disfarçar falta de oferta | 0 | **PASS** |
+| zero pares consecutivos da mesma fonte no trace inteiro | 0 | **PASS** |
+| zero paralisação visível ≥1 s por falta de runway | `{"paradas": 1, "regra": "avanço sem admissão em 1 s"}` | **FAIL** |
+| a prontidão de cada candidato foi registrada | 2.531 candidatos, 0 pendentes, 2.531 `textOnly` | **PASS** |
+
+### A parada, com o traço preservado
+
+Alcance dos avanços: 1.833,8 s; 3.465 avanços e 9.033 admissões (35640 eventos no `trace.jsonl`,
+8,6 MB). Espera de cada avanço até a próxima admissão: **mediana 0,008 s**, segunda pior **0,34 s**,
+**pior 1,063 s** — e **nenhum** avanço ficou sem admissão posterior. Exatamente **um** evento passa do
+limiar do critério, em t≈+61,3 s do traço:
+
+```
+1793025560.896  runway_completed  admitted_cards 63        (a app admite 8 ms ANTES do avanço)
+1793025560.904  advance           activity=forward
+1793025561.967  admitted          order 110 / cards 63     (1,063 s depois)
+```
+
+Nesse instante o suprimento **não** estava esgotado: `reserve_depth` em 5560,775 e 5561,328 registra
+`ready=4`, `preparing=0`, `pending=0`, `exhausted=0`; `replenishment_requested`/`arrived` aconteceram
+em 5561,140/5561,185 (antes da admissão). Em todo o laço de trinta minutos: 473 amostras de
+`reserve_depth`, **zero** com `exhausted != 0`, `ready` entre 0 e 96 (94 amostras em 0, sempre com
+`preparing > 0`), `pending` 0.
+
+Leitura honesta: é **um** intervalo de 1,063 s entre o avanço e a admissão seguinte, medido no traço do
+app, não um artefato do instrumento — a fase chegou pelo anexo, o runner não travou e o teste
+terminou com sucesso. O que a evidência **não** sustenta é "falta de runway": havia cartas prontas e
+reabastecimento em voo. A pergunta que a execução de 2026-10-11 deixou aberta ("havia próximo card
+pronto e alcançável?") tem agora resposta medida para este evento: **sim**. A régua é mecânica e
+continua valendo como está; o veredito não é reclassificado.
+
+## Artefatos
+
+`bench/run/20261026T143646Z/`: `report.md` (com a seção "Transporte de evidência das fases"),
+`B03.verdict.json`, `B03.json`, `B03-A.phases` (**6 linhas, 198 B** — `neutral`, `answered:` ×2,
+`thematic-attempted`, `hide-stable:true`, `hide-frames:252->252`), `B03-A.transport.log`,
+`B03-A.attachments/` (`phases_0_…txt` + `b03-end-of-trace_0_….png`), **`B03-A.xcresult` (8,2 MB,
+preservado)**, `B03-A.png`, `B03-A.log`, `container/` (23 MB, com o `trace.jsonl` de 8,6 MB),
+`server.log` (767 requisições), `build.log`, `identity.txt`, `inputs.sha256`, `evaluator.check`,
+`manifest.check`, `totals.json`.
+
+`derived/` foi apagado como sempre (produtos de build regeneráveis). Disco: 8,0 GB livres no fim.
