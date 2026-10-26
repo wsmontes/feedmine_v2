@@ -54,13 +54,18 @@ public struct NodeSourcesView: View {
     private let appearance: ReaderAppearance
     /// Drilling one level further stays with the host: this view states no navigation of its own.
     private let onOpenNode: (CatalogNodeSummary) -> Void
+    /// Opening one source's own feed stays with the host too. Nil when the host has no such destination — the
+    /// row then draws no control, instead of offering a tap that cannot go anywhere.
+    private let onOpenSource: ((NodeSourceRow) -> Void)?
 
     public init(store: SourceManagementStore, node: CatalogNodeSummary,
-        appearance: ReaderAppearance = .standard, onOpenNode: @escaping (CatalogNodeSummary) -> Void) {
+        appearance: ReaderAppearance = .standard, onOpenNode: @escaping (CatalogNodeSummary) -> Void,
+        onOpenSource: ((NodeSourceRow) -> Void)? = nil) {
         _store = State(initialValue: store)
         self.node = node
         self.appearance = appearance
         self.onOpenNode = onOpenNode
+        self.onOpenSource = onOpenSource
     }
 
     /// The sections the node's own sources are drawn in: audio, then video, then text, then anything the
@@ -179,7 +184,14 @@ public struct NodeSourcesView: View {
         ForEach(store.nodeSections) { section in
             Section {
                 ForEach(section.rows) { row in
-                    NodeSourceRowView(row: row, isSelected: store.selection.contains(row.id),
+                    // F12/UX12-B: a source row opens its own feed when the host has a destination for it. The
+                    // open control is offered only while the source is part of the reader's selection — the
+                    // session's source context is scoped to its own feeds, and an unselected source would land
+                    // on the main feed instead of the destination the row names. Enabling stays the toggle's
+                    // own act (R4), and the two controls keep separate hit areas.
+                    let selected = store.selection.contains(row.id)
+                    NodeSourceRowView(row: row, isSelected: selected,
+                        onOpen: selected ? { onOpenSource?(row) } : nil,
                         onToggle: {
                             guard let source = store.sources.first(where: { $0.id == row.id }) else { return }
                             Task { await store.toggle(source) }
@@ -196,15 +208,24 @@ public struct NodeSourcesView: View {
 public struct NodeSourceRowView: View {
     public let row: NodeSourceRow
     public let isSelected: Bool
+    /// Opens the source's own feed. Nil means the host has no destination for this source: no control is drawn.
+    public let onOpen: (() -> Void)?
     public let onToggle: () -> Void
 
-    public init(row: NodeSourceRow, isSelected: Bool, onToggle: @escaping () -> Void) {
-        self.row = row; self.isSelected = isSelected; self.onToggle = onToggle
+    public init(row: NodeSourceRow, isSelected: Bool, onOpen: (() -> Void)? = nil,
+        onToggle: @escaping () -> Void) {
+        self.row = row; self.isSelected = isSelected; self.onOpen = onOpen; self.onToggle = onToggle
     }
 
     public var body: some View {
         HStack {
-            title
+            if let onOpen {
+                Button(action: onOpen) { title }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("node-source-\(row.id)")
+            } else {
+                title
+            }
             Spacer()
             Toggle("", isOn: Binding(get: { isSelected }, set: { _ in onToggle() }))
                 .labelsHidden()

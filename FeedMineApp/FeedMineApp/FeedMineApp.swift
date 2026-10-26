@@ -318,6 +318,8 @@ struct FeedMineApp: App {
         let store: SourceManagementStore?
         let onDone: () -> Void
         let onActivationFailure: () -> Void
+        /// Opening a source's feed belongs to the host that owns the feed surface, not to this sheet.
+        let onOpenSource: (NodeSourceRow) -> Void
         @State private var path: [SourceRoute] = []
 
         var body: some View {
@@ -344,7 +346,8 @@ struct FeedMineApp: App {
                                     onClose: { path.removeAll() })
                             case .node(let node):
                                 NodeSourcesView(store: store, node: node,
-                                    onOpenNode: { path.append(.node($0)) })
+                                    onOpenNode: { path.append(.node($0)) },
+                                    onOpenSource: { onOpenSource($0) })
                             }
                         } else {
                             ProgressView("Abrindo o catálogo de fontes")
@@ -352,6 +355,15 @@ struct FeedMineApp: App {
                     }
             }
         }
+    }
+
+    /// The filter sheet and its country tree. Extracted for the same reason as the other sheets: one case of a
+    /// large presentation switch stays a named expression, and the compiler type-checks it on its own.
+    @ViewBuilder private var filterSurface: some View {
+        FilterSurfaceHost(composition: composition, store: sourcesStore,
+            onDone: { popSurface() },
+            onActivationFailure: { filterActivationFailure = true },
+            onOpenSource: { openSourceRow($0) })
     }
 
     /// The lists a box surface can open. A payload-carrying route, because a box is an identity, not a flag.
@@ -510,7 +522,8 @@ struct FeedMineApp: App {
                                                 onClose: { popSurface() })
                                         case .node(let node):
                                             NodeSourcesView(store: store, node: node,
-                                                onOpenNode: { sourcesPath.append(.node($0)) })
+                                                onOpenNode: { sourcesPath.append(.node($0)) },
+                                                onOpenSource: { openSourceRow($0) })
                                         }
                                     }
                             } else {
@@ -526,9 +539,7 @@ struct FeedMineApp: App {
                     case .export:
                         exportSheet
                     case .filters:
-                        FilterSurfaceHost(composition: composition, store: sourcesStore,
-                            onDone: { popSurface() },
-                            onActivationFailure: { filterActivationFailure = true })
+                        filterSurface
                     case .bookmarkBoxes:
                         NavigationStack(path: $libraryPath) {
                             if let store = boxesStore {
@@ -1834,6 +1845,26 @@ struct ReaderHost: UIViewControllerRepresentable {
 
     private func signature(of filter: ReaderFilter, _ chips: [ReaderFilterChip]) -> String {
         chips.map(\.id).joined(separator: "|")
+    }
+
+    /// F12/UX12-B: opens one source's own feed from its taxonomy row. The row carries the catalogue key, which
+    /// **is** the source's principal, so the destination is the reader's own resolved feed: no identity is derived
+    /// here and nothing is matched by title or URL shape. The sources path is deliberately kept, so reopening the
+    /// surface returns to the same node; the reader's selection is untouched, and an unselected source never
+    /// reaches this call (the row draws no open control for it).
+    @MainActor private func openSourceRow(_ row: NodeSourceRow) {
+        // The sheet closes first so a refusal is stated on the reader's surface, not behind the sheet.
+        popSurface()
+        Task {
+            do {
+                _ = try await composition.openSourceFeed(forKey: row.id)
+            } catch {
+                #if DEBUG
+                print("source open failed: \(String(describing: error))")
+                #endif
+                readerError = String(localized: "Não foi possível abrir o feed desta fonte.")
+            }
+        }
     }
 
     private func switchContext(_ request: FeedContextRequest) {

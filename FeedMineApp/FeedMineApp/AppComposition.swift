@@ -1395,6 +1395,19 @@ final class AppComposition {
         try await next.launch()
     }
 
+    /// F12/UX12-B: opens one catalogue source's own feed from its taxonomy row. The row carries the catalogue
+    /// key; the selection is adopted first (the source surface's toggles are durable), and the destination is the
+    /// reader's **own resolved feed** — the key is matched against what `TrustedFeed.resolveAvailable` produced,
+    /// never derived here and never matched by title or URL shape. Returns false when the key is not part of the
+    /// selection: the row draws no destination it cannot reach, and this is not an error.
+    @discardableResult
+    func openSourceFeed(forKey key: String) async throws -> Bool {
+        await adoptSelectionChange()
+        guard let feed = selectedFeeds.first(where: { $0.principal == key }) else { return false }
+        try await selectContext(.source(feed.sourceID))
+        return true
+    }
+
     /// T11: the hood of the feed the reader is on, when it is one of their own.
     func currentCuratedSummary() -> CuratedFeedSummary? {
         guard case .curatedFeed(let id) = currentContextKey.preset,
