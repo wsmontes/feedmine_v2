@@ -172,3 +172,10 @@ continuam sendo apagados.
 `bench/serve.py`, `bench/corpus/**`, `bench/MANIFEST.sha256` e os critérios congelados ficam byte a byte como
 estavam; o selo `bench/EVALUATOR.sha256` é regerado apenas para `bench/run.sh` e para o driver, e o congelamento
 anterior está verbatim em `bench/revisions/`.
+
+**Risco residual conhecido (um portão por invocação):** o `run.sh` resolve o result bundle por
+`ls -dt "$OUT/derived/Logs/Test/"*.xcresult | head -1`. Com mais de um `--gate` na mesma invocação, um portão cujo
+`xcodebuild` morresse antes de escrever o bundle resolveria para o bundle do portão anterior, e a fase dele cairia no
+`<gate>-<profile>.phases` errado. Rode **um portão por invocação** até que o caminho seja nomeado
+(`-resultBundlePath`). O endurecimento não foi aplicado na revisão de 2026-10-26 porque o selo tem de continuar sendo
+o instrumento que produziu o veredito medido; está registrado em `docs/reviews/2026-10-26-b03-instrument-transport.md`.

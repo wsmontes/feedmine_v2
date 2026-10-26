@@ -174,3 +174,26 @@ preservado)**, `B03-A.png`, `B03-A.log`, `container/` (23 MB, com o `trace.jsonl
 `manifest.check`, `totals.json`.
 
 `derived/` foi apagado como sempre (produtos de build regeneráveis). Disco: 8,0 GB livres no fim.
+`xcrun simctl get_app_container 8E541C9E-… com.feedmine.development app` responde **rc=2 — "nada a ler"**
+(nenhum bundle de produto instalado naquele device; `exit 1` seria corpus/descritor divergente), e o
+instrumentado existe só sob `com.feedmine.development.benchmark`: a corrida não instalou nada sob o
+identificador de produto.
+
+## Limites honestos desta revisão
+
+- **O ramo de aparelho é o exemplo de projeto, não um caminho medido.** Esta sessão não teve aparelho
+  físico: o modo `device` é o desenho que já existia (container do runner + anexo + `devicectl`) e foi
+  **copiado** para o simulador, não exercitado. O que está medido é o simulador percorrendo esse
+  transporte — B01 e B03 inteiros.
+- **Causa no kernel do `open(2)` bloqueante: não estabelecida.** O que se corrigiu foi o transporte.
+- **Risco residual do resolvedor de bundle, registrado e não corrigido.** O `run.sh` acha o result bundle
+  por `ls -dt "$OUT/derived/Logs/Test/"*.xcresult | head -1`. Com **mais de um portão na mesma
+  invocação**, um portão cujo `xcodebuild` morresse antes de escrever o bundle resolveria para o bundle
+  do portão anterior, e a fase dele seria copiada para o `<gate>-<profile>.phases` errado. As duas
+  corridas desta nota foram de **um portão por invocação**, onde o risco não existe. O endurecimento
+  nomeado é passar `-resultBundlePath "$OUT/$gate-$profile.xcresult"` ao `xcodebuild`; ele **não** foi
+  aplicado aqui porque mudaria o selo depois da medição, e o selo tem de ser o instrumento que produziu
+  o veredito.
+- Uma única execução de B03 depois da correção: ela estabelece que o instrumento executa a jornada
+  inteira e deixa o traço legível, não a repetibilidade do evento de 1,063 s. B06, perfil B e F06
+  seguem fora desta sessão.
