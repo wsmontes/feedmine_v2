@@ -400,7 +400,9 @@ struct FeedMineApp: App {
                 onDone: { popSurface() },
                 onActivationFailure: { filterActivationFailure = true })
         } else {
-            ProgressView("Abrindo os filtros")
+            // Unreachable in practice (the store is created before the surface is presented). No label: a new
+            // literal here would be the only unlocalized string in this tree.
+            ProgressView()
         }
     }
 

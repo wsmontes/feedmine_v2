@@ -5320,6 +5320,66 @@ final class CompositionTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// F12/R1: a card from a **collection's** source, which the reader has not selected, opens that source's own
+    /// context. `feeds` inside a collection holds the collection's sources, so a "is this id readable here?" guard
+    /// admits it and `sessionState` rewrites the request to `.main` — the silent fallback class this fix exists to
+    /// remove. The selection is untouched.
+    func testF12ACollectionSourcesCardOpensItsOwnContext() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let key = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(
+            try XCTUnwrap(LegacyCatalogReader(catalogURL: catalogue).source(key: key))))
+        let sourceID = entry.source.id
+        let composition = root(directory: directory)
+        await composition.launch()
+        let database = try XCTUnwrap(composition.association).database
+        let date = Date()
+        let origin = OriginRecordID(), revision = OriginRevisionID()
+        try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
+            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "f12-collection",
+                value: "collection-card", role: .object),
+            revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                headline: "Collection source", summary: "Summary", bodyText: "Body", authoredAt: date,
+                modifiedAt: nil, observedAt: date, language: "en", primaryLink: nil, searchProjection: nil,
+                providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: date, expectedCurrent: .none,
+            currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: sourceID, kind: .direct, observedAt: date)]))
+
+        // The reader puts the catalogue source in a collection **without selecting it**, then opens the collection.
+        let selectedBefore = composition.feeds.map(\.principal)
+        XCTAssertFalse(selectedBefore.contains(key), "premise: the source is not selected")
+        let collection = try ReaderLibraryCoordinator(database: database)
+            .collectSources(named: "Catalogue only", sourceKeys: [key])
+        try await composition.openCollectionFeed(id: collection.id)
+        XCTAssertEqual(composition.feeds.map(\.sourceID), [sourceID],
+            "premise: the collection presents that source's feed")
+        var published: [PresentationCard] = []
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline, published.isEmpty {
+            published = composition.association?.store.state.presentation?.window.items ?? []
+            if published.isEmpty { await composition.association?.retryNow() }
+            await Task.yield()
+        }
+        let card = try XCTUnwrap(published.first?.id, "the collection publishes its source's card")
+        XCTAssertEqual(published.first?.sourceID, sourceID)
+
+        let preferences = ReaderPreferencesStore(database: database)
+        let association = try XCTUnwrap(composition.association)
+        association.perform(.viewSource, cardID: card)
+        let opened = await Self.waitUntil(10) {
+            composition.currentContextKey.request == .source(sourceID)
+        }
+        XCTAssertTrue(opened,
+            "the destination is that source's own context, never a silent `.main`: "
+                + "\(composition.currentContextKey.request)")
+        XCTAssertEqual(try preferences.load()?.sourceKeys, selectedBefore,
+            "opening never writes the selection")
+        await composition.association?.close()
+    }
+
     /// A changed persisted selection is a plain/source context, not an intersection with the
     /// collection previously open. A is selected, B is in the collection, and A never belongs to B.
     func testA05AdoptingSelectionOutsideCollectionExitsCollectionPreset() async throws {

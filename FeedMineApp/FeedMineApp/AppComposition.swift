@@ -1509,8 +1509,10 @@ final class AppComposition {
         if case .source(let current) = currentContextKey.request, current == sourceID, association != nil {
             return true
         }
-        // A source in the reader's own selection is the ordinary context switch, exactly as before: no identity
-        // resolution and no extra transition.
+        // A source among this session's active feeds takes the ordinary source context, exactly as before: no
+        // identity resolution and no extra transition. In a collection those active feeds are the collection's own
+        // and `sessionState` keeps `.source(id)` because the id is one of them — measured: a collection source's
+        // card lands on that source, never on `.main` — and no selection is written either way.
         if feeds.contains(where: { $0.sourceID == sourceID }) {
             try await selectContext(.source(sourceID))
             return true
