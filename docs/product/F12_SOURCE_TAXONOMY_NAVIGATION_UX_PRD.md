@@ -54,6 +54,18 @@ A especificação fixa comportamento verificável, mas **não afirma que a UI V2
 
 ---
 
+## Registro de execução — 2026-10-25
+
+**UX12-B, fatia da linha da taxonomia.** Implementado: a linha de uma fonte abre o feed **daquela** fonte quando ela
+faz parte da seleção do leitor (`NodeSourceRowView.onOpen`, `node-source-<chave>`), com o `Toggle` em área própria e
+sem navegação acidental; o host adota a seleção pendente e resolve a chave pelo `TrustedFeed` do próprio owner. Uma
+fonte fora da seleção não desenha o controle e não navega para o feed principal — habilitar continua sendo o ato do
+toggle (R4), e o contexto de fonte única fora da seleção não existe no modelo de sessão (registrado como lacuna).
+O oráculo de UX12-B (só memberships de S) permanece provado no provider editorial; a rota tem teste integrado no app.
+A jornada XCUITest completa está preservada e **skipada com medição**: neste device o conteúdo de sheets não entra
+na árvore de acessibilidade, e o mesmo ocorre ao teste existente de outro sheet. Evidência e limites:
+`docs/reviews/evidence/2026-10-25-f12-source-feed/README.md`. UX12-A/C/D seguem sem prova nesta rodada.
+
 ## Referências técnicas externas — F12
 
 Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
