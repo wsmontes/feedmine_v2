@@ -201,11 +201,10 @@ final class LocalCatalogueAuthority: @unchecked Sendable {
 /// and this branch could never run — which is exactly why it had never run before. Production reads neither the URL
 /// nor the environment.
 ///
-/// **Why this test closes the association before the pass.** `FeedAssociation.foreground()` writes the reader's
-/// store on its own account (`PublicationStore.setVisibility` bumps `edition_reading_state.generation` on every
-/// foreground that has an Edition to show) and `driver.drive` publishes into it, so a byte-for-byte comparison
-/// across `foreground()` could only fail. The test therefore runs the same `foreground()` the app runs, with the
-/// feed transport refused and the association closed: the association's half is inert, and what the comparison
+/// **Why this test closes the association before the pass.** `FeedAssociation.foreground()` works on the reader's
+/// store on its own account and `driver.drive` publishes into it, so a byte-for-byte comparison across
+/// `foreground()` could only fail. The test therefore runs the same `foreground()` the app runs, with the feed
+/// transport refused and the association closed: the association's half is inert, and what the comparison
 /// measures is the half under test — the update pass, which writes only under `catalogue/`.
 @MainActor
 final class CatalogueUpdateAcceptTests: XCTestCase {

@@ -2598,7 +2598,6 @@ final class FeedAssociation {
     let bounds: FeedPresentationBounds
     /// A: this launch's acquisition parallelism, supplied by the composition that built the association.
     @ObservationIgnored let launchSettings: CollectionLaunchSettings
-    @ObservationIgnored private let maintainTail: @Sendable (PublicationStore.HiddenTailLease) async throws -> PublicationStore.TailSuccessionResult
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
     /// The concluded-publication facts this association acts on (R6-E): the driver's drain and the cold bootstrap
@@ -3228,9 +3227,6 @@ final class FeedAssociation {
         let context = FeedContext(key: contextKey)
         let checkpoints = SessionStore(database: db)
         try checkpoints.activateContext(contextKey)
-        if let active = try checkpoints.checkpoint() {
-            try PublicationStore(database: db).setVisibility(editionID: active.editionID, visible: true)
-        }
         var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
         if let restored = saved, !Self.mayShow(restored.edition.editorialRevision, for: contextKey,
             scoringVersion: scoringVersion) {
@@ -3616,24 +3612,6 @@ final class FeedAssociation {
                     "reconsidered_with_image": String(depth.reconsideredWithImage),
                 ])
             }
-        }
-        maintainTail = { lease in
-            let opportunity = await makeMediaOpportunity()
-            let result = try await HiddenTailMaintenance(database: db, trace: replenishment).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
-                prefetch: { await opportunity.prepare($0) }, prepare: prepare)
-            // PM-028A §3: a succeeded hidden tail publishes inside the store and hands back only its disposition —
-            // no receipt reaches this association. The cards after the lease's high water are the suffix that
-            // succession just committed (the pre-read set the maintenance itself examined), so their revisions
-            // leave the reserve here. Without this they stay `.ready` forever, holding depth and bytes for cards
-            // the edition already carries.
-            if result == .applied {
-                let publication = PublicationStore(database: db)
-                let committed = (try? publication.cards(editionID: lease.editionID,
-                    around: lease.highWaterCardID, backwardCapacity: 0, forwardCapacity: 257))?
-                    .dropFirst().map(\.originRevisionID) ?? []
-                if !committed.isEmpty { await reserve.markPublished(committed) }
-            }
-            return result
         }
         // §5.3 (Codex's page review): a discovery page updates the **metadata** that preparation consults — the names
         // a card is attributed with — and nothing else. It does not change the resolved policy (what the reader chose
@@ -4724,9 +4702,6 @@ final class FeedAssociation {
         // nil`), então quem já está medindo não paga nada.
         frameMeter.start()
         do {
-            if let edition = store.state.presentation?.editionID {
-                try PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
-            }
             guard active, !launching else { return }
             if await session.currentPresentation() == nil {
                 // Recovery without replacing the association; a presentation that already exists is
@@ -4788,10 +4763,11 @@ final class FeedAssociation {
             Self.log("lifecycle checkpoint")
             // What the trace saw leaves with it: a run cut short still says everything it observed.
             trace?.flush()
-            let lease = try store.state.presentation.map { try PublicationStore(database: database).hiddenTail(editionID: $0.editionID, protectingThrough: $0.window.items.last?.id) } ?? nil
             // PD-5: the screen is not visible now, so the house can be tidied: complete media for
             // the next cards and bring local media under the device-derived budget. Seen and visible
-            // cards are never changed.
+            // cards are never changed. The published Edition itself is not touched here: PD-5 makes a
+            // published occurrence immutable whether or not the reader has seen it, so a material edit
+            // waits for a future segment through ordinary production instead of rewriting this one.
             // Saved units first: a save whose preparation was interrupted (or that failed for space) is the
             // reader's explicit intent, and the background window is when the app may work without showing it.
             await savedMedia.resume(limit: 8)
@@ -4814,10 +4790,6 @@ final class FeedAssociation {
                 tolerance: mediaWaitBudget.current)
             let report = await tidy.run(visibleKeys: visible, supplyHeadLimit: 32, deadline: readAt + allowance)
             Self.log("tidy evicted=\(report.evictedAssets) reclaimed=\(report.reclaimedBytes) budget=\(report.budgetBytes)")
-            if active, !self.visible, let lease {
-                let result = try await maintainTail(lease)
-                Self.log("hidden tail \(result)")
-            }
         } catch { reportFailure(error) }
     }
 
@@ -4827,9 +4799,6 @@ final class FeedAssociation {
         viewportDrain = nil
         viewportDrainGeneration &+= 1
         viewportIngress.removeAll()
-        if let edition = store.state.presentation?.editionID {
-            try? PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
-        }
         active = false
         visible = false
         retryTask?.cancel()

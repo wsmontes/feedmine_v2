@@ -94,7 +94,7 @@ public struct PublicationCoordinator: Sendable {
         /// PD-1: whether an already-published origin may occur again with materially new text.
         public let originRecurrence: PublicationOriginRecurrence
         /// The replenishment attempt this publication concludes, when a host decided one; nil for work that is not
-        /// a replenishment (the first Edition, hidden tail maintenance).
+        /// a replenishment (the first Edition).
         public let operation: FeedReplenishmentOperationID?
 
         public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
@@ -110,18 +110,6 @@ public struct PublicationCoordinator: Sendable {
             self.cardIDs = cardIDs
             self.originRecurrence = originRecurrence
         }
-    }
-
-    public func succeedTail(_ request: AppendRequest, lease: PublicationStore.HiddenTailLease) throws -> PublicationStore.TailSuccessionResult {
-        guard request.editionID == lease.editionID, let edition = try store.edition(id: request.editionID),
-            edition.editorialRevision == request.selection.editorialRevision else { throw PublicationCoordinatorError.editorialRevisionMismatch }
-        let cards = try Self.prepareCards(selection: request.selection, drafts: request.drafts, cardIDs: request.cardIDs)
-        guard let segment = FeedSegment(id: request.segmentID, editionID: request.editionID, ordinal: 0,
-            segmentSeed: request.segmentSeed, publicationSchemaVersion: .init(rawValue: edition.publicationSchemaVersion),
-            createdAt: request.segmentCreatedAt, cardIDs: request.cardIDs) else { throw PublicationCoordinatorError.inputCountMismatch }
-        let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
-        return try store.succeedTail(lease: lease, segmentID: request.segmentID, cards: records.1, createdAt: request.segmentCreatedAt,
-            requiredMemberships: Dictionary(uniqueKeysWithValues: request.selection.orderedCandidates.map { ($0.originRecordID, $0.sourceIDs) }))
     }
 
     public func createEdition(_ request: CreateRequest) throws -> PublicationOutcome {

@@ -74,25 +74,31 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         guard case .advancedWithoutPublication = try slice() else { return XCTFail("Replay must not republish") }
     }
 
-    func testHiddenTailUsesLatestEditAndRestoresSeenPrefix() async throws {
+    /// PD-5 supersedes the old permission to re-prepare published-but-unseen cards: an occurrence published in an
+    /// Edition keeps its ID, text and position whether or not the reader has seen it. A material edit therefore
+    /// waits for a later segment instead of rewriting this one — it is neither lost (PD-1) nor duplicated.
+    func testPublishedUnseenOccurrenceIsImmutableAndTheEditWaitsForAFutureSegment() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let database = try RuntimeDatabase(location: .init(directory: root))
-        let content = ContentStore(database: database), source = SourceID(), anchorOrigin = OriginRecordID(), editedOrigin = OriginRecordID()
-        func admit(_ origin: OriginRecordID, text: String, previous: OriginRevisionID?, authored: Double? = nil) throws -> OriginRevisionID {
-            let date = Date(timeIntervalSince1970: authored ?? (origin == anchorOrigin ? 2000 : 1000))
+        let content = ContentStore(database: database)
+        let seenSource = SourceID(), unseenSource = SourceID(), lateSource = SourceID()
+        let anchorOrigin = OriginRecordID(), editedOrigin = OriginRecordID(), lateOrigin = OriginRecordID()
+        func admit(_ origin: OriginRecordID, source: SourceID, text: String,
+            previous: OriginRevisionID?, authored: Double) throws -> OriginRevisionID {
+            let date = Date(timeIntervalSince1970: authored)
             let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin, externalVersionIdentity: nil,
                 headline: "H", summary: text, bodyText: nil, authoredAt: date, modifiedAt: nil, observedAt: date,
                 language: nil, primaryLink: nil, searchProjection: nil, providerID: nil)
             try content.commitCanonicalChange(.init(recordID: origin, externalObjectIdentity: .init(connectorKind: .syndication,
-                namespace: "hidden-tail", value: origin.rawValue.uuidString, role: .object), revision: revision, mediaCandidates: [],
+                namespace: "pd5-tail", value: origin.rawValue.uuidString, role: .object), revision: revision, mediaCandidates: [],
                 availability: .available, observedAt: date, expectedCurrent: previous.map { .revision($0) } ?? .none,
                 currentUpdate: .useSuppliedRevision, membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: date)]))
             return revision.id
         }
-        _ = try admit(anchorOrigin, text: "seen", previous: nil)
-        let e1 = try admit(editedOrigin, text: "E1", previous: nil)
-        let context = FeedContext(request: .source(source)), v = PolicyVersion(rawValue: 1)
+        _ = try admit(anchorOrigin, source: seenSource, text: "seen", previous: nil, authored: 2000)
+        let e1 = try admit(editedOrigin, source: unseenSource, text: "E1", previous: nil, authored: 1000)
+        let context = FeedContext(request: .main), v = PolicyVersion(rawValue: 1)
         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key, catalogGeneration: .init(rawValue: 1),
             userSelectionVersion: v, eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
             exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
@@ -100,55 +106,74 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         let policy = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: v, eligibilityPolicyVersion: v,
             scoringPolicyVersion: v, sequencingPolicyVersion: v, exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1),
             eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedMaterial)
-        let window = try CandidateProvider(contentStore: content).candidates(for: plan, after: nil, examinedCapacity: 10)
-        let exposure = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: window.candidates.map(\.originRecordID), publishedOriginIDs: []))
-        let selected = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: exposure)
-        let prepared = Self.prepare(selected), edition = FeedEditionID()
-        _ = try PublicationCoordinator(database: database).createInitialEdition(.init(publication: .init(selection: selected,
-            drafts: PublicationPreparation.drafts(selection: selected, inputs: prepared.inputs), editionID: edition,
-            publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1, editionCreatedAt: Date(), segmentID: FeedSegmentID(),
-            segmentSeed: 1, segmentCreatedAt: Date(), cardIDs: prepared.cardIDs), anchorPlacement: .center, checkpointedAt: Date(timeIntervalSince1970: 1234)))
-        let before = try PublicationStore(database: database).card(id: prepared.cardIDs[0])
-        let e2 = try admit(editedOrigin, text: "E2", previous: e1)
-        let e3 = try admit(editedOrigin, text: "E3", previous: e2)
-        for _ in 0..<12 { _ = try admit(OriginRecordID(), text: "New head item", previous: nil, authored: 3000) }
-        let store = PublicationStore(database: database), lease = try XCTUnwrap(store.hiddenTail(editionID: edition))
-        let result = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: lease,
-            examinedCapacity: 10, prefetch: { _ in }, prepare: Self.prepare)
-        XCTAssertEqual(result, .applied)
+        let edition = FeedEditionID()
+        guard case .published(_, let initial) = try InitialProductionSlice(database: database).run(.init(plan: plan, policy: policy,
+            examinedCapacity: 10, editionID: edition, publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1,
+            editionCreatedAt: Date(timeIntervalSince1970: 2500), segmentID: FeedSegmentID(), segmentSeed: 1,
+            segmentCreatedAt: Date(timeIntervalSince1970: 2500), anchorPlacement: .center,
+            checkpointedAt: Date(timeIntervalSince1970: 2500)), prepare: Self.prepare) else {
+            return XCTFail("Expected the first Edition to publish the two admitted stories")
+        }
+        let store = PublicationStore(database: database)
+        let anchor = initial.cardIDs[0]
+        func live() throws -> [PublicationStore.CardRecord] {
+            try store.cards(editionID: edition, around: anchor, backwardCapacity: 0, forwardCapacity: 10)
+        }
+        // The second card is published and ahead of the reader's anchor: it has never been exposed.
+        let published = try live()
+        XCTAssertEqual(published.map(\.primaryText), ["seen", "E1"])
+        XCTAssertEqual(try PublicationHistory(database: database).exposure(editionID: edition,
+            originIDs: [editedOrigin], readerAnchorCardID: anchor).unseenOriginIDs, [editedOrigin],
+            "The second occurrence is published and still ahead of the reader")
+        let segmentsBefore = try store.segments(editionID: edition)
+        let checkpointBefore = try SessionStore(database: database).checkpoint()
+        XCTAssertEqual(checkpointBefore?.cardID, anchor)
+
+        // A material edit of the unexposed occurrence, and an unrelated story that has never been published.
+        let e2 = try admit(editedOrigin, source: unseenSource, text: "E2", previous: e1, authored: 1500)
+        _ = try admit(lateOrigin, source: lateSource, text: "late", previous: nil, authored: 3000)
+
+        // Production with the reader still before the unexposed occurrence: PD-1 rule 2 holds the edit, PD-5
+        // forbids rewriting the published card, and the never-published story is published normally.
+        guard case .published(_, let late) = try LocalProductionSlice(database: database).run(.init(plan: plan, policy: policy,
+            editionID: edition, after: nil, examinedCapacity: 10, segmentID: FeedSegmentID(), segmentSeed: 1,
+            segmentCreatedAt: Date(timeIntervalSince1970: 3500), readerAnchorCardID: anchor), prepare: Self.prepare) else {
+            return XCTFail("The unexposed story must not block the rest of the supply")
+        }
+        XCTAssertEqual(try store.card(id: late.cardIDs[0])?.primaryText, "late")
+        let held = try live()
+        XCTAssertEqual(held.map(\.primaryText), ["seen", "E1", "late"])
+        XCTAssertEqual(held.filter { $0.originRecordID == editedOrigin }.map(\.originRevisionID), [e1],
+            "The edit is held, not published and not replacing the published occurrence")
+        XCTAssertEqual(held[0], published[0])
+        XCTAssertEqual(held[1], published[1], "Every published field of the unexposed occurrence is unchanged")
+        XCTAssertEqual(try store.segments(editionID: edition).first, segmentsBefore.first)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint(), checkpointBefore, "anchor never moves on its own")
+
+        // A relaunch reads the same Edition: the published tail is the card that was published, not a newer edit.
         let reopened = try RuntimeDatabase(location: .init(directory: root))
         let restored = try XCTUnwrap(PublicationHistory(database: reopened).restore(backwardCapacity: 2, forwardCapacity: 10))
-        XCTAssertEqual(restored.window.cards.map(\.text.primaryText), ["seen", "E3"])
-        XCTAssertEqual(restored.window.cards.last?.origin.originRevisionID, e3)
-        XCTAssertEqual(restored.cursor.anchor.cardID, prepared.cardIDs[0])
-        XCTAssertEqual(try store.card(id: prepared.cardIDs[0]), before)
-        XCTAssertEqual(try store.card(id: prepared.cardIDs[1])?.primaryText, "E1")
-        let e4 = try admit(editedOrigin, text: "E4", previous: e3)
-        let immutable = try XCTUnwrap(content.originRevision(id: e4))
-        let unavailableLease = try XCTUnwrap(store.hiddenTail(editionID: edition))
-        let unavailable = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: unavailableLease,
-            examinedCapacity: 10, prefetch: { _ in
-                try? content.commitCanonicalChange(.init(recordID: editedOrigin, externalObjectIdentity: .init(connectorKind: .syndication,
-                    namespace: "hidden-tail", value: editedOrigin.rawValue.uuidString, role: .object), revision: immutable, mediaCandidates: [],
-                    availability: .removed, observedAt: Date(timeIntervalSince1970: 3000), expectedCurrent: .revision(e4),
-                    currentUpdate: .unchanged, membershipMutations: []))
-            }, prepare: Self.prepare)
-        XCTAssertEqual(unavailable, .stale)
-        XCTAssertEqual(try store.cards(editionID: edition, around: prepared.cardIDs[0], backwardCapacity: 0, forwardCapacity: 10).last?.primaryText, "E3")
-        try content.commitCanonicalChange(.init(recordID: editedOrigin, externalObjectIdentity: .init(connectorKind: .syndication,
-            namespace: "hidden-tail", value: editedOrigin.rawValue.uuidString, role: .object), revision: immutable, mediaCandidates: [],
-            availability: .available, observedAt: Date(timeIntervalSince1970: 4000), expectedCurrent: .revision(e4),
-            currentUpdate: .unchanged, membershipMutations: []))
-        let membershipLease = try XCTUnwrap(store.hiddenTail(editionID: edition))
-        let membership = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: membershipLease,
-            examinedCapacity: 10, prefetch: { _ in
-                try? content.commitCanonicalChange(.init(recordID: editedOrigin, externalObjectIdentity: .init(connectorKind: .syndication,
-                    namespace: "hidden-tail", value: editedOrigin.rawValue.uuidString, role: .object), revision: immutable, mediaCandidates: [],
-                    availability: .available, observedAt: Date(timeIntervalSince1970: 5000), expectedCurrent: .revision(e4),
-                    currentUpdate: .unchanged, membershipMutations: [.remove(sourceID: source)]))
-            }, prepare: Self.prepare)
-        XCTAssertEqual(membership, .stale)
-        XCTAssertEqual(try store.cards(editionID: edition, around: prepared.cardIDs[0], backwardCapacity: 0, forwardCapacity: 10).last?.primaryText, "E3")
+        XCTAssertEqual(restored.window.cards.map(\.text.primaryText), ["seen", "E1", "late"])
+        XCTAssertEqual(restored.window.cards[1].origin.originRevisionID, e1)
+        XCTAssertEqual(restored.cursor.anchor.cardID, anchor)
+
+        // Once the reader has seen the occurrence, the edit is a new occurrence in a later segment (PD-1): a new
+        // card id, the old one untouched, appended rather than substituted.
+        try store.markSeen(editionID: edition, cardID: published[1].id)
+        guard case .published(_, let recurrence) = try LocalProductionSlice(database: database).run(.init(plan: plan, policy: policy,
+            editionID: edition, after: nil, examinedCapacity: 10, segmentID: FeedSegmentID(), segmentSeed: 1,
+            segmentCreatedAt: Date(timeIntervalSince1970: 4500), readerAnchorCardID: published[1].id), prepare: Self.prepare) else {
+            return XCTFail("A material edit of a seen occurrence must be published")
+        }
+        XCTAssertEqual(recurrence.cardIDs.count, 1)
+        XCTAssertNotEqual(recurrence.cardIDs[0], published[1].id)
+        XCTAssertEqual(try store.card(id: recurrence.cardIDs[0])?.primaryText, "E2")
+        XCTAssertEqual(try store.card(id: recurrence.cardIDs[0])?.originRevisionID, e2)
+        let eventual = try live()
+        XCTAssertEqual(eventual.map(\.primaryText), ["seen", "E1", "late", "E2"])
+        XCTAssertEqual(eventual[1], published[1], "The earlier occurrence stays in history unchanged")
+        XCTAssertEqual(try store.segments(editionID: edition).first, segmentsBefore.first)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint(), checkpointBefore)
     }
 
     func testRecurrenceForbiddenPolicyKeepsPhase3R5Uniqueness() throws {

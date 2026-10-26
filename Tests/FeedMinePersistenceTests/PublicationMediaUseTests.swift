@@ -4,7 +4,7 @@ import FeedMineDomain
 import FeedMinePersistence
 
 final class PublicationMediaUseTests: XCTestCase {
-    func testSharedBookmarkSurvivesReopenAndProtectsUnseenTail() throws {
+    func testSharedBookmarkSurvivesReopen() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try RuntimeDatabase(location: .init(directory: directory))
@@ -16,8 +16,6 @@ final class PublicationMediaUseTests: XCTestCase {
         XCTAssertEqual(try store.bookmarkedCardIDs(), [cards[2].id])
         let facts = try store.mediaUsage()
         XCTAssertTrue(try XCTUnwrap(facts[cards[0].mediaKey!]).bookmarked, "Shared asset inherits protection")
-        let lease = try XCTUnwrap(store.hiddenTail(editionID: edition.id))
-        XCTAssertEqual(try store.succeedTail(lease: lease, segmentID: FeedSegmentID(), cards: [StorageFixture.card()], createdAt: Date()), .ineligible)
         let reopened = try RuntimeDatabase(location: .init(directory: directory))
         XCTAssertEqual(try PublicationStore(database: reopened).bookmarkedCardIDs(), [cards[2].id])
         try store.toggleBookmark(cardID: cards[2].id, at: Date())

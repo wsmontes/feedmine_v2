@@ -5,39 +5,19 @@ import FeedMineDomain
 @testable import FeedMinePersistence
 
 final class SessionStoreTests: XCTestCase {
-    func testUnseenSuccessionArchivesOldValuesAndRollsBackOnIdentityConflict() throws {
-        let database = try StorageFixture.database(self)
-        let store = PublicationStore(database: database), edition = StorageFixture.edition()
-        let cards = (0..<4).map { _ in StorageFixture.card() }
-        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, cards), cards: cards)
-        let checkpoint = SessionStore.CheckpointRecord(editionID: edition.id, cardID: cards[0].id, anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 1234))
-        try SessionStore(database: database).saveCheckpoint(checkpoint)
-        let lease = try XCTUnwrap(store.hiddenTail(editionID: edition.id))
-        XCTAssertThrowsError(try store.succeedTail(lease: lease, segmentID: FeedSegmentID(), cards: [cards[0]], createdAt: Date()))
-        XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\.cardIDs), cards.map(\.id))
-        let newest = StorageFixture.card()
-        XCTAssertEqual(try store.succeedTail(lease: lease, segmentID: FeedSegmentID(), cards: [newest], createdAt: Date()), .applied)
-        XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\.cardIDs), [cards[0].id, newest.id])
-        XCTAssertEqual(try store.card(id: cards[1].id), cards[1])
-        XCTAssertEqual(try store.card(id: cards[0].id), cards[0])
-        XCTAssertEqual(try SessionStore(database: database).checkpoint(), checkpoint)
-        XCTAssertEqual(try store.succeedTail(lease: lease, segmentID: FeedSegmentID(), cards: [StorageFixture.card()], createdAt: Date()), .stale)
-    }
-
-    func testSeenHighWaterDoesNotRewindAndHiddenLeaseIsRevokedByForeground() throws {
+    func testSeenHighWaterDoesNotRewind() throws {
         let database = try StorageFixture.database(self)
         let store = PublicationStore(database: database), edition = StorageFixture.edition()
         let cards = (0..<4).map { _ in StorageFixture.card() }
         try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, cards), cards: cards)
         try store.markSeen(editionID: edition.id, cardID: cards[2].id)
         try store.markSeen(editionID: edition.id, cardID: cards[0].id)
-        let lease = try XCTUnwrap(store.hiddenTail(editionID: edition.id))
-        XCTAssertEqual(lease.highWaterCardID, cards[2].id)
-        try store.setVisibility(editionID: edition.id, visible: true)
-        let updated = StorageFixture.card()
-        XCTAssertEqual(try store.succeedTail(lease: lease, segmentID: FeedSegmentID(), cards: [updated], createdAt: Date()), .stale)
-        XCTAssertNil(try store.card(id: updated.id))
-        XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\.cardIDs), cards.map(\.id))
+        let exposure = try store.exposure(editionID: edition.id, originIDs: [cards[1].originRecordID],
+            readerAnchorCardID: cards[0].id)
+        XCTAssertTrue(exposure.unseenOriginIDs.isEmpty,
+            "The high water reached card 2 and never rewound to card 0")
+        XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\.cardIDs), cards.map(\.id),
+            "Seeing a card never removes or reorders a published occurrence")
     }
 
     func testSingletonReplacementMembershipAndFailedSavePreserveCheckpoint() throws {
