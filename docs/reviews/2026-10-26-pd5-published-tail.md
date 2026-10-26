@@ -145,6 +145,11 @@ Reescritos/deletados, com justificativa (autoridade posterior, não conveniênci
 
 ## Negativos e limitações (honestos)
 
+- Passe de limpeza `f5d3e087` corrigiu os comentários que ainda descreviam o mecanismo removido
+  (`LocalProductionSlice`, `PendingMediaReconsideration`, `PreparedReserve`, três notas em `AppComposition`, a
+  proveniência da janela de 256 em `SourceDiversityContractTests`). Nenhuma linha executável mudou; só o
+  `swift build --build-tests` + 37 testes dos arquivos tocados foram rodados depois dele, então o
+  **BUILD SUCCEEDED** do app target vale para o código do commit `399a0dd1` e não é uma segunda medição.
 - **Não** foi rodado o bench (`bench/**` é proibido nesta tarefa) e **não** há alegação de PASS de B03/B04/B05. A
   correção só pode deixar a história publicada mais estável; não foi medida por gate.
 - **Não** foi executado teste de UI nem em dispositivo. A prova é de pacote + compilação do app.
