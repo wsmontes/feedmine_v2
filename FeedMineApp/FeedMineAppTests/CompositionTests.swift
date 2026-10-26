@@ -4765,6 +4765,25 @@ final class CompositionTests: XCTestCase {
     }
 
 
+    /// F12/R2: with **no verified snapshot installed**, the composition serves the bundled catalogue unverified and
+    /// the source surface must show that same catalogue instead of declaring it unavailable — measured on the
+    /// simulator: the sheet said "The source catalogue isn't available." while the feed was reading the bundle.
+    func testF12DegradedCatalogueStillExposesTheBundledTree() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let bundled = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let manifest = try XCTUnwrap(Bundle.main.url(forResource: "catalog.manifest", withExtension: "json"))
+        let installation = CatalogInstallation(directory: directory, bundledCatalogue: bundled,
+            bundledManifest: manifest)
+        XCTAssertNil(installation.activeSnapshot(), "a fresh directory has no verified snapshot")
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let coordinator = SourceManagementCoordinator(installation: installation, database: database)
+        XCTAssertTrue(coordinator.hasCatalog, "the bundled catalogue is still a catalogue, served unverified")
+        let sections = try coordinator.sections()
+        XCTAssertFalse(sections.isEmpty, "the reader's surface lists the bundled tree")
+        XCTAssertTrue(sections.contains { $0.key == "15-nature-animals" })
+    }
+
     /// F12/UX12-B, the two destinations a row can have. A key the **catalogue cannot resolve** returns `false`:
     /// nothing is derived here and the reader is not moved to a context that would fall back to the main feed. A
     /// key the reader has selected opens the ordinary source context and never rewrites the selection.
@@ -4872,6 +4891,19 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(Set(cards.compactMap(\.sourceID)), [sourceID],
             "no other source's membership reaches this feed")
         await composition.association?.close()
+
+        // R6 and "no silent fallback": a new process on the same container keeps the source context. The launch and
+        // every rebuild honor it with the same rule the open used, so `sessionState` cannot rewrite it to `main`.
+        let reopened = root(directory: directory)
+        await reopened.launch()
+        XCTAssertEqual(reopened.currentContextKey.request, .source(sourceID),
+            "a relaunch keeps the source context instead of falling back to main")
+        let reopenedDatabase = try XCTUnwrap(reopened.association).database
+        XCTAssertEqual(try ReaderPreferencesStore(database: reopenedDatabase).load()?.sourceKeys,
+            before.sourceKeys, "the relaunch wrote no selection")
+        XCTAssertEqual(reopened.feeds.map(\.principal), feedsBefore,
+            "the relaunch keeps exactly the reader's own feeds")
+        await reopened.association?.close()
     }
 
     /// A changed persisted selection is a plain/source context, not an intersection with the
