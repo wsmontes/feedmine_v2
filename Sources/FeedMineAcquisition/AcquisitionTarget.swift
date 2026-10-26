@@ -84,6 +84,14 @@ public final class VisitTargetAuthority: @unchecked Sendable {
         return armed[id]?.authorizedSources
     }
 
+    /// The armed target and its sources from the same lock acquisition. Retiring the arming between two separate
+    /// reads could otherwise answer "the target exists" and "no sources", which is not an authority at all.
+    public func authority(id: AcquisitionTargetID) -> (target: AcquisitionTarget, sources: Set<SourceID>)? {
+        lock.lock(); defer { lock.unlock() }
+        guard let state = armed[id] else { return nil }
+        return (state.target, state.authorizedSources)
+    }
+
     public var isArmed: Bool {
         lock.lock(); defer { lock.unlock() }
         return !armed.isEmpty
@@ -146,6 +154,16 @@ public struct AcquisitionTargetLedger: Sendable {
         if try durable.target(id: id) != nil { return try durable.authorizedSources(id: id) }
         return visit?.authorizedSources(id: id)
     }
+
+    /// One answer per lifetime: target, origin and the sources licensed for that target, each read without an
+    /// interleaved second read of the other fact. The durable row still wins whenever it exists; a nil source set on
+    /// a durable answer is an unreconciled legacy row, and the caller must refuse it rather than treat it as empty.
+    public func authority(id: AcquisitionTargetID) throws
+        -> (target: AcquisitionTarget, origin: AcquisitionTargetOrigin, sources: Set<SourceID>?)? {
+        if let durable = try durable.authority(id: id) { return (durable.target, .durable, durable.sources) }
+        if let visit = visit?.authority(id: id) { return (visit.target, .visit, visit.sources) }
+        return nil
+    }
 }
 
 public struct AcquisitionTargetAuthority: Sendable {
@@ -164,6 +182,12 @@ public struct AcquisitionTargetAuthority: Sendable {
     }
     public func authorizedSources(id: AcquisitionTargetID) throws -> Set<SourceID>? {
         try store.authorizedSources(id: id)
+    }
+    /// The target and its sources as one consistent durable read; nil is "no row".
+    public func authority(id: AcquisitionTargetID) throws
+        -> (target: AcquisitionTarget, sources: Set<SourceID>?)? {
+        guard let record = try store.authority(id: id) else { return nil }
+        return (try Self.map(record.target), record.sources)
     }
     public func materializeSources(id: AcquisitionTargetID, expectedGeneration: UInt64,
         connectorKind: ConnectorKind, authorizedSources: Set<SourceID>) throws -> AcquisitionTarget {

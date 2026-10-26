@@ -427,17 +427,24 @@ public actor AcquisitionCoordinator {
                     stamp = .durable
                 case .visit:
                     // A visit retired during the pull admits nothing, so a retired surface cannot leave new
-                    // canonical payload behind. Re-read immediately before the write, not only at the loop top.
-                    guard let revalidated = try ledger.target(id: target.id), revalidated.target.state == .enabled,
+                    // canonical payload behind. One read answers target, origin and sources together: two separate
+                    // reads could see a live target and a retired arming (or sources from a durable row that
+                    // appeared between them). A missing arming is `.cancelled`, never an empty licence.
+                    guard let revalidated = try ledger.authority(id: target.id), revalidated.origin == .visit,
+                        revalidated.target.state == .enabled,
                         revalidated.target.generation == target.generation,
-                        revalidated.origin == .visit else { return result(.cancelled) }
-                    let sources = try ledger.authorizedSources(id: current.id) ?? []
+                        let sources = revalidated.sources else { return result(.cancelled) }
                     stamp = .visit(connectorKind: current.connectorKind, authorizedSources: sources)
                 }
                 // Admission is synchronous and durable; the next iteration rereads its settled checkpoint.
                 let receipt = try admission.admit(batch, authority: stamp)
                 if resolved.origin == .visit, let nextCheckpoint = batch.nextCheckpoint {
-                    // The visit's cursor is its arming's; a retired arming cancels the batch as a whole.
+                    // The visit's cursor is its arming's. The payload above is already durable: admission writes
+                    // canonical supply **before** this CAS, so a retired arming does not roll the batch back. What a
+                    // failed CAS settles is the receipt and the in-memory cursor — the batch stays as supply, the
+                    // visit does not advance, and the result is `.cancelled`. The reverse order (CAS before admit)
+                    // would advance a cursor with no payload, which is the worse failure; this one is stated, not
+                    // hidden.
                     guard visitAuthority?.compareAndSwapCheckpoint(id: current.id,
                         expectedGeneration: current.generation,
                         expectedCheckpointRevision: current.checkpointRevision,
@@ -447,6 +454,7 @@ public actor AcquisitionCoordinator {
                     trace.record(ReplenishmentEvent.concluded, ["op": operation.described,
                         "destination": "pool_admission", "target": receipt.targetID.rawValue.uuidString,
                         "generation": String(target.generation), "attempt": String(attempt),
+                        "authority_origin": resolved.origin == .visit ? "visit" : "durable",
                         "observations": String(batch.observations.count),
                         "rejected": String(receipt.rejectedObservations.count),
                         "checkpoint_advanced": receipt.checkpointAdvanced ? "true" : "false",

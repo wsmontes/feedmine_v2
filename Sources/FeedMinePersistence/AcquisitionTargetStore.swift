@@ -127,6 +127,17 @@ public struct AcquisitionTargetStore: Sendable {
         try database.read { db in try Self.readSources(Self.requireTarget(id: id, in: db), in: db) }
     }
 
+    /// One authority read: the target row and the sources that belong to that same generation, from a single read
+    /// transaction. A caller that needs both must not read them separately, because a row can appear between the
+    /// two reads and the pair would then mix two lifetimes. Nil means no durable row at all.
+    public func authority(id: AcquisitionTargetID) throws
+        -> (target: TargetRecord, sources: Set<SourceID>?)? {
+        try database.read { db in
+            guard let target = try Self.readTarget(id: id, in: db) else { return nil }
+            return (target, try Self.readSources(target, in: db))
+        }
+    }
+
     public func materializeSources(id: AcquisitionTargetID, expectedGeneration: UInt64,
         connectorKind: ConnectorKind, authorizedSources: Set<SourceID>) throws -> TargetRecord {
         try Self.validateSources(authorizedSources)

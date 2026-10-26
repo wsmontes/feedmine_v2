@@ -9,6 +9,12 @@ public enum AcquisitionAdmissionStoreError: Error, Equatable, Sendable {
     case invalidObservation(index: Int, field: String)
     case connectorMismatch(index: Int)
     case unsupportedUnversionedHistorical(index: Int)
+    /// A `.visit` stamp arrived for a target that already has a durable row. The row is the only authority for its
+    /// target (enabled or revoked), so the visit licence is void and nothing from the batch is written.
+    case durableTargetExists(AcquisitionTargetID)
+    /// A `.visit` stamp with no authorized sources cannot license anything; admitting it would let an observation
+    /// without memberships through under an authority that names no source.
+    case visitAuthorityWithoutSources(AcquisitionTargetID)
 }
 
 public struct AcquisitionAdmissionStore: Sendable {
@@ -169,6 +175,9 @@ public struct AcquisitionAdmissionStore: Sendable {
 
     public struct AdmissionRecord: Hashable, Sendable {
         public let targetID: AcquisitionTargetID
+        /// True only when the **durable** target's stored cursor advanced. A visit's cursor lives in its arming, so
+        /// the same batch reports false here even though the visit's in-memory revision moved: the receipt states
+        /// durable facts, never the caller's own memory.
         public let checkpointAdvanced: Bool
         public let selectableSupplyChanged: Bool
         public let rejectedObservations: [ObservationRejection]
@@ -197,6 +206,17 @@ public struct AcquisitionAdmissionStore: Sendable {
             case .visit(let kind, let sources):
                 // The visiting source's authority is the arming, not a stored row: nothing is created or enabled
                 // here, and the target's own cursor is the visit's (advanced in memory by its owner).
+                //
+                // D1: the durable row is read **inside this write transaction**, not trusted from the caller's
+                // stamp. Any row — `enabled` or `revoked` — outranks the visit, so a stamp that carries the visit
+                // licence while a row exists is refused before the first canonical write. A caller cannot present
+                // `.visit` to bypass a withdrawn target.
+                guard try AcquisitionTargetStore.readTarget(id: command.targetID, in: db) == nil else {
+                    throw AcquisitionAdmissionStoreError.durableTargetExists(command.targetID)
+                }
+                guard !sources.isEmpty else {
+                    throw AcquisitionAdmissionStoreError.visitAuthorityWithoutSources(command.targetID)
+                }
                 durableTarget = nil
                 connectorKind = kind
                 authorized = sources

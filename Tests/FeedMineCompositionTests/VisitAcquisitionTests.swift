@@ -244,4 +244,114 @@ final class VisitAcquisitionTests: XCTestCase {
         XCTAssertEqual(visit.target(id: target.id)?.checkpointRevision, 0,
             "the visit's in-memory arming is not the authority where a durable row exists")
     }
+
+    /// D2: admission writes canonical supply **before** the visit's cursor CAS. Retirement in that window therefore
+    /// cannot roll the payload back; what it settles is the cursor and the receipt. The test fixes the permitted
+    /// behavior instead of the comment that used to claim a rollback.
+    func testSupplyAdmittedBeforeRetirementStaysCanonicalWhileTheVisitCursorDoesNotAdvance() throws {
+        let fixture = try fixture()
+        let visitedTarget = AcquisitionTargetID()
+        let visit = VisitTargetAuthority()
+        _ = visit.arm(targetID: visitedTarget, authorizedSources: [visitedSource], sourceID: visitedSource)
+        let target = try XCTUnwrap(visit.target(id: visitedTarget))
+        let observation = try XCTUnwrap(AcquisitionObservation(
+            objectIdentity: ExternalIdentity(connectorKind: .syndication, namespace: "visit-test",
+                value: "pre-retirement", role: .object),
+            versionIdentity: nil, precedence: .makeCurrent, availability: .available,
+            headline: "Pre-retirement", summary: nil, bodyText: nil, authoredAt: nil, modifiedAt: nil,
+            observedAt: Date(timeIntervalSince1970: 1), language: nil, primaryLink: nil,
+            searchProjection: nil, providerID: nil,
+            memberships: [.init(sourceID: visitedSource, kind: .direct)], mediaCandidates: []))
+        let next = try XCTUnwrap(AcquisitionCheckpoint(blob: Data([1]), serializationSchema: 1,
+            connectorVersion: "v"))
+        let batch = try XCTUnwrap(AcquisitionBatch(targetID: target.id, targetGeneration: target.generation,
+            expectedCheckpointRevision: 0, observations: [observation], nextCheckpoint: next))
+        let receipt = try AdmissionPolicy(database: fixture.database)
+            .admit(batch, authority: .visit(connectorKind: .syndication, authorizedSources: [visitedSource]))
+        XCTAssertTrue(receipt.selectableSupplyChanged, "premise: the batch was admitted")
+        XCTAssertFalse(receipt.checkpointAdvanced, "a visit receipt never claims a durable cursor")
+
+        visit.revokeAll()
+        XCTAssertNil(visit.compareAndSwapCheckpoint(id: target.id, expectedGeneration: target.generation,
+            expectedCheckpointRevision: 0, next: next),
+            "a retired arming refuses the cursor")
+        let window = try ContentStore(database: fixture.database)
+            .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 32)
+        XCTAssertEqual(window.records.count, 1, "the admitted payload is durable supply, not a rolled-back batch")
+        XCTAssertNil(try AcquisitionTargetAuthority(database: fixture.database).target(id: visitedTarget))
+    }
+
+    /// D3(a): a visit retired while its pull is in flight settles as `.cancelled` — not as an error that cancels its
+    /// siblings — and no request is issued after retirement. The connector is held open so the revocation lands
+    /// between "the pull started" and "the batch is validated", which is the exact window the fences guard.
+    func testRevocationHeldDuringThePullCancelsWithoutAdmittingOrPullingAgain() async throws {
+        let fixture = try fixture()
+        let visitedTarget = AcquisitionTargetID()
+        let visit = VisitTargetAuthority()
+        _ = visit.arm(targetID: visitedTarget, authorizedSources: [visitedSource], sourceID: visitedSource)
+        let target = try XCTUnwrap(visit.target(id: visitedTarget))
+        let connector = BarrierConnector(source: visitedSource)
+        let coordinator = AcquisitionCoordinator(database: fixture.database, connectorForTarget: { _ in connector },
+            visitAuthority: visit)
+
+        let execution = Task {
+            try await coordinator.execute(.start(target: target, bounds:
+                .init(batchCapacity: 1, observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!))
+        }
+        await connector.waitUntilPulling()
+        visit.revokeAll()
+        await connector.release()
+
+        let result = try await execution.value
+        XCTAssertEqual(result.stop, .cancelled, "retirement is a named cancellation, not a thrown failure")
+        XCTAssertTrue(result.receipts.isEmpty, "a retired visit admits no batch")
+        let pulls = await connector.pulls
+        XCTAssertEqual(pulls, 1, "no request is issued after the arming is retired")
+        XCTAssertEqual(try ContentStore(database: fixture.database)
+            .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 32).records.count, 0,
+            "the held batch never became canonical supply")
+    }
+}
+
+/// Holds one pull until the test releases it, then answers with a well-formed batch — the connector side of the
+/// retirement barrier. It carries no FeedMine policy; it only makes the timing deterministic.
+private actor BarrierConnector: FeedConnector {
+    private let source: SourceID
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var pullWaiters: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+    private(set) var pulls = 0
+
+    init(source: SourceID) { self.source = source }
+
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        pulls += 1
+        for waiter in pullWaiters { waiter.resume() }
+        pullWaiters = []
+        if !released { await withCheckedContinuation { continuation = $0 } }
+        guard let observation = AcquisitionObservation(
+            objectIdentity: ExternalIdentity(connectorKind: .syndication, namespace: "visit-test",
+                value: "held", role: .object),
+            versionIdentity: nil, precedence: .makeCurrent, availability: .available,
+            headline: "Held", summary: nil, bodyText: nil, authoredAt: nil, modifiedAt: nil,
+            observedAt: Date(timeIntervalSince1970: 1), language: nil, primaryLink: nil,
+            searchProjection: nil, providerID: nil,
+            memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: []),
+            let checkpoint = AcquisitionCheckpoint(blob: Data([1]), serializationSchema: 1, connectorVersion: "v"),
+            let batch = AcquisitionBatch(targetID: request.targetID,
+                targetGeneration: request.targetGeneration, expectedCheckpointRevision: request.checkpointRevision,
+                observations: [observation], nextCheckpoint: checkpoint) else { return .upToDate }
+        return .batch(batch, transportByteCount: 100)
+    }
+
+    func waitUntilPulling() async {
+        if pulls > 0 { return }
+        await withCheckedContinuation { pullWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
 }
