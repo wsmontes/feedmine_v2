@@ -73,6 +73,20 @@ final class SourceIdentityIndexTests: XCTestCase {
             "the same text minted by the catalogue derivation names nothing this row knows")
     }
 
+    /// The surface side of the same alias: a source context opened before a catalogue rename names the anchor id, so
+    /// the eligible set has to carry the current key's id too — otherwise the stories published after the rename are
+    /// outside the surface the reader opened, and half of one editorial source is silently unreachable.
+    func testAVisitedSourceReadsBothOfItsMintedIDsAcrossAVerifiedAlias() throws {
+        let (links, _) = try reconciledLinks()
+        let anchorID = LegacyCatalogImport.sourceID(forKey: oldKey)
+        let currentID = LegacyCatalogImport.sourceID(forKey: newKey)
+        XCTAssertEqual(SourceIdentityIndex.sourceIDs(in: links, for: anchorID), [anchorID, currentID])
+        XCTAssertEqual(SourceIdentityIndex.sourceIDs(in: links, for: currentID), [anchorID, currentID],
+            "the same answer from either half: the surface never depends on which id the card carried")
+        XCTAssertEqual(SourceIdentityIndex.sourceIDs(in: links, for: SourceID()), [],
+            "an id no row minted contributes nothing — this is never a global id mapping")
+    }
+
     // MARK: - Fixtures
 
     /// One verified old→new alias in a real runtime database, read back through the owner that wrote it.

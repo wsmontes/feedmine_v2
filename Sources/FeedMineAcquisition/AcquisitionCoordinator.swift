@@ -71,6 +71,9 @@ public actor AcquisitionCoordinator {
     }
     private let database: RuntimeDatabase
     private let connectorForTarget: @Sendable (AcquisitionTarget) -> (any FeedConnector)?
+    /// S1: the process-scoped authority of an explicit source visit. Nil for every association that is not a visit,
+    /// so the ordinary path has no second authority to consult.
+    private let visitAuthority: VisitTargetAuthority?
     private let backoff: AcquisitionBackoffPolicy?
     private let monotonicSeconds: @Sendable () -> Double
     /// Operational bound on simultaneous target executions in `executeConcurrently` (≥ 1).
@@ -90,9 +93,11 @@ public actor AcquisitionCoordinator {
     public init(database: RuntimeDatabase,
         connectorForTarget: @escaping @Sendable (AcquisitionTarget) -> (any FeedConnector)?,
         backoff: AcquisitionBackoffPolicy? = nil, concurrentTargetLimit: Int = 1,
+        visitAuthority: VisitTargetAuthority? = nil,
         monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }) {
         self.database = database
         self.connectorForTarget = connectorForTarget
+        self.visitAuthority = visitAuthority
         self.backoff = backoff
         self.concurrentTargetLimit = max(1, concurrentTargetLimit)
         self.monotonicSeconds = monotonicSeconds
@@ -334,9 +339,10 @@ public actor AcquisitionCoordinator {
             throw AcquisitionCoordinatorError.missingConnector(target.id)
         }
         let database = self.database
+        let visitAuthority = self.visitAuthority
         let task = Task<AcquisitionExecutionResult, Error> {
             try await Self.run(target: target, bounds: bounds, connector: connector, database: database,
-                operation: operation, trace: trace)
+                visitAuthority: visitAuthority, operation: operation, trace: trace)
         }
         inFlight[target.id] = InFlight(generation: target.generation, task: task)
         // Only this creator removes the entry, on either result or error settlement.
@@ -349,9 +355,10 @@ public actor AcquisitionCoordinator {
     }
 
     private static func run(target: AcquisitionTarget, bounds: AcquisitionWorkBounds,
-        connector: any FeedConnector, database: RuntimeDatabase,
+        connector: any FeedConnector, database: RuntimeDatabase, visitAuthority: VisitTargetAuthority?,
         operation: FeedReplenishmentOperationID?, trace: ReplenishmentTrace?) async throws -> AcquisitionExecutionResult {
-        let authority = AcquisitionTargetAuthority(database: database)
+        let ledger = AcquisitionTargetLedger(durable: AcquisitionTargetAuthority(database: database),
+            visit: visitAuthority)
         let admission = AdmissionPolicy(database: database)
         var receipts: [AdmissionReceipt] = []
         var context = FeedConnectorExecutionContext()
@@ -372,9 +379,10 @@ public actor AcquisitionCoordinator {
         }
         while receipts.count < bounds.batchCapacity {
             if Task.isCancelled { return result(.cancelled) }
-            guard let current = try authority.target(id: target.id) else {
+            guard let resolved = try ledger.target(id: target.id) else {
                 throw AcquisitionCoordinatorError.targetMissing(target.id)
             }
+            let current = resolved.target
             guard current.state == .enabled else { throw AcquisitionCoordinatorError.targetRevoked(target.id) }
             guard current.generation == target.generation else {
                 throw AcquisitionCoordinatorError.stalePlannedGeneration(targetID: target.id,
@@ -411,8 +419,30 @@ public actor AcquisitionCoordinator {
                 }
                 recordArrival("batch", ["observations": String(batch.observations.count),
                     "bytes": String(transportByteCount)])
+                let stamp: AcquisitionAdmissionStore.AuthorityStamp
+                switch resolved.origin {
+                case .durable:
+                    // The durable path keeps its own fences: the admission validates the stored stamp and throws
+                    // on a stale generation/revision, which is the error callers already handle.
+                    stamp = .durable
+                case .visit:
+                    // A visit retired during the pull admits nothing, so a retired surface cannot leave new
+                    // canonical payload behind. Re-read immediately before the write, not only at the loop top.
+                    guard let revalidated = try ledger.target(id: target.id), revalidated.target.state == .enabled,
+                        revalidated.target.generation == target.generation,
+                        revalidated.origin == .visit else { return result(.cancelled) }
+                    let sources = try ledger.authorizedSources(id: current.id) ?? []
+                    stamp = .visit(connectorKind: current.connectorKind, authorizedSources: sources)
+                }
                 // Admission is synchronous and durable; the next iteration rereads its settled checkpoint.
-                let receipt = try admission.admit(batch)
+                let receipt = try admission.admit(batch, authority: stamp)
+                if resolved.origin == .visit, let nextCheckpoint = batch.nextCheckpoint {
+                    // The visit's cursor is its arming's; a retired arming cancels the batch as a whole.
+                    guard visitAuthority?.compareAndSwapCheckpoint(id: current.id,
+                        expectedGeneration: current.generation,
+                        expectedCheckpointRevision: current.checkpointRevision,
+                        next: nextCheckpoint) != nil else { return result(.cancelled) }
+                }
                 if let operation, let trace {
                     trace.record(ReplenishmentEvent.concluded, ["op": operation.described,
                         "destination": "pool_admission", "target": receipt.targetID.rawValue.uuidString,

@@ -34,6 +34,31 @@ public enum SourceIdentityIndex {
         return nil
     }
 
+    /// Both minted ids one editorial source answers to, read off the rows that name it in either derivation. A
+    /// verified alias records `anchor = oldKey` and `current = newKey`, so a card published before a catalogue
+    /// rename carries the anchor's id and a card published after it carries the current key's. A surface that
+    /// reads the source has to name both, or half of its published history is unreachable.
+    ///
+    /// Only rows that name `sourceID` contribute — this is never a global id mapping — and the answer is `[]` for a
+    /// source no row knows or whose authority this build does not declare.
+    public static func sourceIDs(in links: [String: ReaderLibraryStore.SourceLink],
+        for sourceID: SourceID) -> Set<SourceID> {
+        var result: Set<SourceID> = []
+        for link in links.values {
+            let derive: (String) -> SourceID
+            switch link.authority {
+            case "reader": derive = ReaderSourceIdentity.sourceID(forKey:)
+            case "catalog": derive = LegacyCatalogImport.sourceID(forKey:)
+            default: continue
+            }
+            let anchorID = derive(link.anchorKey), currentID = derive(link.currentKey)
+            guard anchorID == sourceID || currentID == sourceID else { continue }
+            result.insert(anchorID)
+            result.insert(currentID)
+        }
+        return result
+    }
+
     /// The key one row answers with, or `nil` when the row minted neither of its keys to that id, or when it states
     /// an authority this build does not declare — an undeclared namespace is never read as the catalogue's.
     /// `currentKey` comes first because it is where the catalogue resolves the source now; the other two are only a

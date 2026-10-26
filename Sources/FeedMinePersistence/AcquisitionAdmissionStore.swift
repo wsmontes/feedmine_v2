@@ -125,19 +125,31 @@ public struct AcquisitionAdmissionStore: Sendable {
         }
     }
 
+    /// Which authority licensed this batch. `.durable` is the stored target row (the ordinary path, unchanged).
+    /// `.visit` is the process-scoped authority of an explicit source visit (S1): the payload is admitted by the
+    /// same canonical rules, but no target row is required or created and no durable cursor moves — the visit owns
+    /// its own in-memory cursor, so a relaunch cannot inherit it and a revoked target cannot be bypassed.
+    public enum AuthorityStamp: Hashable, Sendable {
+        case durable
+        case visit(connectorKind: ConnectorKind, authorizedSources: Set<SourceID>)
+    }
+
     public struct BatchCommand: Hashable, Sendable {
         public let targetID: AcquisitionTargetID
         public let targetGeneration: UInt64
         public let expectedCheckpointRevision: UInt64
         public let observations: [ObservationCommand]
         public let nextCheckpoint: AcquisitionTargetStore.CheckpointRecord?
+        public let authority: AuthorityStamp
         public init(targetID: AcquisitionTargetID, targetGeneration: UInt64, expectedCheckpointRevision: UInt64,
-            observations: [ObservationCommand], nextCheckpoint: AcquisitionTargetStore.CheckpointRecord?) {
+            observations: [ObservationCommand], nextCheckpoint: AcquisitionTargetStore.CheckpointRecord?,
+            authority: AuthorityStamp = .durable) {
             self.targetID = targetID
             self.targetGeneration = targetGeneration
             self.expectedCheckpointRevision = expectedCheckpointRevision
             self.observations = observations
             self.nextCheckpoint = nextCheckpoint
+            self.authority = authority
         }
     }
 
@@ -171,14 +183,28 @@ public struct AcquisitionAdmissionStore: Sendable {
 
     public func admit(_ command: BatchCommand) throws -> AdmissionRecord {
         try database.write { db in
-            let target = try AcquisitionTargetStore.requireTarget(id: command.targetID, in: db)
-            try AcquisitionTargetStore.validateEnabledStamp(target, expectedGeneration: command.targetGeneration,
-                expectedCheckpointRevision: command.expectedCheckpointRevision)
-            let authorized = try AcquisitionTargetStore.readSources(target, in: db) ?? []
+            let connectorKind: ConnectorKind
+            let authorized: Set<SourceID>
+            let durableTarget: AcquisitionTargetStore.TargetRecord?
+            switch command.authority {
+            case .durable:
+                let target = try AcquisitionTargetStore.requireTarget(id: command.targetID, in: db)
+                try AcquisitionTargetStore.validateEnabledStamp(target, expectedGeneration: command.targetGeneration,
+                    expectedCheckpointRevision: command.expectedCheckpointRevision)
+                durableTarget = target
+                connectorKind = target.connectorKind
+                authorized = try AcquisitionTargetStore.readSources(target, in: db) ?? []
+            case .visit(let kind, let sources):
+                // The visiting source's authority is the arming, not a stored row: nothing is created or enabled
+                // here, and the target's own cursor is the visit's (advanced in memory by its owner).
+                durableTarget = nil
+                connectorKind = kind
+                authorized = sources
+            }
             for (index, observation) in command.observations.enumerated() {
-                try Self.validate(observation, index: index, connectorKind: target.connectorKind)
+                try Self.validate(observation, index: index, connectorKind: connectorKind)
                 for membership in observation.memberships where !authorized.contains(membership.sourceID) {
-                    throw AcquisitionAdmissionStoreError.unauthorizedSource(index: index, targetID: target.id, sourceID: membership.sourceID)
+                    throw AcquisitionAdmissionStoreError.unauthorizedSource(index: index, targetID: command.targetID, sourceID: membership.sourceID)
                 }
             }
             let activeFingerprintGeneration = try contentStore.admissionCurrentFingerprintGeneration(in: db)
@@ -299,10 +325,12 @@ public struct AcquisitionAdmissionStore: Sendable {
             for (id, fingerprint) in before {
                 if try Self.fingerprint(id, in: db) != fingerprint { supplyChanged = true }
             }
-            if let checkpoint = command.nextCheckpoint {
-                _ = try AcquisitionTargetStore.applyCheckpoint(checkpoint, to: target, in: db)
+            // Only the durable authority owns a stored cursor. A visit's cursor is its arming's, in memory.
+            if let durableTarget, let checkpoint = command.nextCheckpoint {
+                _ = try AcquisitionTargetStore.applyCheckpoint(checkpoint, to: durableTarget, in: db)
             }
-            return AdmissionRecord(targetID: command.targetID, checkpointAdvanced: command.nextCheckpoint != nil,
+            return AdmissionRecord(targetID: command.targetID,
+                checkpointAdvanced: durableTarget != nil && command.nextCheckpoint != nil,
                 selectableSupplyChanged: supplyChanged, rejectedObservations: rejections)
         }
     }

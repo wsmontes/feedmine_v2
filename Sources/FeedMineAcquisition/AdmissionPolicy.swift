@@ -12,7 +12,8 @@ public struct AdmissionPolicy: Sendable {
     private let store: AcquisitionAdmissionStore
     public init(database: RuntimeDatabase) { store = AcquisitionAdmissionStore(database: database) }
 
-    public func admit(_ batch: AcquisitionBatch) throws -> AdmissionReceipt {
+    public func admit(_ batch: AcquisitionBatch,
+        authority: AcquisitionAdmissionStore.AuthorityStamp = .durable) throws -> AdmissionReceipt {
         for (index, observation) in batch.observations.enumerated() {
             if observation.versionIdentity == nil, observation.precedence == .historicalOnly {
                 throw AdmissionPolicyError.unsupportedUnversionedHistorical(index: index)
@@ -50,7 +51,8 @@ public struct AdmissionPolicy: Sendable {
             return mapped
         }
         let record = try store.admit(.init(targetID: batch.targetID, targetGeneration: batch.targetGeneration,
-            expectedCheckpointRevision: batch.expectedCheckpointRevision, observations: observations, nextCheckpoint: checkpoint))
+            expectedCheckpointRevision: batch.expectedCheckpointRevision, observations: observations,
+            nextCheckpoint: checkpoint, authority: authority))
         return AdmissionReceipt(targetID: record.targetID, checkpointAdvanced: record.checkpointAdvanced,
             selectableSupplyChanged: record.selectableSupplyChanged,
             rejectedObservations: record.rejectedObservations.map { rejection in

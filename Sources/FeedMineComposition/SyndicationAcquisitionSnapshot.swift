@@ -43,6 +43,8 @@ public enum SyndicationAcquisitionSnapshotError: Error, Equatable, Sendable {
     case missingDurableTarget(AcquisitionTargetID)
     case staleConfigurationGeneration(targetID: AcquisitionTargetID, configured: UInt64, durable: UInt64)
     case connectorKindMismatch(targetID: AcquisitionTargetID)
+    /// A visit cannot pull for a target whose durable authority was withdrawn (revoked).
+    case visitAuthorityWithdrawn(AcquisitionTargetID)
     case searchContextUnavailable
     /// Kiro K-05: an authorized non-public origin must be an exact http(s) origin on a non-public host.
     case invalidAuthorizedOrigin(URL)
@@ -52,6 +54,11 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     let discovery: ReaderDiscoveryTraversal?
     private let database: RuntimeDatabase
     private let registrations: [SyndicationTargetRegistration]
+    /// S1: the registration of the one source the reader explicitly opened, and the process-scoped authority that
+    /// licenses it. They are not selection and not discovery: they answer only for the source context they were
+    /// armed for, and only while the arming lives.
+    private let visitRegistrations: [SyndicationTargetRegistration]
+    private let visitAuthority: VisitTargetAuthority?
     /// Explicitly selected sources remain reader-owned even if their managed catalogue row disappears.
     private let selectedSourceIDs: Set<SourceID>
     /// What the composition knows about each source's catalogue quality/activity and (when measured) latency.
@@ -75,7 +82,9 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         authorizedNonPublicOrigins: [URL] = [],
         selectedSourceIDs: Set<SourceID> = [],
         installation: CatalogInstallation? = nil,
-        targetSignals: [SourceID: AcquisitionTargetSignal] = [:]) throws {
+        targetSignals: [SourceID: AcquisitionTargetSignal] = [:],
+        visitRegistrations: [SyndicationTargetRegistration] = [],
+        visitAuthority: VisitTargetAuthority? = nil) throws {
         guard redirectCapacity >= 0 else { throw SyndicationAcquisitionSnapshotError.invalidRedirectCapacity }
         var origins = Set<SyndicationAuthorizedOrigin>()
         for url in authorizedNonPublicOrigins {
@@ -111,9 +120,33 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             _ = try authority.materializeSources(id: registration.targetID, expectedGeneration: registration.targetGeneration,
                 connectorKind: .syndication, authorizedSources: Set(registration.bindings.map(\.sourceID)))
         }
+        // A visit registration is validated against the ledger and never materialized: opening a source must create
+        // no durable target, so the only durable row that may answer for it is one that already exists — and if that
+        // row is revoked, the visit is refused rather than resurrecting the authority.
+        let ledger = AcquisitionTargetLedger(durable: authority, visit: visitAuthority)
+        for registration in visitRegistrations {
+            guard seen.insert(registration.targetID).inserted else {
+                throw SyndicationAcquisitionSnapshotError.duplicateTargetID(registration.targetID)
+            }
+            guard let resolved = try ledger.target(id: registration.targetID) else {
+                throw SyndicationAcquisitionSnapshotError.missingDurableTarget(registration.targetID)
+            }
+            guard registration.targetGeneration == resolved.target.generation else {
+                throw SyndicationAcquisitionSnapshotError.staleConfigurationGeneration(targetID: registration.targetID,
+                    configured: registration.targetGeneration, durable: resolved.target.generation)
+            }
+            guard resolved.target.state == .enabled else {
+                throw SyndicationAcquisitionSnapshotError.visitAuthorityWithdrawn(registration.targetID)
+            }
+            guard resolved.target.connectorKind == .syndication else {
+                throw SyndicationAcquisitionSnapshotError.connectorKindMismatch(targetID: registration.targetID)
+            }
+        }
         self.discovery = discovery
         self.database = database
         self.registrations = registrations
+        self.visitRegistrations = visitRegistrations
+        self.visitAuthority = visitAuthority
         self.selectedSourceIDs = selectedSourceIDs
         self.targetSignals = targetSignals
         self.installation = installation
@@ -185,6 +218,25 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
                 targets.append(contentsOf: discovered.filter { answering.contains($0.id) })
             }
         }
+        // S1: the explicitly visited source, and only inside its own context. The registration was armed for one
+        // source; a `.main` opportunity (or another source's) is not the gesture that licensed it. The target is
+        // read from the same ledger the coordinator uses, so a durable row (enabled or revoked) is the only answer
+        // where it exists, and generation/connector fences are the durable path's.
+        if case .source(let visited) = context.request {
+            let ledger = AcquisitionTargetLedger(durable: AcquisitionTargetAuthority(database: database),
+                visit: visitAuthority)
+            for registration in visitRegistrations {
+                guard registration.bindings.contains(where: { $0.sourceID == visited }) else { continue }
+                if !languages.isEmpty, let language = registration.language,
+                    !ReaderLanguageCode.isUndeclared(language),
+                    !ReaderLanguageCode.answered(language, by: languages) { continue }
+                guard let resolved = try ledger.target(id: registration.targetID),
+                    resolved.target.state == .enabled,
+                    resolved.target.generation == registration.targetGeneration,
+                    resolved.target.connectorKind == .syndication else { continue }
+                targets.append(resolved.target)
+            }
+        }
         var seen = Set<AcquisitionTargetID>()
         let unique = targets.filter { seen.insert($0.id).inserted }
         guard !targetSignals.isEmpty else { return unique }
@@ -218,7 +270,31 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             return SyndicationConnector(configuration: registration.configuration, session: transport,
                 redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
         }
+        // S1: the visited source's endpoint, re-validated against a catalogue promoted after the visit was armed.
+        // The registration is the same value the durable path uses; only its lifetime differs.
+        if let visited = visitRegistrations.first(where: {
+            $0.targetID == target.id && $0.targetGeneration == target.generation
+        }), let registration = visitRegistration(visited, from: promotedReader()) {
+            return SyndicationConnector(configuration: registration.configuration, session: transport,
+                redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+        }
         return discovery?.connector(for: target, using: transport)
+    }
+
+    /// A visit registration survives a catalogue promotion only while the source it names still resolves to the
+    /// same identity. It is deliberately **not** filtered by selection or by `defaultEnabled`: the reader's explicit
+    /// gesture is the licence, and a public update may not silently withdraw it while the surface is being read.
+    private func visitRegistration(_ registration: SyndicationTargetRegistration,
+        from catalogue: LegacyCatalogReader?) -> SyndicationTargetRegistration? {
+        guard let catalogue,
+            let identity = registration.bindings.first?.externalPrincipal,
+            identity.namespace == LegacyCatalogImport.principalNamespace else { return registration }
+        guard let record = try? catalogue.source(key: identity.value),
+            let updated = LegacyCatalogImport.entry(record),
+            updated.targetID == registration.targetID else { return nil }
+        return SyndicationTargetRegistration(targetID: registration.targetID,
+            targetGeneration: registration.targetGeneration, endpoint: updated.endpoint,
+            bindings: registration.bindings, language: updated.language)
     }
 
     /// Consult only the committed pointer at a new acquisition opportunity. A reader without
@@ -252,6 +328,9 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         discovery = original.discovery
         database = original.database
         self.registrations = registrations
+        // Retained discovery pages carry no visit: a page is a catalogue fact, not the reader's gesture.
+        visitRegistrations = []
+        visitAuthority = nil
         selectedSourceIDs = original.selectedSourceIDs
         targetSignals = original.targetSignals
         installation = original.installation
@@ -297,6 +376,8 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         discovery = nil
         database = original.database
         self.registrations = registrations
+        visitRegistrations = []
+        visitAuthority = nil
         selectedSourceIDs = original.selectedSourceIDs
         targetSignals = original.targetSignals
         installation = original.installation
@@ -311,6 +392,6 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
 
     public func makeCoordinator(backoff: AcquisitionBackoffPolicy? = nil, concurrentTargetLimit: Int = 1) -> AcquisitionCoordinator {
         AcquisitionCoordinator(database: database, connectorForTarget: { target in self.connector(for: target) },
-            backoff: backoff, concurrentTargetLimit: concurrentTargetLimit)
+            backoff: backoff, concurrentTargetLimit: concurrentTargetLimit, visitAuthority: visitAuthority)
     }
 }
