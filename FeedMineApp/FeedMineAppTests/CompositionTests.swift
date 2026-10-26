@@ -4765,12 +4765,10 @@ final class CompositionTests: XCTestCase {
     }
 
 
-    /// F12/UX12-B: a taxonomy row opens the source's own feed. The row carries the catalogue key; the destination
-    /// is the reader's own resolved feed (`TrustedFeed.resolveAvailable`), never an identity derived here, and a
-    /// key outside the selection returns `false` instead of moving the reader to a context that would fall back to
-    /// the main feed. The membership oracle for "only that source's items" is the editorial provider's own test
-    /// (`CandidateProviderTests.testSourceFilteringPreservesExaminedCountAndRelativeOrder`).
-    func testF12SourceRowOpensTheSelectedSourceAndRefusesAKeyOutsideTheSelection() async throws {
+    /// F12/UX12-B, the two destinations a row can have. A key the **catalogue cannot resolve** returns `false`:
+    /// nothing is derived here and the reader is not moved to a context that would fall back to the main feed. A
+    /// key the reader has selected opens the ordinary source context and never rewrites the selection.
+    func testF12RefusesAnUnresolvableKeyAndOpensTheSelectedSource() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let composition = root(directory: directory)
@@ -4784,7 +4782,7 @@ final class CompositionTests: XCTestCase {
 
         let original = composition.currentContextKey
         let refused = try await composition.openSourceFeed(forKey: "https://not-selected.example/feed")
-        XCTAssertFalse(refused, "a key the reader never selected has no destination")
+        XCTAssertFalse(refused, "a key the catalogue cannot resolve has no destination")
         XCTAssertEqual(composition.currentContextKey, original, "the refusal moves nothing")
         XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys,
             "a refusal never rewrites the selection")
@@ -4796,6 +4794,83 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys,
             "opening a source never rewrites the selection")
         XCTAssertEqual(composition.association?.contextKey, composition.currentContextKey)
+        await composition.association?.close()
+    }
+
+    /// F12/UX12-B (the case the PRD names): a catalogued source the reader has **not** enabled still opens its own
+    /// feed. The identity is the catalogue's own (`LegacyCatalogImport`), the session keeps the reader's own feeds
+    /// (so the source's endpoint stays disabled and nothing is enabled), the selection is not written, and the only
+    /// cards that can appear are that source's own memberships — the other source seeded in the same database never
+    /// reaches this feed. The ordinary `selectContext` keeps refusing a source outside the selection; this is the
+    /// explicit owner path, not a relaxation of that guard.
+    func testF12OpensAnUnselectedCatalogueSourceWithOnlyItsLocalMemberships() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let key = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let record = try XCTUnwrap(try LegacyCatalogReader(catalogURL: catalogue).source(key: key))
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(record))
+        let sourceID = entry.source.id
+
+        let composition = root(directory: directory)
+        await composition.launch()
+        let association = try XCTUnwrap(composition.association)
+        let other = SourceID()
+        // A published occurrence is subject to the reader's freshness eligibility: a 1970 date is excluded
+        // before it can be selected, so the seed states now and carries a body a card can show.
+        let date = Date()
+        func seed(_ headline: String, source: SourceID, value: String) throws {
+            let origin = OriginRecordID(), revision = OriginRevisionID()
+            try ContentStore(database: association.database).commitCanonicalChange(.init(recordID: origin,
+                externalObjectIdentity: .init(connectorKind: .syndication, namespace: "f12",
+                    value: value, role: .object),
+                revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                    headline: headline, summary: "Summary", bodyText: "Body", authoredAt: date, modifiedAt: nil,
+                    observedAt: date, language: "en", primaryLink: nil, searchProjection: nil, providerID: nil),
+                mediaCandidates: [], availability: .available, observedAt: date, expectedCurrent: .none,
+                currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: date)]))
+        }
+        try seed("Only this source", source: sourceID, value: "s")
+        try seed("Another source", source: other, value: "t")
+
+        let preferences = ReaderPreferencesStore(database: association.database)
+        let before = try XCTUnwrap(try preferences.load())
+        let feedsBefore = composition.feeds.map(\.principal)
+        XCTAssertFalse(before.sourceKeys.contains(key), "the reader has not enabled this source")
+        XCTAssertFalse(feedsBefore.contains(key))
+
+        let openedUnselected = try await composition.openSourceFeed(forKey: key)
+        XCTAssertTrue(openedUnselected)
+        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID),
+            "the context is the catalogue's own identity, never a silent fallback to main")
+        XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys,
+            "opening never writes the selection")
+        XCTAssertEqual(composition.feeds.map(\.principal), feedsBefore,
+            "the session keeps exactly the reader's own feeds: the endpoint is not enabled")
+
+        do {
+            try await composition.selectContext(.source(sourceID))
+            XCTFail("the ordinary source context still requires the reader's selection")
+        } catch {
+            XCTAssertTrue(error is ReaderPreferencesError, "refused as an invalid selection: \(error)")
+        }
+        XCTAssertEqual(composition.currentContextKey.request, .source(sourceID),
+            "the refusal did not disturb the opened source")
+
+        // The reader's own opportunity: a local slice publishes what the store already holds, without enabling
+        // any endpoint (the session's feeds did not change).
+        await composition.refreshFromTheReader()
+        let deadline = Date().addingTimeInterval(60)
+        var cards: [PresentationCard] = []
+        while Date() < deadline, cards.isEmpty {
+            cards = composition.association?.store.state.presentation?.window.items ?? []
+            if cards.isEmpty { await composition.association?.retryNow() }
+            await Task.yield()
+        }
+        XCTAssertFalse(cards.isEmpty, "the source's local membership is published; cards=\(cards.count)")
+        XCTAssertEqual(Set(cards.compactMap(\.sourceID)), [sourceID],
+            "no other source's membership reaches this feed")
         await composition.association?.close()
     }
 

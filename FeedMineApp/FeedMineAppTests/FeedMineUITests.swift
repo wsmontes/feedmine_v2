@@ -3442,37 +3442,32 @@ final class FeedMineUITests: XCTestCase {
         let toggle = app.switches["node-source-toggle-\(sourceKey)"]
         XCTAssertTrue(scrollIntoView(toggle, in: app, timeout: 240), "o nó lista a chave do catálogo")
         let open = app.buttons["node-source-\(sourceKey)"]
-        XCTAssertFalse(open.exists, "sem seleção não há destino: a linha não desenha controle de abrir")
+        // F12: the row opens its own feed **without** the source being enabled — the toggle is a separate act (R4)
+        // and the open control is independent of it.
+        XCTAssertTrue(open.exists, "a linha oferece abrir mesmo com a fonte desabilitada")
+        XCTAssertEqual(toggle.value as? String, "0", "a fonte está desabilitada neste ponto")
 
-        let control = toggle.switches.firstMatch
-        if control.exists { control.tap() } else { toggle.tap() }
-        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"),
-            object: toggle)
-        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 60), .completed,
-            "o toggle declara a seleção")
-        XCTAssertTrue(app.navigationBars["Wildlife & Nature"].exists, "o toggle não navegou")
-        XCTAssertTrue(app.buttons["sources-done"].exists, "a superfície de fontes continua aberta")
-
-        XCTAssertTrue(scrollIntoView(open, in: app, timeout: 60),
-            "a linha selecionada oferece abrir o feed")
         open.tap()
         let chip = app.staticTexts["reader-context-label"]
         XCTAssertTrue(chip.waitForExistence(timeout: 120),
             "o contexto da fonte precisa chegar à tela; árvore=\(app.debugDescription)")
         XCTAssertEqual(chip.label, "BBC News", "o destino é a fonte que a linha nomeia")
-        let card = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 240),
-            "o feed da fonte publica conteúdo; árvore=\(app.debugDescription)")
-        XCTAssertTrue(app.staticTexts["BBC News"].exists, "as cartas nomeiam essa fonte")
+        // The source has no local membership in this run: the surface must say so honestly, and it must not show
+        // the other sources' cards.
+        XCTAssertTrue(app.descendants(matching: .any)["feed-loading-surface"].waitForExistence(timeout: 120),
+            "sem memberships locais, a ausência é honesta; árvore=\(app.debugDescription)")
         XCTAssertFalse(app.staticTexts["BBC Science"].exists, "o alias de desenvolvimento não aparece")
         XCTAssertFalse(app.staticTexts["BBC World"].exists, "nem outra fonte")
 
+        // Back to the surface: same node, and the source is still disabled — the selection never changed.
         app.buttons["more-menu"].tap()
         XCTAssertTrue(app.buttons["Fontes"].waitForExistence(timeout: 30))
         app.buttons["Fontes"].tap()
         XCTAssertTrue(app.navigationBars["Wildlife & Nature"].waitForExistence(timeout: 60),
             "reabrir a superfície volta ao mesmo nó")
+        let again = app.switches["node-source-toggle-\(sourceKey)"]
+        XCTAssertTrue(scrollIntoView(again, in: app, timeout: 120))
+        XCTAssertEqual(again.value as? String, "0", "abrir não habilitou a fonte")
         app.buttons["sources-done"].tap()
         XCTAssertTrue(chip.waitForExistence(timeout: 30))
         XCTAssertEqual(chip.label, "BBC News", "o contexto da fonte sobrevive ao retorno")
