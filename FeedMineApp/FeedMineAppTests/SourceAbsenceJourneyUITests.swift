@@ -91,12 +91,42 @@ final class SourceAbsenceJourneyUITests: XCTestCase {
         XCTAssertFalse(mainEmpty.exists,
             "the absence is the source's, not the empty-selection surface")
 
+        // The failure is stated by the product's own alert. Its identity is read before anything is tapped: only
+        // the expected source-load failure is acknowledged, and only through its own OK button.
+        let failureAlert = app.alerts["Não foi possível atualizar"]
+        XCTAssertTrue(failureAlert.waitForExistence(timeout: 30),
+            "a falha esperada é declarada pelo alerta do produto; árvore=\(app.debugDescription)")
+        let alertTexts = failureAlert.staticTexts.allElementsBoundByIndex.map(\.label)
+            .joined(separator: " | ")
+        XCTAssertTrue(alertTexts.contains("Não foi possível abrir o feed desta fonte."),
+            "o alerta é a falha esperada da fonte, não outro alerta; textos=\(alertTexts)")
+        XCTAssertTrue(failureAlert.buttons["OK"].exists, "o alerta oferece o próprio OK")
+
         // Captured here, while the source context is still on screen: a screenshot taken after the way back
         // shows the empty-selection surface instead, which is what the reader came *from*, not the absence.
         let absenceShot = XCTAttachment(screenshot: app.screenshot())
         absenceShot.name = "ux12d-source-absence-before-return"
         absenceShot.lifetime = .keepAlways
         add(absenceShot)
+
+        // Acknowledge the expected alert through the UI, then re-read the same absence without it covering the
+        // note. An unrelated alert would already have failed the identity check above and is never dismissed.
+        failureAlert.buttons["OK"].tap()
+        XCTAssertTrue(failureAlert.waitForNonExistence(timeout: 20),
+            "o OK reconhecido remove o alerta esperado")
+        XCTAssertEqual(chip.label, sourceName, "the chip still names the same source after the alert")
+        XCTAssertTrue(note.exists, "the source-boundary note is still present after the alert")
+        XCTAssertEqual(note.label, noteText, "the note is the same after the alert; observed: \(note.label)")
+        XCTAssertEqual(cards(), 0, "acknowledging the failure invents no card")
+        XCTAssertFalse(mainEmpty.exists,
+            "the source context remains stated, not the empty-selection surface")
+        XCTAssertTrue(app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier == %@", "feed-loading-surface")).firstMatch.exists,
+            "a source-absence surface is still drawn after the alert")
+        let readableShot = XCTAttachment(screenshot: app.screenshot())
+        readableShot.name = "ux12d-source-absence-after-alert"
+        readableShot.lifetime = .keepAlways
+        add(readableShot)
 
         // The reader's previous navigation is reachable: closing the source returns to the empty selection the
         // journey started from, and the source stays disabled.

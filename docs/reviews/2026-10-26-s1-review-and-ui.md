@@ -138,6 +138,31 @@ Limite honesto da nova imagem: o alerta de falha de carga cobre parte da nota, e
 legível no PNG; ele é afirmado por asserção nessa mesma execução e carregado literalmente no `.txt` acima. Nenhum
 estado foi forçado para a captura e nenhuma imagem foi produzida fora da tela real do simulador.
 
+**Prova legível após reconhecer o alerta (2026-10-26, sobre `4d11657e`).** O limite acima foi corrigido na
+evidência, não no produto: o teste espera o alerta esperado, verifica título e mensagem **antes** de qualquer
+toque, preserva o frame com o alerta (`ux12d-source-absence-before-return`), reconhece-o pelo botão "OK" da
+própria UI, aguarda sua ausência e só então captura `ux12d-source-absence-after-alert`. Reexecução única do mesmo
+método, mesmo device (iPhone 17 Pro Max, `220FD546-698A-4DFE-A9E6-DD40135DED72`) e mesmo DerivedData
+(`FeedMineApp-elrtsjoinadyscatutssffaaecyb`): **PASS 128,195 s** em `/tmp/s1-ui-evidence-readable.xcresult`
+(log `/tmp/s1-ui-evidence-readable.log`); anexos em `/tmp/feedmine-source-absence-readable-attachments/`:
+
+- `BC82FB50-4094-4AC1-8BF9-1B918CF9B320.png` (`ux12d-source-absence-after-alert`) — header
+  "Feedmine · BBC News", 0 cartas, nota do limite legível por inteiro ("Você está vendo os itens que BBC News
+  publica no feed. O arquivo completo do site não faz parte dele."), "Não foi possível conectar." e
+  "Tentar novamente"; nenhum alerta na tela.
+- `FF9E6C77-8127-4B88-8DAA-3ECD57AAF606.png` (`ux12d-source-absence-before-return`) — o mesmo contexto com o
+  alerta esperado "Não foi possível atualizar / Não foi possível abrir o feed desta fonte." e o botão "OK";
+  preservado como prova do alerta que foi reconhecido.
+- `98471E49-74C1-4CB5-AA6C-000C21A26E24.txt` (`ux12d-disabled-source-absence`) — chip, nota literal, `cards=0`,
+  `main-empty-restored=true`, `source-still-disabled=true`, `fontes-path=Wildlife&Nature`.
+- `1036BC4B-81FA-439C-99A7-1199C87E1B21.png` (`ux12d-main-empty-after-return`) — retorno intacto à superfície
+  vazia do principal.
+
+Depois do OK, a execução reafirma o mesmo chip (`BBC News`), a mesma nota literal, `cards() == 0`, ausência de
+`feed-empty-title` e a `feed-loading-surface` desenhada. O alerta só é tocado após título e mensagem casarem com a
+falha esperada da fonte; um alerta não relacionado não é dispensado. Nenhum produto, flag, critério ou asserção
+existente foi alterado — só a prova foi adicionada.
+
 **Não são screenshots limpos de produto:** os dois PNGs carregam, no canto superior direito, o overlay de depuração
 `received=0 completed=0 backward=0` que o app desenha na build de teste; ele fica sobre a barra de status e não
 esconde chip, cartas ou o corpo das superfícies. Somado a isso, é o alerta — não o overlay — que cobre a nota no
@@ -165,10 +190,12 @@ defeito de produto.
 | app: `FeedMineUITests/CardActionJourneyUITests` (UX12-A) | **PASS 48,0 s** |
 | app: `FeedMineUITests/SourceAbsenceJourneyUITests` (UX12-D) | **PASS 126,3 s** |
 | app: mesmo método, correção de evidência (`ux12d-source-absence-before-return`) | **PASS 130,2 s** |
+| app: mesmo método, prova legível após OK (`ux12d-source-absence-after-alert`) | **PASS 128,2 s** |
 
 Artefatos: `/tmp/s1-package-full.log`, `/tmp/s1-red.log`, `/tmp/s1-green.log`, `/tmp/s1-app-unit.xcresult`,
 `/tmp/s1-ui-2.xcresult`, `/tmp/s1-ui-4.xcresult`, `/tmp/s1-ui-evidence-corrected.xcresult` (+ `.log`),
-`/tmp/feedmine-source-absence-corrected-attachments/`. Build de app reutilizou o DerivedData existente
+`/tmp/feedmine-source-absence-corrected-attachments/`, `/tmp/s1-ui-evidence-readable.xcresult` (+ `.log`),
+`/tmp/feedmine-source-absence-readable-attachments/`. Build de app reutilizou o DerivedData existente
 (`FeedMineApp-elrtsjoinadyscatutssffaaecyb`); nenhum simulador de bench tocado.
 
 ## 10. Limites
