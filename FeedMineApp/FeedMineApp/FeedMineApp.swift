@@ -318,8 +318,6 @@ struct FeedMineApp: App {
         let store: SourceManagementStore?
         let onDone: () -> Void
         let onActivationFailure: () -> Void
-        /// Opening a source's feed belongs to the host that owns the feed surface, not to this sheet.
-        let onOpenSource: (NodeSourceRow) -> Void
         @State private var path: [SourceRoute] = []
 
         var body: some View {
@@ -345,9 +343,10 @@ struct FeedMineApp: App {
                                     onOpenNode: { path.append(.node($0)) },
                                     onClose: { path.removeAll() })
                             case .node(let node):
+                                // The filter sheet keeps only its own navigation: opening a source there would
+                                // close this sheet and discard the reader's draft, which is outside F12.
                                 NodeSourcesView(store: store, node: node,
-                                    onOpenNode: { path.append(.node($0)) },
-                                    onOpenSource: { onOpenSource($0) })
+                                    onOpenNode: { path.append(.node($0)) })
                             }
                         } else {
                             ProgressView("Abrindo o catálogo de fontes")
@@ -362,8 +361,7 @@ struct FeedMineApp: App {
     @ViewBuilder private var filterSurface: some View {
         FilterSurfaceHost(composition: composition, store: sourcesStore,
             onDone: { popSurface() },
-            onActivationFailure: { filterActivationFailure = true },
-            onOpenSource: { openSourceRow($0) })
+            onActivationFailure: { filterActivationFailure = true })
     }
 
     /// The lists a box surface can open. A payload-carrying route, because a box is an identity, not a flag.
@@ -1853,15 +1851,21 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// surface returns to the same node; the reader's selection is untouched, and an unselected source never
     /// reaches this call (the row draws no open control for it).
     @MainActor private func openSourceRow(_ row: NodeSourceRow) {
-        // The sheet closes first so a refusal is stated on the reader's surface, not behind the sheet.
-        popSurface()
         Task {
+            var opened = false
             do {
-                _ = try await composition.openSourceFeed(forKey: row.id)
+                opened = try await composition.openSourceFeed(forKey: row.id)
             } catch {
                 #if DEBUG
                 print("source open failed: \(String(describing: error))")
                 #endif
+            }
+            // Opening finishes first, then the sheet closes: the dismiss path adopts the selection again and
+            // would otherwise race this transition (`replacingSession`) and refuse a legitimate tap.
+            popSurface()
+            if !opened {
+                // A selected key the catalogue can no longer resolve is not a silent no-op: the reader asked
+                // for a source and is told it could not be opened.
                 readerError = String(localized: "Não foi possível abrir o feed desta fonte.")
             }
         }

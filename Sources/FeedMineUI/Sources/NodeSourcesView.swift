@@ -190,8 +190,9 @@ public struct NodeSourcesView: View {
                     // on the main feed instead of the destination the row names. Enabling stays the toggle's
                     // own act (R4), and the two controls keep separate hit areas.
                     let selected = store.selection.contains(row.id)
+                    let opens = selected && onOpenSource != nil
                     NodeSourceRowView(row: row, isSelected: selected,
-                        onOpen: selected ? { onOpenSource?(row) } : nil,
+                        onOpen: opens ? { onOpenSource?(row) } : nil,
                         onToggle: {
                             guard let source = store.sources.first(where: { $0.id == row.id }) else { return }
                             Task { await store.toggle(source) }
@@ -223,6 +224,7 @@ public struct NodeSourceRowView: View {
                 Button(action: onOpen) { title }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("node-source-\(row.id)")
+                    .accessibilityLabel(Text(verbatim: row.title))
             } else {
                 title
             }
