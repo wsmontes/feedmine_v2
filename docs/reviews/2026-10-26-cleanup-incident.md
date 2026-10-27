@@ -186,3 +186,88 @@ código (D1/D2, par de catálogo, suítes) não depende dela.
 - A presença de um arquivo de verificação vazio não é evidência de aprovação; um verificador que não
   escreve produz o mesmo artefato.
 - Contagem de cobertura (`create_temp: 0`) só vale junto com os `allowed_roots` que a produziram.
+
+## Cache de build de `/tmp/f12-ex2-dd`: a prova citada pelo F12 foi removida (registro adicional)
+
+Segundo registro de perda, independente dos dois acima (`/tmp/f1db.CfiKyZ` e os simuladores). Fonte:
+`/tmp/feedmine-owned-build-cache-reclamation.md` (executada por outra lane, 2026-10-26) e o que sobrou no próprio
+diretório.
+
+### O que foi removido
+
+Quatro caminhos, todos saídas de compilação do DerivedData da lane `/tmp/feedmine-omp-f12-completion`
+(`info.plist` do próprio DerivedData declara `WorkspacePath = …/feedmine_v2/FeedMineApp/FeedMineApp.xcodeproj`,
+`LastAccessedDate = 2026-10-26T16:17:47Z`):
+
+```
+rm -rf /tmp/f12-ex2-dd/Build
+rm -rf /tmp/f12-ex2-dd/ModuleCache.noindex
+rm -rf /tmp/f12-ex2-dd/CompilationCache.noindex
+rm -rf /tmp/f12-ex2-dd/SDKStatCaches.noindex
+```
+
+`rm_exit=0`; 748.324 KB removidos; disco livre `df -k /` 510.576 → 1.266.192 KB (**+755.616 KB ≈ +738 MiB**).
+Não houve erro de execução. O erro é de **escopo**: `Build/Products` carregava uma prova que outro relatório citava.
+
+### Impacto específico: uma prova citada, não um cache qualquer
+
+`/tmp/feedmine-f12-completion.md:49-51` cita como prova anti-staleness o bundle de teste **compilado**:
+
+```
+/tmp/f12-ex2-dd/Build/Products/Debug-iphonesimulator/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests
+```
+
+A alegação dependia de `strings` nesse binário mostrar a mensagem nova
+(`enabling a source is a management act, not a navigation`), provando que o log de green2 vinha de compilação
+**anterior** à edição. O binário vivia em `Build/Products` e foi removido junto com o cache. **Essa prova está
+perdida**, e a alegação de staleness que dependia dela fica mais fraca.
+
+### Preservado × perdido
+
+|Item|KB|Estado|
+|---|---|---|
+|`Build/Products` (inclui `FeedMineAppTests.xctest`)|351.712|**perdido** — é a prova acima|
+|`Build/Intermediates.noindex`; `ModuleCache.noindex` (197.528); `CompilationCache.noindex` (28); `SDKStatCaches.noindex` (1.508)|396.612|perdidos (cache de compilação, regenerável)|
+|`SourcePackages`|403.632|**preservado** (checkout/artifacts SPM, regenerável só com rede)|
+|`Logs/` (5 `xcactivitylog`, 2 `LogStoreManifest.plist`), `TestResults/metadata.db`, `info.plist`|152|**preservados**, hash antes == depois|
+|`/tmp/f12b-*.xcresult` (6) e `/tmp/f12b-*.log` (7)|—|preservados, fora do DerivedData|
+
+Hashes dos sobreviventes (SHA-256, conferidos antes e depois da remoção):
+
+|Arquivo|SHA-256|
+|---|---|
+|`/tmp/f12-ex2-dd/info.plist`|`dbd7f61ee56374d5c3a67da2c7480b43700058038b44de78779f6ade72cd660c`|
+|`Logs/Build/4EF72E75-….xcactivitylog`|`007a51c57a644c3c6e55a50753ddd8766de5ad06301f18c999ab858512bca494`|
+|`Logs/Build/B6AC06F1-….xcactivitylog`|`d4c22057a400efa48c73697a31255ee19a4c05dba59157d06661f68ca445b71e`|
+|`Logs/Build/C095AA41-….xcactivitylog`|`7d4510b787e4896e3485df673b3a486fb5450947e2b780c4281e585e0f5394c7`|
+|`Logs/Build/LogStoreManifest.plist`|`11b4b5a138bb1eebf8a19313f2ae4c8d7aab35af813da0798fc85aadfd1e0fd2`|
+|`Logs/Package/2A34ACE2-….xcactivitylog`|`55059365f9e554ec618b78420827f6c819ad8d2df72c5bc83b4570084dbee4ab`|
+|`Logs/Package/81BB0D6F-….xcactivitylog`|`fbf80ff6803e760b94e82ca6b0d708ee7262ca96aa45330a1742ff485b09a44a`|
+|`Logs/Package/BDB6691E-….xcactivitylog`|`e261fd30c3343caa4b66e827090299715c6123ff1b5f593166ff664f0c872389`|
+|`Logs/Package/LogStoreManifest.plist`|`94240004a8f7c1627760b5679780fd0481ac1035c9d42c2b3688612b1ada562f`|
+|`TestResults/metadata.db`|`c2e60bdccaeb3f0bb0762b2db7fd9c8a8d711af76ca8d1541c6215be564be542`|
+
+Verificado nesta revisão: `/tmp/f12-ex2-dd/` contém apenas `Logs`, `SourcePackages`, `TestResults` e `info.plist`;
+os 6 `.xcresult` e 7 `.log` de `/tmp/f12b-*` continuam no lugar.
+
+### Limite: rebuild não recupera o binário histórico
+
+Um `xcodebuild` novo produz um binário **novo**, não aquele objeto de 16:12Z. A prova que sobrevive é de outra
+natureza e precisa ser lida como tal:
+
+|Evidência sobrevivente|Local|SHA-256|
+|---|---|---|
+|Literal canônico no fonte|`FeedMineApp/FeedMineAppTests/CompositionTests.swift:5139` (era `:5009`)|—|
+|Red, linhas antigas 5517/5006/5352|`/tmp/f12b-green2.log` (16:12:26Z)|`3d9b20f439a0a252b25f0c25a3d6163ac021d9152fab40eb3c70219c3afc5ccf`|
+|Green após a edição, `Executed 4 tests, with 0 failures` (16:14:47Z)|`/tmp/f12b-green3.log`|`5ced363dd1c0f3d8e9e1aed888b203759a5a6766f20552128cd9a259509bf4c1`|
+|Relatório F12|`/tmp/feedmine-f12-completion.md`|`e0d5c7cda13c2fdcc13403678ff223b23e9b9a585069b1430a8c238491643903`|
+
+Ressalva medida: o hash de `CompositionTests.swift` registrado na tarefa de reclamação
+(`64cf5d392af62e17bc2d19144886a51d9e353e9df1561297edc86c9ab293c15f`) **já não corresponde** ao arquivo — ele
+recebeu nesta data uma regressão de contrato PD-5 (teste de ciclo de vida), e o hash atual é
+`4f29baef8d2a58178b8ba3aff5be9d77ce9f1db42a216d218c9877b15885bc9c`. O literal citado continua presente (agora na
+linha 5139). Na mesma sessão em que o hash foi tirado, o mtime do arquivo já era **posterior** a green3, então
+mtime nunca serviu como prova de ordem; o que resta é o par de logs e os dois `.xcresult`.
+
+Nada foi apagado nesta tarefa: nenhuma nova limpeza, nenhum simulador restaurado, nenhum log ou `xcresult`
+removido. Disco no início da tarefa: 1.298.764 KB livres.
