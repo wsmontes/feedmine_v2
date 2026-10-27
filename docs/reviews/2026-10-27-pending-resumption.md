@@ -95,3 +95,18 @@ A fila antiga repetia o fetch nos dois casos. Guardas de readiness/backoff adici
 `prepare`, preservando o caminho dos salvos. RED: 2 falhas; GREEN: **38 testes mídia/reserva**;
 suíte completa **1742 testes, 1 pulado, 0 falhas** (108,543 s). Revisão independente sem defeitos
 acionáveis. Relatório: `2026-10-27-media-queue-revalidation.md`. B03 e residual P1 permanecem abertos.
+
+## Auditoria de aceitação: bloqueio B06 atualizado
+
+Em `c37146bb`, o iPhone 14 Plus agora aparece pareado/disponível, túnel acessível e
+`passcodeRequired: false`. O bundle de benchmark não está instalado (consulta exata incluindo apps
+não marcados como desenvolvimento, 0 resultados). Portanto, aparelho ausente/travado deixou de ser
+a descrição atual do bloqueio; faltam instalação identificada, ensaio e recursos. B06 segue NOT_RUN.
+
+F13 já possui editor ligado aos Ajustes, contrariando a descrição histórica de ausência no §2 do PRD.
+A política existente passou em **8 testes** nesta auditoria. Restam exclusão durável por fonte e provas
+UX13-A–D; não reimplementar editor nem tomar política pura como jornada UI. Evidência e matriz por
+requisito: `2026-10-27-acceptance-pending-audit.md`.
+
+Disco ao encerrar esta auditoria: **723 MiB**, ainda abaixo da guarda do ensaio. Nenhuma limpeza,
+instalação, execução de app ou distribuição.

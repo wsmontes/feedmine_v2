@@ -1,0 +1,33 @@
+[0/1] Planning build
+Building for debugging...
+[0/2] Write swift-version-3CD7052B146186F2.txt
+Build complete! (1.03s)
+Test Suite 'Selected tests' started at 2026-10-27 13:28:48.686.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-27 13:28:48.686.
+Test Suite 'ReaderContentFilterPolicyTests' started at 2026-10-27 13:28:48.686.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testAContextsOwnExclusionsSurviveTheGlobalGate]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testAContextsOwnExclusionsSurviveTheGlobalGate]' passed (0.001 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testAnEmptyRuleSetIsNotAFilter]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testAnEmptyRuleSetIsNotAFilter]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testApplyingKeepsTheLensAndReplacesOnlyTheExclusions]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testApplyingKeepsTheLensAndReplacesOnlyTheExclusions]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testATemplateResolvesItsWordsForTheReadersLanguage]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testATemplateResolvesItsWordsForTheReadersLanguage]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testRulesAddTheReadersWordsToTheirTemplates]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testRulesAddTheReadersWordsToTheirTemplates]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testTheCatalogueIsV1sOwnFile]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testTheCatalogueIsV1sOwnFile]' passed (0.002 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testTheGateMasksTheRulesWithoutErasingThem]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testTheGateMasksTheRulesWithoutErasingThem]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testTheReadersLanguageComesFromTheirLocale]' started.
+Test Case '-[FeedMineCompositionTests.ReaderContentFilterPolicyTests testTheReadersLanguageComesFromTheirLocale]' passed (0.000 seconds).
+Test Suite 'ReaderContentFilterPolicyTests' passed at 2026-10-27 13:28:48.690.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-10-27 13:28:48.691.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+Test Suite 'Selected tests' passed at 2026-10-27 13:28:48.691.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.003 (0.005) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.
