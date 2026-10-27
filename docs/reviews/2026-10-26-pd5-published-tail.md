@@ -154,9 +154,11 @@ Novo, causal e permanente — `EditedArticleRecurrenceTests.testPublishedUnseenO
    publicada ou quando ela é a própria âncora. Nada de "unseen" inventado e nenhuma policy ajustada para passar.
 2. **Snapshot** das linhas publicadas ao redor da âncora (`PublicationStore.cards(around:backward:forward:)`, o
    `CardRecord` inteiro: id, origin/revision, título, texto, layout, mídia, ordinal), do **primeiro segmento** e da
-   posição do leitor por campos de identidade — `editionID`, `cardID`, `anchorPlacement`, `topDelta`, `cardHeight`.
-   `updatedAt` é o instante da escrita e qualquer re-checkpoint legítimo o move; por isso **não** entra na igualdade
-   de identidade (a primeira versão deste teste comparava o record inteiro e falhou por isso, não por defeito).
+   posição do leitor por **identidade de cursor** — `editionID`, `cardID`, `anchorPlacement`. Ficam de fora, de
+   propósito, `updatedAt` (instante da escrita: todo re-checkpoint legítimo o move) e `topDelta`/`cardHeight`
+   (medida de layout: `SessionCursor.swift:46-47` diz que Dynamic Type, largura e disponibilidade de mídia mudam
+   layout, não a identidade do cursor; restore/foreground regravam com medição nova). Comparar qualquer um deles
+   reprovaria por remedição legítima, não por defeito — foi o que aconteceu na primeira versão (`green3`).
 3. **Edição material** da ocorrência publicada e não vista (`ContentStore`, `expectedCurrent` = a revisão publicada).
 4. **`background()` + `foreground()`** no owner real: prefixo publicado idêntico, primeiro segmento inalterado,
    posição do leitor inalterada, mesma associação e mesma projeção (`sequenceID`).
@@ -167,10 +169,13 @@ Novo, causal e permanente — `EditedArticleRecurrenceTests.testPublishedUnseenO
    nova** no fim (ID novo, `originRevisionID` da edição), a publicada continua idêntica no mesmo ordinal e o
    primeiro segmento nunca é reescrito.
 
-A oportunidade que produz é a **cauda admitida**, e isso foi medido, não escolhido: com `refreshFromTheReader()`
-(foreground estacionário, 0 cartas/s) a produção corretamente não repõe nada e as duas publicações não aconteceram
-em 90 s (corrida `green4`); com o gesto de cauda, ambas publicam. O defeito antigo era exatamente o contrário —
-produzir com o app **inativo**, sem gesto.
+O desfecho medido é: **depois do relaunch e da oportunidade de cauda, a história nova e a recorrência estavam
+publicadas**; e a comparação controlada mostra que a oportunidade é o que separa os dois estados — `green4` e
+`green5` rodam o mesmo cenário e diferem **só** nela, e sem ela nada foi publicado em 90 s. O teste não carimba a
+ordem interna (a publicação pode ter caído no próprio `launch()` do relaunch); ele afirma o desfecho. O *motivo*
+interno — foreground estacionário mede 0 cartas/s, o `RunwayPolicy` responde `healthy` e a caminhada de candidatos
+só publica o que examinou desde o cursor durável — é **leitura de código** (`CompositionTests` ~:783,
+`CandidateProvider.candidates(for:after:)`), não medição desta rodada. O que é medição desta rodada é o par acima.
 
 Reescritos/deletados, com justificativa (autoridade posterior, não conveniência):
 
@@ -191,6 +196,7 @@ Reescritos/deletados, com justificativa (autoridade posterior, não conveniênci
 | `xcodebuild -project FeedMineApp.xcodeproj -scheme FeedMine -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath ~/Library/Developer/Xcode/DerivedData/FeedMineApp-elrtsjoinadyscatutssffaaecyb build` | **BUILD SUCCEEDED** (AppComposition compila após as remoções) |
 | `xcodebuild test … -only-testing:FeedMineAppTests/CompositionTests/testPD5PublishedUnseenTailSurvives… -collect-test-diagnostics never -resultBundlePath /tmp/pd5-lifecycle-green5.xcresult` | **TEST SUCCEEDED**, 1 teste, 0 falhas (1,046 s) |
 | o mesmo comando, mais `-only-testing:…/testS1SameSessionStoreAcrossViewportRefreshAndLifecycle` (`green6`) | **TEST SUCCEEDED**, 2 testes, 0 falhas (1,613 s) — a regressão PD-5 roda **duas vezes** verde e o andaime S1 continua verde |
+| o mesmo comando de novo, depois de restringir a comparação do checkpoint a `editionID`/`cardID`/`anchorPlacement` (`green7`) | **TEST SUCCEEDED**, 2 testes, 0 falhas — as medições de layout não são identidade |
 
 Simulador e DerivedData: `iPhone 17 Pro Max` (`220FD546-…`), DerivedData default
 `FeedMineApp-elrtsjoinadyscatutssffaaecyb` reusado; `-collect-test-diagnostics never` é opção suportada do

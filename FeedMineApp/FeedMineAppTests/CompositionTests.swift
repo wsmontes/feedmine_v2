@@ -3293,12 +3293,13 @@ final class CompositionTests: XCTestCase {
         let checkpointBefore = try XCTUnwrap(SessionStore(database: association.database).checkpoint(),
             "premissa: o leitor tem posição durável")
         XCTAssertEqual(checkpointBefore.cardID, anchor, "premissa: a posição gravada é a âncora")
-        // The contract freezes edition + card + placement + continuity; `updatedAt` is the instant of the write and
-        // every legitimate re-checkpoint moves it, so it is compared separately and never as an equality premise.
+        // Cursor identity only: edition, card and placement. `updatedAt` is the instant of the write, and
+        // `topDelta`/`cardHeight` are layout measurement — `SessionCursor.swift` states that Dynamic Type, width and
+        // media availability may change layout but never cursor identity, and restore/foreground re-checkpoint with a
+        // fresh measurement. Comparing either would fail on a legitimate re-measurement, not on a moved reader.
         func position(_ record: SessionStore.CheckpointRecord?) -> [String] {
             guard let record else { return ["<nil>"] }
-            return [record.editionID.rawValue.uuidString, record.cardID.rawValue.uuidString, record.anchorPlacement,
-                record.topDelta.map { "\($0)" } ?? "<nil>", record.cardHeight.map { "\($0)" } ?? "<nil>"]
+            return [record.editionID.rawValue.uuidString, record.cardID.rawValue.uuidString, record.anchorPlacement]
         }
         let positionBefore = position(checkpointBefore)
 
