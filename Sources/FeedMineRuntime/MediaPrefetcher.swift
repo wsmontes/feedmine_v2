@@ -522,6 +522,10 @@ public actor MediaPrefetcher {
     /// Supply's own use of the pipeline: run one attempt and turn its outcome into the readiness decision the
     /// feed's selection reads. Nothing here is about a saved card.
     private func prepare(_ revision: OriginRevisionID) async {
+        // A bounded batch may wait behind other revisions. Another opportunity can decide this
+        // revision, or fail it and establish backoff, before its queued turn starts.
+        guard !readiness.isSettled(revision) else { return }
+        if let retry = transientRetryAt[revision], monotonicSeconds() < retry { return }
         let attempt = await acquireSingleFlight(revision)
         #if DEBUG
         // One line per revision per attempt, written at the attempt's end — including the attempts that end

@@ -330,6 +330,42 @@ extension MediaPrefetcherTests {
         XCTAssertEqual(calls.all.count, 2, "one failed fetch and one successful retry; no third download")
     }
 
+    /// A revision accepted behind a slow download can be handled by another opportunity before
+    /// its own queue reaches it. Starting it later must respect the newer readiness/backoff.
+    func testQueuedSupplyRevalidatesAfterAnotherOpportunityFinishes() async throws {
+        for succeeds in [true, false] {
+            let (db, assets) = try setup(), calls = Calls(), png = self.png
+            let slow = try admit(db, urls: ["https://example.test/slow.png"])
+            let queued = try admit(db, urls: ["https://example.test/queued.png"])
+            let entered = expectation(description: "slow first revision entered")
+            let hold = Hold()
+            let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets,
+                concurrentDownloadLimit: 1, transientRetryBaseSeconds: 30,
+                monotonicSeconds: { 0 },
+                fetch: { url, _ in
+                    calls.add(url)
+                    if url.lastPathComponent == "slow.png" {
+                        entered.fulfill()
+                        await hold.wait()
+                    } else if !succeeds { throw URLError(.timedOut) }
+                    return png
+                }, conditions: { _ in Self.policy() })
+            let original = Task { await prefetcher.prefetch([slow, queued]) }
+            let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+            XCTAssertEqual(waited, .completed)
+            guard waited == .completed else {
+                await hold.release()
+                _ = await original.value
+                return
+            }
+            await prefetcher.prefetch([queued])
+            await hold.release()
+            _ = await original.value
+            XCTAssertEqual(calls.all.filter { $0.lastPathComponent == "queued.png" }.count, 1,
+                "queued work must respect newer readiness/backoff; succeeds=\(succeeds)")
+        }
+    }
+
     /// P3 (review): a failure is a conclusion about an attempt, so the reserve must hear it; conditions that forbade
     /// the work are a conclusion too, but they spend nothing.
     func testAttemptConclusionsAreReportedInTheReserveVocabulary() async throws {

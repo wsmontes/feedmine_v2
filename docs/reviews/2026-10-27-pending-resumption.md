@@ -86,3 +86,12 @@ já concluíra. RED com **3 fetches em vez de 2**; revalidação após `await` c
 somente a primeira etapa desta retomada; agora existe esta medição nova.
 
 Nenhum simulador, ensaio B03 ou distribuição novo. Não houve limpeza. Disco final 686 MiB.
+
+## Continuação: revisão aceita mas ainda enfileirada
+
+Outro intervalo stale foi reproduzido no início de itens da fila: enquanto uma revisão aguardava
+atrás de outra lenta, uma oportunidade paralela já podia decidi-la ou colocá-la em backoff.
+A fila antiga repetia o fetch nos dois casos. Guardas de readiness/backoff adicionadas no início de
+`prepare`, preservando o caminho dos salvos. RED: 2 falhas; GREEN: **38 testes mídia/reserva**;
+suíte completa **1742 testes, 1 pulado, 0 falhas** (108,543 s). Revisão independente sem defeitos
+acionáveis. Relatório: `2026-10-27-media-queue-revalidation.md`. B03 e residual P1 permanecem abertos.
