@@ -106,18 +106,6 @@ Owner: `FeedMineEditorial` (single ordering owner, `04-catalog-editorial.md` Les
 5. A story deferred for an image re-enters ordinary editorial selection, including current freshness, relevance, eligibility and PD-4 alternation. Legitimately image-free stories remain first-class; image absence alone is not proof of bad editorial quality.
 
 **Supersedes** the old permission to re-prepare published-but-unseen cards while the app is inactive. The immutable publication boundary stays strict; **the visible/admitted prefix is sacred**. See PD-9 for image, link, content and other preparation failures alike.
-
-**Precedence over PD-1 rule 2 (registered 2026-10-26; no criterion changed).** The two rules meet at exactly
-one point, and this one is later and declares itself supersessor, so it wins: an occurrence already published
-in an Edition is never replaced, archived out of the Edition or re-laid-out there because a newer edit or late
-media arrived, whether or not the reader has seen it. PD-1 rule 2 therefore governs **adding** occurrences only
-— at most one future occurrence per origin, a newer edit superseding an occurrence that has not been
-*published* — and never authorizes rewriting a published one. A materially new edit of a published origin is
-held while its occurrence is still unseen and is published as a new occurrence (new `PublicationCardID`, later
-segment) through the ordinary append path once the published occurrence is no longer ahead of the reader.
-The T5 successor-tail mechanism (`PublicationStore.succeedTail`, `HiddenTailLease`, `HiddenTailMaintenance`),
-which implemented the old permission, was removed on 2026-10-26; `docs/reviews/2026-10-26-pd5-published-tail.md`
-records the evidence.
 ---
 
 ## PD-6 — Media budget is dynamic and device-aware

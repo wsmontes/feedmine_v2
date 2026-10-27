@@ -3235,6 +3235,170 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// PD-5 × INV-17 at the app's own lifecycle owner: a card published in the Edition and still ahead of the reader
+    /// is not re-prepared while the app is behind — `background()`/`foreground()` leave the published prefix, the
+    /// first segment and the reader's position exactly as they were — and a relaunch reads the same Edition. A
+    /// material edit of that occurrence is not lost either: it waits while the occurrence is unseen and is published
+    /// as a **new** occurrence in a later segment once the reader has seen it, never as a rewrite.
+    ///
+    /// This is the app-level counterpart of `EditedArticleRecurrenceTests`, and it lives here because the owner that
+    /// used to rewrite the tail is `AppComposition` (`Package.swift` has no target for it, so `swift test` cannot
+    /// even compile this path). The assertions are the public contract — published card ids, text, layout, media,
+    /// order, first segment and the reader's position — plus the new story that was never published.
+    ///
+    /// The premise "published and unseen" is measured, never assumed: the slow source is held so the bootstrap
+    /// publishes only the anchor, then released so supply publishes cards *ahead* of the reader; the test asks the
+    /// store which requested origins are unseen and fails loudly when there are none.
+    func testPD5PublishedUnseenTailSurvivesTheLifecycleAndALaterEditBecomesANewOccurrence() async throws {
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        let launch = Task { await composition.launch() }
+        for _ in 0..<200 where composition.association?.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let association = try XCTUnwrap(composition.association)
+        let first = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(first.window.items.count, 1,
+            "premissa: com a segunda fonte retida, o bootstrap publica a âncora e nada mais")
+        let editionID = first.editionID
+        let sequenceID = first.provenance.sequenceID
+        let anchor = first.window.anchor.cardID
+        FixtureTransport.releaseScience()
+        await launch.value
+        let grew = await Self.waitUntil(60) {
+            (association.store.state.presentation?.window.items.count ?? 0) >= 3
+        }
+        XCTAssertTrue(grew, "premissa: o suprimento liberado publica cartas à frente da âncora; a janela tem "
+            + "\(association.store.state.presentation?.window.items.count ?? 0) cartas")
+
+        var publication = PublicationStore(database: association.database)
+        func live(_ store: PublicationStore) throws -> [PublicationStore.CardRecord] {
+            try store.cards(editionID: editionID, around: anchor, backwardCapacity: 0, forwardCapacity: 400)
+        }
+        let before = try live(publication)
+        XCTAssertGreaterThan(before.count, 1, "premissa: a Edition tem ocorrências depois da âncora")
+        let unseen = try PublicationHistory(database: association.database).exposure(editionID: editionID,
+            originIDs: before.map(\.originRecordID), readerAnchorCardID: anchor).unseenOriginIDs
+        XCTAssertFalse(unseen.isEmpty,
+            "premissa: alguma ocorrência publicada está à frente do leitor e não foi vista; "
+                + "publicadas=\(before.count), não vistas=\(unseen.count)")
+        let target = try XCTUnwrap(before.first { unseen.contains($0.originRecordID) },
+            "premissa: a ocorrência não vista é uma linha publicada da Edition")
+        XCTAssertNotEqual(target.id, anchor, "premissa: a carta alvo está depois da âncora")
+        let segmentsBefore = try publication.segments(editionID: editionID)
+        let firstSegmentBefore = try XCTUnwrap(segmentsBefore.first)
+        let checkpointBefore = try XCTUnwrap(SessionStore(database: association.database).checkpoint(),
+            "premissa: o leitor tem posição durável")
+        XCTAssertEqual(checkpointBefore.cardID, anchor, "premissa: a posição gravada é a âncora")
+        // The contract freezes edition + card + placement + continuity; `updatedAt` is the instant of the write and
+        // every legitimate re-checkpoint moves it, so it is compared separately and never as an equality premise.
+        func position(_ record: SessionStore.CheckpointRecord?) -> [String] {
+            guard let record else { return ["<nil>"] }
+            return [record.editionID.rawValue.uuidString, record.cardID.rawValue.uuidString, record.anchorPlacement,
+                record.topDelta.map { "\($0)" } ?? "<nil>", record.cardHeight.map { "\($0)" } ?? "<nil>"]
+        }
+        let positionBefore = position(checkpointBefore)
+
+        // A material edit of the published, unseen occurrence.
+        let content = ContentStore(database: association.database)
+        let identity = try XCTUnwrap(try content.originRecord(id: target.originRecordID)).externalObjectIdentity
+        let edited = OriginRevisionID(), now = Date()
+        try content.commitCanonicalChange(.init(recordID: target.originRecordID, externalObjectIdentity: identity,
+            revision: OriginRevision(id: edited, originRecordID: target.originRecordID, externalVersionIdentity: nil,
+                headline: "Revisão material", summary: "Texto materialmente novo", bodyText: nil, authoredAt: now,
+                modifiedAt: nil, observedAt: now, language: nil, primaryLink: nil, searchProjection: nil,
+                providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: now,
+            expectedCurrent: .revision(target.originRevisionID), currentUpdate: .useSuppliedRevision,
+            membershipMutations: []))
+
+        // The app's own lifecycle: the old hidden-tail preparation ran exactly here.
+        await composition.background()
+        await composition.foreground()
+        XCTAssertTrue(composition.association === association, "o ciclo de vida não troca a sessão")
+        XCTAssertEqual(association.store.state.presentation?.provenance.sequenceID, sequenceID,
+            "a mesma projeção continua instalada")
+        let afterCycle = try live(publication)
+        XCTAssertEqual(Array(afterCycle.prefix(before.count)), before,
+            "o prefixo publicado — inclusive a ocorrência não vista — não é reescrito pelo ciclo de vida")
+        let firstSegmentAfter = try publication.segments(editionID: editionID).first
+        XCTAssertEqual(firstSegmentAfter, firstSegmentBefore,
+            "o primeiro segmento publicado não é trocado, reordenado nem reescrito em background")
+        XCTAssertEqual(position(try SessionStore(database: association.database).checkpoint()), positionBefore,
+            "a posição do leitor não se move sozinha")
+
+        // Relaunch in a new process on the same container. Before it, the reader has seen the occurrence and two
+        // things that must survive are recorded: a story that was never published, and the pending material edit.
+        await composition.inactive()
+        await association.close()
+        let offline = try RuntimeDatabase(location: .init(directory: directory))
+        try PublicationStore(database: offline).markSeen(editionID: editionID, cardID: target.id)
+        let fresh = OriginRecordID(), freshRevision = OriginRevisionID()
+        try ContentStore(database: offline).commitCanonicalChange(.init(recordID: fresh,
+            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "pd5-lifecycle",
+                value: fresh.rawValue.uuidString, role: .object),
+            revision: OriginRevision(id: freshRevision, originRecordID: fresh, externalVersionIdentity: nil,
+                headline: "História nova", summary: "Nunca publicada", bodyText: nil, authoredAt: now,
+                modifiedAt: nil, observedAt: now, language: nil, primaryLink: nil, searchProjection: nil,
+                providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: now, expectedCurrent: .none,
+            currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: TrustedFeed.development[0].sourceID, kind: .direct,
+                observedAt: now)]))
+
+        let reopened = self.root(directory: directory)
+        await reopened.launch()
+        let relaunched = try XCTUnwrap(reopened.association)
+        publication = PublicationStore(database: relaunched.database)
+        XCTAssertEqual(Array(try live(publication).prefix(before.count)), before,
+            "o relaunch lê as mesmas cartas publicadas, na mesma ordem")
+        XCTAssertEqual(try publication.segments(editionID: editionID).first, firstSegmentBefore)
+        XCTAssertEqual(position(try SessionStore(database: relaunched.database).checkpoint()), positionBefore,
+            "o checkpoint volta com a mesma edição, carta e colocação")
+        XCTAssertEqual(relaunched.store.state.presentation?.window.anchor.cardID, anchor,
+            "a âncora restaurada é a do leitor, não a revisão nova")
+        let restored = try XCTUnwrap(PublicationHistory(database: relaunched.database)
+            .restore(backwardCapacity: 0, forwardCapacity: 400))
+        XCTAssertEqual(restored.cursor.anchor.cardID, anchor)
+        XCTAssertEqual(Array(restored.window.cards.map(\.id).prefix(before.count)), before.map(\.id),
+            "a história restaurada é a publicada, não uma revisão posterior")
+
+        // Production after the relaunch. The reader reaches the admitted tail — the opportunity that asks for more —
+        // and the never-published story publishes while the held edit, no longer ahead of the reader, publishes as a
+        // new occurrence. A stationary foreground is not this opportunity: it measures 0 cards/s and the runway
+        // correctly supplies nothing, which is why the gesture is the one the product itself uses for this demand.
+        let tail = try XCTUnwrap(relaunched.store.state.presentation?.window.items.last)
+        await relaunched.viewport(.init(anchor: .init(cardID: tail.id, placement: .top)),
+            activity: .explicitTailApproach)
+        let published = await Self.waitUntil(90) {
+            let rows = (try? live(publication)) ?? []
+            return rows.contains { $0.originRecordID == fresh }
+                && rows.contains { $0.originRecordID == target.originRecordID && $0.id != target.id }
+        }
+        if !published {
+            return XCTFail("o novo conteúdo continua publicando e a edição material não some para sempre: "
+                + "\((try? live(publication))?.suffix(6).map(\.primaryText) ?? []) — "
+                + reopened.diagnosticsForTheWiringTest(relaunched))
+        }
+        let eventual = try live(publication)
+        XCTAssertEqual(Array(eventual.prefix(before.count)), before,
+            "a ocorrência publicada continua idêntica no mesmo ordinal; o que é novo entra no fim")
+        let story = try XCTUnwrap(eventual.dropFirst(before.count).first { $0.originRecordID == fresh },
+            "a história nunca publicada é uma carta nova depois do prefixo publicado")
+        XCTAssertEqual(story.originRevisionID, freshRevision)
+        let recurrence = try XCTUnwrap(eventual.dropFirst(before.count).first {
+            $0.originRecordID == target.originRecordID && $0.id != target.id
+        }, "a edição material nasce como ocorrência nova, nunca no lugar da publicada")
+        XCTAssertEqual(recurrence.originRevisionID, edited)
+        XCTAssertEqual(eventual.first { $0.id == target.id }, target)
+        XCTAssertEqual(try publication.segments(editionID: editionID).first, firstSegmentBefore,
+            "o primeiro segmento publicado nunca é reescrito")
+        await relaunched.close()
+    }
+
     func testS2DelayedResultAndS7AtomicWorkRejection() async throws {
         let (_, association) = try await launched()
         try await produceAndAdmit(association)
