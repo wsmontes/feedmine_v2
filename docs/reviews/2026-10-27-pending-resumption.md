@@ -99,8 +99,8 @@ acionáveis. Relatório: `2026-10-27-media-queue-revalidation.md`. B03 e residua
 ## Auditoria de aceitação: bloqueio B06 atualizado
 
 Em `c37146bb`, o iPhone 14 Plus agora aparece pareado/disponível, túnel acessível e
-`passcodeRequired: false`. O bundle de benchmark não está instalado (consulta exata incluindo apps
-não marcados como desenvolvimento, 0 resultados). Portanto, aparelho ausente/travado deixou de ser
+`passcodeRequired: false`. A consulta exata do bundle de benchmark devolveu 0 resultados; o CoreDevice reporta
+`defaultAppsIncluded: false` mesmo com a flag contrária, então ausência absoluta não está provada. Portanto, aparelho ausente/travado deixou de ser
 a descrição atual do bloqueio; faltam instalação identificada, ensaio e recursos. B06 segue NOT_RUN.
 
 F13 já possui editor ligado aos Ajustes, contrariando a descrição histórica de ausência no §2 do PRD.

@@ -9,7 +9,7 @@ Esta rodada reconcilia lacunas atuais, sem implementar feature, rodar gate ou ce
 | Frente | Evidência atual | O que falta |
 |---|---|---|
 | B03 | FAIL da corrida `20261026T143646Z`; detector corrigido, negativo 17/17 MISS | calibração positiva com transporte fiel, consumo efetivo e anti-tap, depois replay completo; §7 de `2026-10-26-b03-pacing-calibration.md` |
-| B06 | **iPhone 14 Plus pareado, disponível e acessível nesta rodada** | instalar candidata identificada de benchmark e executar B03 com recursos no aparelho; não há bundle `com.feedmine.development.benchmark` instalado |
+| B06 | **iPhone 14 Plus pareado, disponível e acessível nesta rodada** | instalar candidata identificada de benchmark e executar B03 com recursos no aparelho; consulta exata não encontrou o bundle `com.feedmine.development.benchmark`; abrangência limitada pelo CoreDevice |
 | Reserva P1 | teto `targetDepth + 16` e testes de concessão limitados | nenhuma prova de desbloqueio geral se os 16 extras forem incompatíveis; não ampliar teto silenciosamente |
 | F13 | editor de palavras/modelos e switch já existem e estão ligados aos Ajustes | completar contrato de exclusão por fonte e provas UX13-A–D; não reconstruir editor existente |
 | Release | testes do pacote verdes não são gates de aceitação | identidade de candidata + gates, UI e recursos; sem autorização de distribuição nova |
@@ -19,10 +19,12 @@ Esta rodada reconcilia lacunas atuais, sem implementar feature, rodar gate ou ce
 `xcrun devicectl list devices` retornou iPhone 14 Plus `available (paired)`.
 `device info lockState` adquiriu túnel e usage assertion: `passcodeRequired: false`,
 `unlockedSinceBoot: true`. Consulta exata por `--bundle-id com.feedmine.development.benchmark` terminou
-com sucesso e lista de apps vazia. Não é correto continuar dizendo apenas "aparelho ausente/travado".
+com sucesso e lista de apps vazia. O payload informa `defaultAppsIncluded: false` mesmo quando a flag
+`--include-default-apps` é passada: a consulta prova zero resultados nessa abrangência, não ausência
+absoluta de instalação. Não é correto continuar dizendo apenas "aparelho ausente/travado".
 
 Consultas somente de leitura: nenhum app iniciado, instalado, removido ou alterado no aparelho.
-Sem benchmark no device e sem ensaio de recursos: B06 **NOT_RUN nesta rodada**, não PASS.
+Sem identidade de benchmark confirmada no device e sem ensaio de recursos: B06 **NOT_RUN nesta rodada**, não PASS.
 A consulta inicial `device info details` feita no sandbox terminou em timeout do CoreDeviceService;
 a consulta de lockState executada com acesso aprovado foi a medição válida subsequente.
 
@@ -69,5 +71,7 @@ Para retomar B03/B06 com build e evidência novos é necessário espaço suficie
 antes do trabalho. A disponibilidade atual do iPhone deve ser revalidada nesse momento.
 Nenhuma autoridade de produto, régua ou relatório histórico foi editado para converter pendência em PASS.
 
-Consulta repetida incluindo `--include-default-apps`: **0 resultados**. Payload filtrado preservado em
+Consulta repetida solicitando `--include-default-apps`: **0 resultados**, porém o payload ainda informa
+`defaultAppsIncluded: false`. Essa divergência limita a prova; instalação deve ser confirmada antes do
+ensaio. Payload filtrado preservado em
 `evidence/2026-10-27-acceptance-audit/benchmark-app-query.json`. Disco no encerramento: **723 MiB**.
