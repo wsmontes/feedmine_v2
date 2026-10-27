@@ -1,0 +1,26 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version-3CD7052B146186F2.txt
+[3/5] Emitting module FeedMineRuntimeTests
+[4/5] Compiling FeedMineRuntimeTests MediaPrefetcherTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (3.99s)
+Test Suite 'Selected tests' started at 2026-10-27 13:20:08.470.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-27 13:20:08.471.
+Test Suite 'MediaPrefetcherTests' started at 2026-10-27 13:20:08.471.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles]' started.
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineRuntimeTests/MediaPrefetcherTests.swift:329: error: -[FeedMineRuntimeTests.MediaPrefetcherTests testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles] : XCTAssertEqual failed: ("[328DE90A-6485-4A6B-916F-8CDBBE341B2C]") is not equal to ("[]") - settled work is no longer accepted by the stale opportunity
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineRuntimeTests/MediaPrefetcherTests.swift:330: error: -[FeedMineRuntimeTests.MediaPrefetcherTests testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles] : XCTAssertEqual failed: ("3") is not equal to ("2") - one failed fetch and one successful retry; no third download
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles]' failed (0.376 seconds).
+Test Suite 'MediaPrefetcherTests' failed at 2026-10-27 13:20:08.847.
+	 Executed 1 test, with 2 failures (0 unexpected) in 0.376 (0.376) seconds
+Test Suite 'FeedMinePackageTests.xctest' failed at 2026-10-27 13:20:08.847.
+	 Executed 1 test, with 2 failures (0 unexpected) in 0.376 (0.376) seconds
+Test Suite 'Selected tests' failed at 2026-10-27 13:20:08.847.
+	 Executed 1 test, with 2 failures (0 unexpected) in 0.376 (0.377) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

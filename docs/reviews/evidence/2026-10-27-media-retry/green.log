@@ -1,0 +1,102 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version-3CD7052B146186F2.txt
+[3/5] Emitting module FeedMineRuntime
+[4/5] Compiling FeedMineRuntime MediaPrefetcher.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (3.84s)
+Test Suite 'Selected tests' started at 2026-10-27 13:20:34.287.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-27 13:20:34.288.
+Test Suite 'MediaPrefetcherTests' started at 2026-10-27 13:20:34.288.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testAllCandidatesFailingHasNoPresentationAndIsNotRetried]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testAllCandidatesFailingHasNoPresentationAndIsNotRetried]' passed (0.080 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testANilRecordIsTextOnlyOnlyWhenTheCallerDeclaresText]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testANilRecordIsTextOnlyOnlyWhenTheCallerDeclaresText]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testAttemptConclusionsAreReportedInTheReserveVocabulary]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testAttemptConclusionsAreReportedInTheReserveVocabulary]' passed (0.030 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testAutomaticRetryRunsOnlyWhenTheReserveAuthorizesIt]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testAutomaticRetryRunsOnlyWhenTheReserveAuthorizesIt]' passed (0.031 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testClosePreventsQueuedMediaFromStartingOnInvalidatedSession]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testClosePreventsQueuedMediaFromStartingOnInvalidatedSession]' passed (0.147 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testDeadlineReturnsWhileDownloadStillBlocked]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testDeadlineReturnsWhileDownloadStillBlocked]' passed (0.270 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testExplicitEditorialRevisionsIgnoreGlobalHeadAndDeduplicate]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testExplicitEditorialRevisionsIgnoreGlobalHeadAndDeduplicate]' passed (0.055 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testOfflineConditionsFetchNothing]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testOfflineConditionsFetchNothing]' passed (0.033 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testPreparesFirstWorkingCandidateAndPresentsItAsImage]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testPreparesFirstWorkingCandidateAndPresentsItAsImage]' passed (0.030 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testRetirementTimeoutDoesNotAuthorizeLateTransportStarts]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testRetirementTimeoutDoesNotAuthorizeLateTransportStarts]' passed (0.091 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles]' passed (0.034 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testTransientBackoffIsRetriedByAnOpportunityThatDoesNotNameTheRevision]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testTransientBackoffIsRetriedByAnOpportunityThatDoesNotNameTheRevision]' passed (0.032 seconds).
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testTransientFailureRetriesLaterDefinitiveSettles]' started.
+Test Case '-[FeedMineRuntimeTests.MediaPrefetcherTests testTransientFailureRetriesLaterDefinitiveSettles]' passed (0.030 seconds).
+Test Suite 'MediaPrefetcherTests' passed at 2026-10-27 13:20:35.153.
+	 Executed 13 tests, with 0 failures (0 unexpected) in 0.863 (0.865) seconds
+Test Suite 'PreparedReserveIntegrationTests' started at 2026-10-27 13:20:35.153.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testFastImageIsPreparedInsideTheWindowAndSelectedAtOnce]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testFastImageIsPreparedInsideTheWindowAndSelectedAtOnce]' passed (0.027 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testReserveDepthBoundsWhatThePipelineIsCharged]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testReserveDepthBoundsWhatThePipelineIsCharged]' passed (0.028 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testSlowImageCompletesAfterTheDeadlineAndJoinsTheNextOffer]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testSlowImageCompletesAfterTheDeadlineAndJoinsTheNextOffer]' passed (0.028 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testTwoTransientFailuresReachAttemptsSpentThroughThePrefetcher]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testTwoTransientFailuresReachAttemptsSpentThroughThePrefetcher]' passed (0.026 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testUnavailableImageExhaustsWithoutBlockingTheRestOfTheOffer]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveIntegrationTests testUnavailableImageExhaustsWithoutBlockingTheRestOfTheOffer]' passed (0.028 seconds).
+Test Suite 'PreparedReserveIntegrationTests' passed at 2026-10-27 13:20:35.290.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.137 (0.137) seconds
+Test Suite 'PreparedReserveTests' started at 2026-10-27 13:20:35.290.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testAFullReserveGrantsTheUnblockingBatchOnce]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testAFullReserveGrantsTheUnblockingBatchOnce]' passed (0.001 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testClosedWindowWithOutstandingWorkDoesNotAuthorizeASecondBatch]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testClosedWindowWithOutstandingWorkDoesNotAuthorizeASecondBatch]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testConcurrentPlansCannotSpendTheSameFreeRoom]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testConcurrentPlansCannotSpendTheSameFreeRoom]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testConditionsUnavailableDefersWithoutSpendingAttempts]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testConditionsUnavailableDefersWithoutSpendingAttempts]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testDefinitiveFailureExhaustsImmediatelyWithoutBlockingTheOffer]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testDefinitiveFailureExhaustsImmediatelyWithoutBlockingTheOffer]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testFullReserveAuthorizesABoundedUnblockingBatchWhenNothingPublishes]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testFullReserveAuthorizesABoundedUnblockingBatchWhenNothingPublishes]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testLateCompletionIsAcceptedAndCounted]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testLateCompletionIsAcceptedAndCounted]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testMarkPublishedSupersedesARevisionThatNeverBecameReady]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testMarkPublishedSupersedesARevisionThatNeverBecameReady]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPersistedBudgetStopsPlanningWithoutDroppingWhatIsReady]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPersistedBudgetStopsPlanningWithoutDroppingWhatIsReady]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPlanDoesNotReauthorizeARevisionWhoseWorkIsOutstanding]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPlanDoesNotReauthorizeARevisionWhoseWorkIsOutstanding]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPlanRespectsTargetDepthAndTheHysteresisBand]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPlanRespectsTargetDepthAndTheHysteresisBand]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPlanSkipsAPreparingRevision]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPlanSkipsAPreparingRevision]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPublishedIgnoresLaterSettlementAndLeavesThePlan]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPublishedIgnoresLaterSettlementAndLeavesThePlan]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPublishingReleasesTheRetainedBytesAndReopensTheBudget]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testPublishingReleasesTheRetainedBytesAndReopensTheBudget]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testReconsiderationCountersCountOnlyRecoveredPublishedCards]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testReconsiderationCountersCountOnlyRecoveredPublishedCards]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testRepeatedAttemptZeroStillExhausts]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testRepeatedAttemptZeroStillExhausts]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testSettleIsIdempotentAndCountsTheBytesOnce]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testSettleIsIdempotentAndCountsTheBytesOnce]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testTransientFailureSpendsAttemptsThenExhausts]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testTransientFailureSpendsAttemptsThenExhausts]' passed (0.000 seconds).
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testWindowClosedLeavesSettledRevisionsAlone]' started.
+Test Case '-[FeedMineRuntimeTests.PreparedReserveTests testWindowClosedLeavesSettledRevisionsAlone]' passed (0.000 seconds).
+Test Suite 'PreparedReserveTests' passed at 2026-10-27 13:20:35.294.
+	 Executed 19 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-10-27 13:20:35.294.
+	 Executed 37 tests, with 0 failures (0 unexpected) in 1.004 (1.007) seconds
+Test Suite 'Selected tests' passed at 2026-10-27 13:20:35.294.
+	 Executed 37 tests, with 0 failures (0 unexpected) in 1.004 (1.008) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

@@ -284,6 +284,52 @@ extension MediaPrefetcherTests {
         XCTAssertNotNil(prefetcher.readiness.prepared(revision))
     }
 
+    /// Retry authorization suspends the actor. Another opportunity may settle the same revision
+    /// before the authorizer returns; the stale opportunity must not download it again.
+    func testRetryAuthorizationRevalidatesAfterAnotherOpportunitySettles() async throws {
+        let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png
+        let revision = try admit(db, urls: ["https://example.test/retry.png"])
+        let entered = expectation(description: "first retry authorization suspended")
+        let hold = Hold()
+        actor FirstCall {
+            private var count = 0
+            func take() -> Bool { count += 1; return count == 1 }
+        }
+        let firstCall = FirstCall()
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets,
+            concurrentDownloadLimit: 1, transientRetryBaseSeconds: 10,
+            monotonicSeconds: { clock.now },
+            fetch: { url, _ in
+                calls.add(url)
+                if calls.all.count == 1 { throw URLError(.timedOut) }
+                return png
+            }, conditions: { _ in Self.policy() },
+            authorizeRetries: { due in
+                if await firstCall.take() {
+                    entered.fulfill()
+                    await hold.wait()
+                }
+                return due
+            })
+        await prefetcher.prefetch([revision])
+        clock.now = 10
+        let suspended = Task { await prefetcher.prefetch([]) }
+        let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        XCTAssertEqual(waited, .completed)
+        guard waited == .completed else {
+            await hold.release()
+            _ = await suspended.value
+            return
+        }
+        let completed = await prefetcher.prefetch([])
+        XCTAssertEqual(completed, [revision])
+        XCTAssertNotNil(prefetcher.readiness.presentation(for: revision))
+        await hold.release()
+        let stale = await suspended.value
+        XCTAssertEqual(stale, [], "settled work is no longer accepted by the stale opportunity")
+        XCTAssertEqual(calls.all.count, 2, "one failed fetch and one successful retry; no third download")
+    }
+
     /// P3 (review): a failure is a conclusion about an attempt, so the reserve must hear it; conditions that forbade
     /// the work are a conclusion too, but they spend nothing.
     func testAttemptConclusionsAreReportedInTheReserveVocabulary() async throws {

@@ -462,6 +462,15 @@ public actor MediaPrefetcher {
             retries = due
         }
         revisions += retries.filter { seen.insert($0).inserted }
+        // Authorizing retries suspends this actor. Another opportunity may have completed a revision,
+        // started its download, or established a new backoff while that authorization was pending.
+        // The original offer is no longer a statement about what this owner can accept now.
+        guard !retired else { return [] }
+        let resumedAt = monotonicSeconds()
+        revisions = revisions.filter { revision in
+            !readiness.isSettled(revision) && running[revision] == nil
+                && (transientRetryAt[revision].map { $0 <= resumedAt } ?? true)
+        }
         #if DEBUG
         // Every revision handed to the path is one it considers for publication; the first instant is what the
         // settlement line measures its elapsed time from.
