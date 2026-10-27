@@ -10,6 +10,7 @@ Consumption is counted in distinct anchors, never in advance events: a repeated 
 """
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -46,7 +47,14 @@ def load_advances(trace, since):
 
 
 def measure(phase, advances):
-    start, end = phase["started_at"], phase["ended_at"]
+    start, end = phase.get("started_at"), phase.get("ended_at")
+    if any(type(t) not in (int, float) or not math.isfinite(t) for t in (start, end)):
+        raise ValueError("phase timestamps must be finite numbers")
+    if end <= start or not math.isfinite(end - start):
+        raise ValueError("phase duration must be positive and finite")
+    gestures = phase.get("gestures")
+    if type(gestures) is not int or gestures < 0:
+        raise ValueError("phase gestures must be an explicit nonnegative integer")
     window = [a for a in advances if start <= a["at"] < end]
     duration = end - start
     sequential = []
@@ -58,7 +66,9 @@ def measure(phase, advances):
     # Distinct anchors in traversal order: revisits collapse, so a run that returns to a card is not
     # counted twice as new consumption.
     seen, distinct = set(), 0
-    for a in sequential:
+    for a in window:
+        if a["activity"] == "stationary":
+            continue
         if a["anchor"] not in seen:
             seen.add(a["anchor"])
             distinct += 1
@@ -69,7 +79,6 @@ def measure(phase, advances):
             repeats += 1
         prev_anchor = a["anchor"]
     stationary = sum(1 for a in window if a["activity"] == "stationary")
-    gestures = phase.get("gestures") or 1
     return {
         "label": phase.get("label"),
         "duration_s": round(duration, 2),
@@ -89,6 +98,8 @@ def measure(phase, advances):
 def judge(m, expect):
     """Classify the measured shape against the requested one. A miss is a miss."""
     problems = []
+    if m["gestures"] == 0:
+        problems.append("no gestures recorded; pacing cannot be established")
     base = expect.get("base_distinct_per_s")
     burst = expect.get("burst_distinct_per_s")
     if base is not None:

@@ -109,3 +109,25 @@ and nothing in this directory has been run for 30 minutes.
    reject it — measured gesture rate 0.446/s, so at ~1 card/gesture it lands far under 1 card/s.
 6. Only then freeze it as a **separate revision** (`bench/revisions/`, `EVALUATOR-pre-*.sha256`, dated note)
    and run a 30-minute B03 with independent review. The FAIL of `20261026T143646Z` stands until then.
+
+## Detector correction (2026-10-27)
+
+`stationary` events were reported separately but still entered the distinct-anchor count. They now
+remain in the diagnostic event/repeat totals and are excluded from consumption. A later moving event
+on the same anchor can still count; stationary observation does not mark that anchor as consumed.
+
+Run the focused regressions with:
+
+```bash
+python3 -B -m unittest discover -s tools/b03-pacing -p 'test_*.py'
+```
+
+The 17 frozen-run windows still MISS after correction. Phase inputs and corrected results are preserved
+in `docs/reviews/evidence/2026-10-27-b03-pacing/`. Historical numeric rates above describe the earlier
+instrument and must not be treated as corrected rates. See `docs/reviews/2026-10-27-pending-resumption.md`
+for current constraints and the next measurement.
+
+Phase integrity is checked before measurement: timestamps must be finite with positive duration,
+`gestures` must be an explicit nonnegative integer, and zero gestures always produces MISS.
+Missing counts are never replaced with a fictitious gesture. Malformed phases raise `ValueError`
+and terminate the CLI with a nonzero exit code.

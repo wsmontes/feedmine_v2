@@ -1,0 +1,419 @@
+[
+  {
+    "label": "frozen-base-100s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 17,
+    "advance_per_s": 1.7,
+    "repeated_anchor_events": 6,
+    "stationary_events": 4,
+    "distinct_anchors": 11,
+    "distinct_anchors_per_s": 1.1,
+    "anchors_per_gesture": 2.75,
+    "sequential_anchor_steps": 11,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "2.75 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-150s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 17,
+    "advance_per_s": 1.7,
+    "repeated_anchor_events": 5,
+    "stationary_events": 3,
+    "distinct_anchors": 12,
+    "distinct_anchors_per_s": 1.2,
+    "anchors_per_gesture": 3.0,
+    "sequential_anchor_steps": 12,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "3.0 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-200s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 19,
+    "advance_per_s": 1.9,
+    "repeated_anchor_events": 6,
+    "stationary_events": 3,
+    "distinct_anchors": 13,
+    "distinct_anchors_per_s": 1.3,
+    "anchors_per_gesture": 3.25,
+    "sequential_anchor_steps": 13,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "3.25 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-250s",
+    "duration_s": 10.0,
+    "gestures": 3,
+    "gesture_rate_per_s": 0.3,
+    "advance_events": 15,
+    "advance_per_s": 1.5,
+    "repeated_anchor_events": 4,
+    "stationary_events": 3,
+    "distinct_anchors": 11,
+    "distinct_anchors_per_s": 1.1,
+    "anchors_per_gesture": 3.67,
+    "sequential_anchor_steps": 11,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.3 gestures/s outside [0.75, 1.3]",
+      "3.67 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-400s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 20,
+    "advance_per_s": 2.0,
+    "repeated_anchor_events": 6,
+    "stationary_events": 4,
+    "distinct_anchors": 14,
+    "distinct_anchors_per_s": 1.4,
+    "anchors_per_gesture": 3.5,
+    "sequential_anchor_steps": 14,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "base 1.4 distinct cards/s outside [0.75, 1.3]",
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "3.5 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-500s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 21,
+    "advance_per_s": 2.1,
+    "repeated_anchor_events": 6,
+    "stationary_events": 4,
+    "distinct_anchors": 15,
+    "distinct_anchors_per_s": 1.5,
+    "anchors_per_gesture": 3.75,
+    "sequential_anchor_steps": 15,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "base 1.5 distinct cards/s outside [0.75, 1.3]",
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "3.75 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-700s",
+    "duration_s": 10.0,
+    "gestures": 3,
+    "gesture_rate_per_s": 0.3,
+    "advance_events": 18,
+    "advance_per_s": 1.8,
+    "repeated_anchor_events": 6,
+    "stationary_events": 3,
+    "distinct_anchors": 12,
+    "distinct_anchors_per_s": 1.2,
+    "anchors_per_gesture": 4.0,
+    "sequential_anchor_steps": 12,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.3 gestures/s outside [0.75, 1.3]",
+      "4.0 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-900s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 19,
+    "advance_per_s": 1.9,
+    "repeated_anchor_events": 8,
+    "stationary_events": 4,
+    "distinct_anchors": 11,
+    "distinct_anchors_per_s": 1.1,
+    "anchors_per_gesture": 2.75,
+    "sequential_anchor_steps": 11,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "2.75 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-1100s",
+    "duration_s": 10.0,
+    "gestures": 4,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 19,
+    "advance_per_s": 1.9,
+    "repeated_anchor_events": 5,
+    "stationary_events": 4,
+    "distinct_anchors": 13,
+    "distinct_anchors_per_s": 1.3,
+    "anchors_per_gesture": 3.25,
+    "sequential_anchor_steps": 14,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "0.4 gestures/s outside [0.75, 1.3]",
+      "3.25 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-base-1300s",
+    "duration_s": 10.0,
+    "gestures": 3,
+    "gesture_rate_per_s": 0.3,
+    "advance_events": 10,
+    "advance_per_s": 1.0,
+    "repeated_anchor_events": 4,
+    "stationary_events": 2,
+    "distinct_anchors": 6,
+    "distinct_anchors_per_s": 0.6,
+    "anchors_per_gesture": 2.0,
+    "sequential_anchor_steps": 6,
+    "expect": {
+      "base_distinct_per_s": 1.0,
+      "base_gesture_per_s": 1.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "base 0.6 distinct cards/s outside [0.75, 1.3]",
+      "0.3 gestures/s outside [0.75, 1.3]",
+      "2.0 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-burst-0s",
+    "duration_s": 20.0,
+    "gestures": 3,
+    "gesture_rate_per_s": 0.15,
+    "advance_events": 36,
+    "advance_per_s": 1.8,
+    "repeated_anchor_events": 11,
+    "stationary_events": 1,
+    "distinct_anchors": 7,
+    "distinct_anchors_per_s": 0.35,
+    "anchors_per_gesture": 2.33,
+    "sequential_anchor_steps": 25,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 0.35 distinct cards/s below 2.4",
+      "0.15 gestures/s outside [2.25, 3.9]",
+      "2.33 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-burst-300s",
+    "duration_s": 20.0,
+    "gestures": 7,
+    "gesture_rate_per_s": 0.35,
+    "advance_events": 42,
+    "advance_per_s": 2.1,
+    "repeated_anchor_events": 13,
+    "stationary_events": 8,
+    "distinct_anchors": 29,
+    "distinct_anchors_per_s": 1.45,
+    "anchors_per_gesture": 4.14,
+    "sequential_anchor_steps": 29,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 1.45 distinct cards/s below 2.4",
+      "0.35 gestures/s outside [2.25, 3.9]",
+      "4.14 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-burst-600s",
+    "duration_s": 20.0,
+    "gestures": 8,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 41,
+    "advance_per_s": 2.05,
+    "repeated_anchor_events": 16,
+    "stationary_events": 8,
+    "distinct_anchors": 25,
+    "distinct_anchors_per_s": 1.25,
+    "anchors_per_gesture": 3.12,
+    "sequential_anchor_steps": 25,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 1.25 distinct cards/s below 2.4",
+      "0.4 gestures/s outside [2.25, 3.9]",
+      "3.12 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-burst-900s",
+    "duration_s": 20.0,
+    "gestures": 7,
+    "gesture_rate_per_s": 0.35,
+    "advance_events": 39,
+    "advance_per_s": 1.95,
+    "repeated_anchor_events": 14,
+    "stationary_events": 7,
+    "distinct_anchors": 25,
+    "distinct_anchors_per_s": 1.25,
+    "anchors_per_gesture": 3.57,
+    "sequential_anchor_steps": 25,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 1.25 distinct cards/s below 2.4",
+      "0.35 gestures/s outside [2.25, 3.9]",
+      "3.57 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-burst-1200s",
+    "duration_s": 20.0,
+    "gestures": 8,
+    "gesture_rate_per_s": 0.4,
+    "advance_events": 40,
+    "advance_per_s": 2.0,
+    "repeated_anchor_events": 13,
+    "stationary_events": 8,
+    "distinct_anchors": 25,
+    "distinct_anchors_per_s": 1.25,
+    "anchors_per_gesture": 3.12,
+    "sequential_anchor_steps": 27,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 1.25 distinct cards/s below 2.4",
+      "0.4 gestures/s outside [2.25, 3.9]",
+      "3.12 distinct cards per gesture above 1.5"
+    ]
+  },
+  {
+    "label": "frozen-burst-1500s",
+    "duration_s": 20.0,
+    "gestures": 9,
+    "gesture_rate_per_s": 0.45,
+    "advance_events": 22,
+    "advance_per_s": 1.1,
+    "repeated_anchor_events": 7,
+    "stationary_events": 5,
+    "distinct_anchors": 13,
+    "distinct_anchors_per_s": 0.65,
+    "anchors_per_gesture": 1.44,
+    "sequential_anchor_steps": 15,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 0.65 distinct cards/s below 2.4",
+      "0.45 gestures/s outside [2.25, 3.9]"
+    ]
+  },
+  {
+    "label": "frozen-burst-1800s",
+    "duration_s": 20.0,
+    "gestures": 7,
+    "gesture_rate_per_s": 0.35,
+    "advance_events": 37,
+    "advance_per_s": 1.85,
+    "repeated_anchor_events": 12,
+    "stationary_events": 7,
+    "distinct_anchors": 25,
+    "distinct_anchors_per_s": 1.25,
+    "anchors_per_gesture": 3.57,
+    "sequential_anchor_steps": 25,
+    "expect": {
+      "burst_distinct_per_s": 3.0,
+      "base_gesture_per_s": 3.0,
+      "max_cards_per_gesture": 1.5
+    },
+    "verdict": "MISS",
+    "problems": [
+      "burst 1.25 distinct cards/s below 2.4",
+      "0.35 gestures/s outside [2.25, 3.9]",
+      "3.57 distinct cards per gesture above 1.5"
+    ]
+  }
+]

@@ -1,0 +1,17 @@
+{"label": "frozen-base-100s", "started_at": 1793025599.60703, "ended_at": 1793025609.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-150s", "started_at": 1793025649.60703, "ended_at": 1793025659.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-200s", "started_at": 1793025699.60703, "ended_at": 1793025709.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-250s", "started_at": 1793025749.60703, "ended_at": 1793025759.60703, "gestures": 3, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-400s", "started_at": 1793025899.60703, "ended_at": 1793025909.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-500s", "started_at": 1793025999.60703, "ended_at": 1793026009.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-700s", "started_at": 1793026199.60703, "ended_at": 1793026209.60703, "gestures": 3, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-900s", "started_at": 1793026399.60703, "ended_at": 1793026409.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-1100s", "started_at": 1793026599.60703, "ended_at": 1793026609.60703, "gestures": 4, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-base-1300s", "started_at": 1793026799.60703, "ended_at": 1793026809.60703, "gestures": 3, "expect": {"base_distinct_per_s": 1.0, "base_gesture_per_s": 1.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-0s", "started_at": 1793025499.60703, "ended_at": 1793025519.60703, "gestures": 3, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-300s", "started_at": 1793025799.60703, "ended_at": 1793025819.60703, "gestures": 7, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-600s", "started_at": 1793026099.60703, "ended_at": 1793026119.60703, "gestures": 8, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-900s", "started_at": 1793026399.60703, "ended_at": 1793026419.60703, "gestures": 7, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-1200s", "started_at": 1793026699.60703, "ended_at": 1793026719.60703, "gestures": 8, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-1500s", "started_at": 1793026999.60703, "ended_at": 1793027019.60703, "gestures": 9, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
+{"label": "frozen-burst-1800s", "started_at": 1793027299.60703, "ended_at": 1793027319.60703, "gestures": 7, "expect": {"burst_distinct_per_s": 3.0, "base_gesture_per_s": 3.0, "max_cards_per_gesture": 1.5}}
