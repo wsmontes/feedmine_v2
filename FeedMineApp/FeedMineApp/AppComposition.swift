@@ -22,6 +22,27 @@ enum ReaderContextSwitchError: Error, Equatable { case inProgress }
 
 /// R15: a search submission states which half succeeded. A failure before the durable write is not saved; a failure
 /// after it is saved but not presented, and the reader can retry without duplicating anything.
+/// The revisions one association asked media for, in the order they were requested.
+///
+/// The preparation page states counts of **this** window, not of the process: `MediaReadiness` keeps the decisions,
+/// and this box keeps which decisions belong to the feed the reader is currently waiting for. Written from the
+/// media opportunity's own request (which is `@Sendable`), read on the MainActor.
+final class MediaWindowFacts: @unchecked Sendable {
+    private let lock = NSLock()
+    private var revisions: [OriginRevisionID] = []
+    private var seen: Set<OriginRevisionID> = []
+
+    func record(_ fresh: [OriginRevisionID]) {
+        lock.lock(); defer { lock.unlock() }
+        for revision in fresh where seen.insert(revision).inserted { revisions.append(revision) }
+    }
+
+    func snapshot() -> [OriginRevisionID] {
+        lock.lock(); defer { lock.unlock() }
+        return revisions
+    }
+}
+
 enum ReaderSearchFailure: Error, Equatable {
     case unusableQuery
     case notStored(detail: String)
@@ -166,6 +187,45 @@ final class AppComposition {
     /// measured layout.
     var firstScreenWait: Duration {
         .seconds(association?.preparationWaitSeconds ?? FeedAssociation.preparationWaitBootstrapSeconds)
+    }
+    /// The **total** bound of one first-screen preparation, from appearance. The stall bound above measures
+    /// meaningful progress; this ceiling ends the hold whatever the supply is still doing, so no launch can sit
+    /// behind the preparation page forever.
+    var firstScreenCeiling: Duration { .seconds(30) }
+    /// How many distinct sources the reader's selection can contribute right now. The variety target is capped by
+    /// it: a single-source context is never held waiting for a third.
+    var firstScreenEligibleProviders: Int {
+        // A source's own surface is one source by construction; anything else is bounded by the reader's feeds.
+        if case .source = currentContextKey.request { return 1 }
+        return max(1, Set(feeds.map(\.sourceID)).count)
+    }
+    /// The context whose feed was **just being made** because the reader changed their selection.
+    ///
+    /// The facts of the first screen are bound to the **next association's own store**, synchronously, before that
+    /// association is published: the request, and the wait/provider/sources facts the gate reads with it. Two races
+    /// this closes, both measured on 2026-10-27: (a) a composition-level stamp compared the **applied** key with the
+    /// host's **raw** `currentContextKey`, so a filter whose selection carries a global exclusion never matched and
+    /// `filter_page` stayed 0; (b) a warm projection could lay out and set the reading surface before an `onAppear`
+    /// delivered the request, and the sticky "already exposed" fact then bypassed the page forever.
+    ///
+    /// It is also the only binding: `prepareFirstScreen(of:)` in the app host re-states the policy facts for the
+    /// screen it draws and never re-decides the request.
+    private func prepareFirstScreen(of next: FeedAssociation, previous: ContextKey?) {
+        let isSearch: Bool
+        if case .search = next.contextKey.request { isSearch = true } else { isSearch = false }
+        let isSource: Bool
+        if case .source = next.contextKey.request { isSource = true } else { isSource = false }
+        next.store.noteFirstScreenAppeared(hasSources: hasSelectedSources || isSource,
+            maximumWait: .seconds(next.preparationWaitSeconds),
+            ceiling: firstScreenCeiling,
+            eligibleProviders: isSource ? 1 : max(1, Set(next.feeds.map(\.sourceID)).count),
+            requestedPreparation: false)
+        // A search is a results surface, not a prepared feed. An ordinary resume (no previous association, or the
+        // same context) asks for nothing and stays immediate.
+        if let previous, previous != next.contextKey, !isSearch {
+            next.store.noteFirstScreenPreparationRequested()
+        }
+        if next.firstScreenDeclaresImages { next.store.noteFirstScreenDeclaresImages() }
     }
     private var selectionVersion: UInt64 = 2
     private(set) var sourceOptions: [FeedSourceOption] = []
@@ -1833,6 +1893,22 @@ final class AppComposition {
 
     func stopMedia() async { await media?.stop() }
 
+    /// The full player's menu speaks the card's own vocabulary and executes through the same switch the feed uses.
+    func performMediaAction(_ event: ReaderCardActionEvent) { association?.performMediaAction(event) }
+
+
+    /// Only what this host can really execute for the playing occurrence: a podcast card has no page link to copy
+    /// or share, so those entries are not offered for it (no fake buttons).
+    func mediaPlayerActions(for cardID: PublicationCardID?) -> Set<ReaderCardAction> {
+        guard let cardID, let association else { return [] }
+        return association.mediaPlayerActions(for: cardID)
+    }
+
+    func isMediaBookmarked(_ cardID: PublicationCardID?) -> Bool {
+        guard let cardID, let association else { return false }
+        return association.isMediaBookmarked(cardID)
+    }
+
     #if DEBUG
     /// T9 UI evidence: a real, playable episode without a network or a bundled asset. The hook writes a silent
     /// WAV to the app's own temporary directory and plays it through the same adapter a card would use — the bar,
@@ -1868,8 +1944,28 @@ final class AppComposition {
     /// itself failed to open one, the media surface says so instead of pretending to play.
     private var media: ReaderMediaCoordinator? {
         guard let database = libraryDatabase() else { return nil }
-        return ReaderMediaCoordinator(database: database, player: mediaAdapter)
+        return ReaderMediaCoordinator(database: database, player: mediaAdapter,
+            artworkProvider: { [weak self] cardID in
+                guard let self else { return nil }
+                // The admitted pixels of the visible card: no decoding and no I/O. A card outside the residency
+                // band has released its bitmap but not its materialized bytes, so the persisted asset is decoded
+                // through the existing decoder — never downloaded here, and never a second pipeline.
+                if let admitted = self.association?.store.state.presentation?.window.items
+                    .first(where: { $0.id == cardID })?.image {
+                    return admitted
+                }
+                guard let record = try? PublicationStore(database: database).card(id: cardID),
+                    let key = record.mediaKey, let decoder = self.mediaArtworkDecoder else { return nil }
+                return await Task.detached(priority: .userInitiated) {
+                    decoder.artwork(forMediaKey: key)
+                }.value
+            })
     }
+
+    /// The persisted-cover decoder the player falls back to for a card that left the admitted window.
+    @ObservationIgnored private lazy var mediaArtworkDecoder: ReaderMediaArtworkDecoder? = {
+        ReaderMediaArtworkDecoder(assetDirectory: directory.appendingPathComponent("Media", isDirectory: true))
+    }()
 
     /// The content filters changed (settings or the rules surface): the session is rebuilt, because what it
     /// hides is part of the identity it published under — the same rule the lens criteria follow. Nothing is
@@ -2448,6 +2544,12 @@ final class AppComposition {
     }
 
     func replaceSession(preservingReaderDuringFilter: Bool = false) async throws {
+        // A context change with an association already on screen is a **filter/source change**: a new feed is being
+        // made, so its preparation page is drawn even if the new context restores an Edition it already had.
+        // `FeedPresentationBounds.contextKey` is optional (a bounds value can be built without one), so reading it
+        // would make a real context change look like "no previous association". The association's own `contextKey` is
+        // the non-optional identity this session is on.
+        let contextBeforeRebuild = association?.contextKey
         guard !replacingSession else { pendingRebuild = true; return }
         replacingSession = true
         defer { replacingSession = false }
@@ -2504,6 +2606,9 @@ final class AppComposition {
                     await next.close()
                     continue
                 }
+                // The next association's own store receives the request and the first-screen policy **before** the
+                // association is published, so no appearance or measurement can pre-empt the page.
+                prepareFirstScreen(of: next, previous: contextBeforeRebuild)
                 association = next
                 startupFailure = nil
                 // Retire the captured old association only after the valid latest owns the screen. Its close can
@@ -2521,6 +2626,8 @@ final class AppComposition {
                 association = nil
                 let next = try await association(contextKey: currentContextKey,
                     allowsSourceOutsideSelection: allowsSourceOutsideSelection(currentContextKey))
+                // Same rule as the preserved branch: bound to the store, synchronously, before publication.
+                prepareFirstScreen(of: next, previous: contextBeforeRebuild)
                 association = next
                 startupFailure = nil
                 // P1: a search context is a surface, not a feed window. Start the unified page as soon as the store
@@ -2608,11 +2715,25 @@ final class FeedAssociation {
     /// not a second delivery path and not a second owner of the admitted window.
     @ObservationIgnored let publicationRelay: PublicationRelay
     @ObservationIgnored private var preparation: PreparationProgress?
+    /// The window this association asked media for, and the decoder the preparation page's pixels come from.
+    @ObservationIgnored private var mediaWindow: MediaWindowFacts?
+    @ObservationIgnored private var previewDecoder: PresentationImageDecoder?
+    /// The publication's own card identities, in the order its receipts stated them, deduplicated across segments.
+    /// It is the fact the first screen's buffer is judged on; the admitted window is not (it can hold at most 16
+    /// cards ahead of the anchor by construction).
+    @ObservationIgnored private var publishedOrder: [PublicationCardID] = []
+    @ObservationIgnored private var publishedSeen: Set<PublicationCardID> = []
     @ObservationIgnored private let targetNames: [AcquisitionTargetID: String]
     @ObservationIgnored private let admittedHeadlines: @Sendable () -> [String]
     private let transport: URLSession
     private(set) var active = true
     private var launching = false
+    /// The cold bootstrap's own run. It is acquisition and preparation in flight, and the first screen's producer
+    /// fact must say so while it lasts — otherwise a slower source still answering would read as "settled".
+    @ObservationIgnored private var coldInFlight = false
+    /// The coordinator's in-flight executions, cached from an async point (`refreshAcquisitionFacts`): the supply
+    /// decision is synchronous and must not hop to the coordinator's actor to read it.
+    @ObservationIgnored private var acquisitionInFlight = false
     /// Available actions are what this host can execute today: opening the frozen target and saving.
     /// The remaining V1 controls appear as their deliveries land (T5 shell/feedback, T9 reader/media),
     /// so a rendered control is never a dead one.
@@ -2668,6 +2789,31 @@ final class FeedAssociation {
         onRequestSourcePage: { [weak self] page, index in self?.onSearchSourcePage?(page, index) },
         onSearchScopeChanged: { [weak self] scope in self?.onSearchScope?(scope) },
         onRequestSearchAgain: { [weak self] in self?.onSearchRetry?() })
+
+    // MARK: - Podcast player (build 58)
+
+    /// The player's menu uses the card's own vocabulary and the same execution switch the feed's cards use.
+    func performMediaAction(_ event: ReaderCardActionEvent) {
+        switch event.action {
+        case .open: open(event.cardID)
+        case .save: toggleBookmark(event.cardID)
+        default: perform(event.action, cardID: event.cardID)
+        }
+    }
+
+    /// Only what this host can really execute for this occurrence. A podcast card freezes `mediaPlayback`, not an
+    /// external URL, so it has no page link to copy or share: those two entries are withheld rather than drawn dead.
+    func mediaPlayerActions(for cardID: PublicationCardID) -> Set<ReaderCardAction> {
+        guard let record = try? PublicationStore(database: database).card(id: cardID) else { return [] }
+        var actions: Set<ReaderCardAction> = [.save]
+        if record.sourceID != nil { actions.insert(.viewSource) }
+        if record.primaryActionKind == "externalURL" { actions.formUnion([.copyLink, .share]) }
+        return actions
+    }
+
+    func isMediaBookmarked(_ cardID: PublicationCardID) -> Bool {
+        store.bookmarkedIDs.contains(cardID)
+    }
 
     /// T9: the card actions this host executes. Resolution is the action coordinator's (the occurrence's own
     /// frozen target); what happens next — a browser, a clipboard, a share sheet — is here, and nowhere near a
@@ -3543,6 +3689,11 @@ final class FeedAssociation {
             replenishmentSampleLimit: 8,
             // M7: first retry after a failed local slice one second later, doubling per failure.
             localRetryBaseSeconds: 1)!, trace: replenishment)
+        // The revisions this association asked media for. The preparation page states **this window's** counts from
+        // here — never a global historical total, and never a number the page would have to invent.
+        let mediaWindow = MediaWindowFacts()
+        self.mediaWindow = mediaWindow
+        self.previewDecoder = imageDecoder
         let mediaWaitCeilingSeconds = configuration.timeoutIntervalForRequest
         let mediaWait: @Sendable () async -> Double = { [runway, mediaWaitBudget] in
             let seconds = Self.mediaWaitSeconds(p95Replenishment: await runway.snapshot().replenishment.p95Seconds,
@@ -3558,6 +3709,9 @@ final class FeedAssociation {
             let startedAt = ProcessInfo.processInfo.systemUptime
             let wait = await mediaWait()
             return MediaPreparationOpportunity(waitSeconds: wait, startedAt: startedAt) { revisions, deadline in
+                // The preparation page states **this** window's counts: record the revisions the pipeline was
+                // actually asked for, before any of them settles.
+                mediaWindow.record(revisions)
                 // PM-029: the durable deferral page this opportunity is about to prepare. A revision on it is a
                 // story the one-way walk skipped for want of media, so if it becomes ready here it was **recovered
                 // by reconsideration** — the reserve counts it, and publication decides whether it became a card.
@@ -3664,6 +3818,14 @@ final class FeedAssociation {
             // The first publication obeys the same cap: at most the reserve target in one opportunity, with the
             // remainder left ready (R6-E then grows the admitted window from what was published, not from a burst).
             publicationLimit: Self.runwayMinimumReserveCards,
+            // The first screen's own priority: bring the images of the window it is about to examine before it
+            // publishes, bounded by **one** budget for the whole first publication (the bootstrap shares the
+            // deadline across every window it walks) and capped by the derived media tolerance plus the
+            // first-presentation ceiling below. Without this the first Edition contained only whatever media
+            // happened to be ready at that instant, which is the measured cause of a text-only first screen.
+            firstPublicationMediaTarget: Self.firstPublicationMediaTarget,
+            firstPublicationMediaBudget: .seconds(min(mediaWaitBudget.current,
+                Self.firstPublicationMediaCeilingSeconds)),
             // The cold round's own durable-ingestion fact goes to the one owner that decides local work. The driver
             // validates the live scope and revision, so this channel cannot authorize a retired context; it exists
             // because publication is not the condition under which supply arrives — a source that answers after the
@@ -3768,6 +3930,14 @@ final class FeedAssociation {
     /// preparation may take, and the cover's bound is not that decision. Once the association exists, the hold
     /// reads `preparationWaitSeconds`, which is the run's own measured tolerance — the D4 coupling, untouched.
     nonisolated static let preparationWaitBootstrapSeconds = 5.0
+
+    /// The first publication's image target and its own ceiling. The target is clamped by the bootstrap to the
+    /// candidates a window actually offers, so a window with three stories is not "six images missing".
+    nonisolated static let firstPublicationMediaTarget = 6
+    /// PM-018 measured 40 % image cards at 20 s against 32,2 % at 5 s; beyond 20 s the deadline ratio wins. The
+    /// first presentation therefore never waits longer than this, and the derived tolerance (12 s cold) usually
+    /// ends it earlier.
+    nonisolated static let firstPublicationMediaCeilingSeconds = 20.0
 
     nonisolated static func mediaWaitSeconds(p95Replenishment: Double?, inputs: RunwayPolicyInputs,
         transportCeiling: Double, bootstrap: Double = FeedAssociation.mediaWaitBootstrapSeconds) -> Double {
@@ -3983,6 +4153,8 @@ final class FeedAssociation {
                 // Cards arrived: whatever end the reader was shown is no longer true.
                 if store.state.work == .endOfContent { try install(store.state.reporting(.idle)) }
             }
+            // The window and the anchor are the facts the buffer is measured against: state them after any growth.
+            refreshFirstScreenSupply()
         } catch { reportFailure(error) }
     }
 
@@ -4022,13 +4194,189 @@ final class FeedAssociation {
         let publication = PublicationStore(database: database)
         let publishedRevisions = receipt.cardIDs.compactMap { try? publication.card(id: $0)?.originRevisionID }
         if !publishedRevisions.isEmpty { await reserve.markPublished(publishedRevisions) }
+        recordPublished(receipt.cardIDs)
         await growAdmittedWindowIfPublished()
+        // A concluded publication is an async point where the in-flight set can have changed.
+        await refreshAcquisitionFacts()
     }
 
     /// B/§3: the prefetcher's transition is a local-supply fact. The driver notifies the runway; it does not
     /// publish, admit or start a second pipeline here.
     private func noteMediaReadinessChanged() async {
         await driver.noteMediaReadinessChanged()
+        await refreshPreparationMedia()
+    }
+
+    /// The preparation page's media facts, stated from the readiness index for **this** window. Called when a
+    /// readiness transition happens and when the bootstrap states `.preparingMedia`; it installs nothing else, and
+    /// it never replaces an absence that a real failure produced (that state is decided by the handoff).
+    ///
+    /// The readiness relay is awaited from the prefetcher's actor, so two of these bodies can interleave on the
+    /// MainActor. Every value below is therefore **fenced**: a generation is taken on entry and re-checked after each
+    /// suspension, the freshest `preparation` is read *after* the awaits (never the one captured before them), and
+    /// the declaration set is unioned instead of replaced — a late call can no longer drop revisions recorded in
+    /// between, and a stale one can no longer regress the counters the gate reads.
+    private func refreshPreparationMedia() async {
+        // A retired association neither decodes nor installs: the counters and the preview pixels carry the same
+        // context fence as every other delivery.
+        guard active, let mediaWindow else { return }
+        preparationMediaGeneration &+= 1
+        let generation = preparationMediaGeneration
+        let revisions = mediaWindow.snapshot()
+        guard !revisions.isEmpty else { return }
+        await refreshImageDeclarations(generation: generation)
+        guard active, generation == preparationMediaGeneration, let progress = preparation else { return }
+        let readiness = media.readiness
+        let declaring = imageDeclaringRevisions ?? []
+        let prepared = declaring.filter { readiness.prepared($0) != nil }.count
+        let pending = declaring.filter { !readiness.isSettled($0) }.count
+        var previews: [PresentationImage] = []
+        if prepared > progress.imagesPrepared, let decoder = previewDecoder {
+            let wanted = min(FeedPreparationView.mosaicCapacity, prepared)
+            previews = await Task.detached(priority: .utility) {
+                readiness.previewImages(for: declaring.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString },
+                    limit: wanted, decoder: decoder)
+            }.value
+        }
+        // The newest body owns the value: a body that suspended here must not install a value computed before a
+        // newer readiness decision arrived.
+        guard active, generation == preparationMediaGeneration, let current = preparation else { return }
+        let refreshed = current.applying(.media(prepared: prepared, pending: pending, previews: previews),
+            at: ProcessInfo.processInfo.systemUptime)
+        preparation = refreshed
+        // The declaration is evidence, so it is stated when the evidence arrives: at appearance nothing is decided
+        // yet, and a sticky early `false` would keep an image feed's page from ever waiting for its own pixels.
+        if firstScreenDeclaresImages { store.noteFirstScreenDeclaresImages() }
+        // Media decided (or newly pending) is also a change in whether the page still has work coming.
+        await refreshAcquisitionFacts()
+        refreshFirstScreenSupply()
+        guard store.state.presentation == nil else { return }
+        if case .preparing = store.state.work {
+            try? install(store.state.reporting(.preparing(refreshed)))
+        }
+    }
+
+    /// The revisions of the examined window whose **candidate declares a card visual**, read from the canonical media
+    /// candidates (immutable after admission; no download, no second pipeline). Nil while unknown — and "unknown" is
+    /// never treated as a declaration. It only grows: a declaration is immutable once admitted.
+    @ObservationIgnored private var imageDeclaringRevisions: Set<OriginRevisionID>?
+    /// Fences the media refresh against the interleaving described above.
+    @ObservationIgnored private var preparationMediaGeneration: UInt64 = 0
+
+    /// Reads the declarations for the window, once per revision set. The opportunity is handed every candidate
+    /// (`InitialProductionSlice.revisionsToPrepare`), so the request list cannot answer this question: the canonical
+    /// media rows can.
+    ///
+    /// Only revisions that are **not already accounted for** are queried (a settled one is decided, and a known one
+    /// is already counted), and the result is unioned into the set when this body is still the newest. Querying the
+    /// whole cumulative window on every readiness callback was O(N²) candidate reads on the launch path.
+    private func refreshImageDeclarations(generation: UInt64) async {
+        guard let mediaWindow else { return }
+        let known = imageDeclaringRevisions ?? []
+        let missing = mediaWindow.snapshot().filter { revision in
+            guard !known.contains(revision) else { return false }
+            // A decided revision can no longer be *pending*, so it cannot hold the page; its declaration is proven by
+            // a prepared image when it has one (`firstScreenDeclaresImages` reads that too). Only undecided revisions
+            // need their candidates read.
+            return !media.readiness.isSettled(revision)
+        }
+        guard !missing.isEmpty else { return }
+        let database = self.database
+        let declared = await Task.detached(priority: .utility) {
+            let store = ContentStore(database: database)
+            var declared: Set<OriginRevisionID> = []
+            for revision in missing {
+                guard let candidates = try? store.mediaCandidates(originRevisionID: revision) else { continue }
+                if candidates.contains(where: { $0.role == .cardVisual && $0.mediaClass == .image }) {
+                    declared.insert(revision)
+                }
+            }
+            return declared
+        }.value
+        guard active, generation == preparationMediaGeneration else { return }
+        imageDeclaringRevisions = known.union(declared)
+    }
+
+    /// Whether media work for this window is **actually scheduled and undecided**. This is the fact that separates
+    /// "the sources answered and their images are still in flight" from "there are no stories"; it is never
+    /// asserted from a timer, and it counts only revisions whose candidate declares a card visual.
+    var firstScreenDeclaresImages: Bool {
+        if let declaring = imageDeclaringRevisions, !declaring.isEmpty { return true }
+        let readiness = media.readiness
+        // A prepared image is itself proof of a declaration, before the candidates' read lands.
+        return mediaWindow?.snapshot().contains { readiness.prepared($0) != nil } ?? false
+    }
+
+    /// Undecided media work among the revisions that really declare an image. A text-only window has none, however
+    /// many of its revisions are still undecided.
+    private var mediaWindowHasPendingWork: Bool {
+        guard let declaring = imageDeclaringRevisions, !declaring.isEmpty else { return false }
+        let readiness = media.readiness
+        return declaring.contains { !readiness.isSettled($0) }
+    }
+
+    // MARK: - The first screen's publication facts
+
+    /// The publication's own card identities, in the order the receipts stated them. Deduplicated: a segment may be
+    /// restated by a retry, and the count must be of cards, never of receipts.
+    func recordPublished(_ cardIDs: [PublicationCardID]) {
+        for cardID in cardIDs where publishedSeen.insert(cardID).inserted {
+            publishedOrder.append(cardID)
+        }
+        refreshFirstScreenSupply()
+    }
+
+    /// States the publication's own supply facts to the screen. The buffer is judged on what the **publication**
+    /// holds and on where the reader's anchor sits in it.
+    ///
+    /// `producing` means "more cards can still reach this reader", and it is deliberately **not** "the publication
+    /// is under its 32-card batch". A feed that offers twelve candidates can never publish thirty-two, and treating
+    /// the batch as a producer kept the page up to its ceiling for every small feed (measured 2026-10-27: a
+    /// 6-items-per-source fixture held the reader for the full bound). The batch stays where it is enforced — the
+    /// bootstrap's `publicationLimit` — and is reported by `batchReached`; here the producer is the admitted window
+    /// being behind the publication, or media for this window still being undecided.
+    private func refreshFirstScreenSupply() {
+        guard active else { return }
+        let anchor = store.state.presentation?.window.anchor.cardID
+        let anchorIndex = anchor.flatMap { publishedOrder.firstIndex(of: $0) }
+        let publishedCards = publishedOrder.count
+        let ahead: Int
+        if let anchorIndex {
+            ahead = max(0, publishedCards - anchorIndex - 1)
+        } else {
+            // No projection yet: the window is all that is known, and it is a floor, not a claim.
+            let items = store.state.presentation?.window.items.count ?? 0
+            ahead = max(0, items - 1)
+        }
+        let admittedAhead = {
+            let items = store.state.presentation?.window.items ?? []
+            guard let anchor, let index = items.firstIndex(where: { $0.id == anchor }) else { return 0 }
+            return max(0, items.count - index - 1)
+        }()
+        let workSettled = store.state.work == .endOfContent
+        // A producer is a fact about work **in flight**, never about a count: the launch itself, the cold bootstrap's
+        // own run, an acquisition execution, media still being decided for an image-declaring window, or an admitted
+        // window that has not caught up with what was already published. The 32-card batch is a publication *cap*
+        // (the bootstrap's `publicationLimit`), never a floor this decision may wait for.
+        //
+        // The acquisition fact is **cached** (`acquisitionInFlight`): it is read from the coordinator's actor at the
+        // async lifecycle points that already exist (`refreshAcquisitionFacts`), so this decision stays synchronous
+        // and never blocks the MainActor on an actor hop.
+        let producing = !workSettled && (launching || coldInFlight || acquisitionInFlight
+            || mediaWindowHasPendingWork || admittedAhead < min(FeedFirstScreenContent.aheadFloor, ahead))
+        store.noteFirstScreenSupply(FirstScreenSupplyFacts(publishedCards: publishedCards,
+            publishedAhead: ahead, producing: producing))
+    }
+
+    /// Reads the coordinator's in-flight executions at an explicit async point and re-states the supply facts.
+    /// Called when an attempt settles, when a publication concludes, when media is decided and when the launch ends
+    /// — the moments the producer fact can change. It never runs on a timer, and it never blocks the MainActor.
+    private func refreshAcquisitionFacts() async {
+        let active = await coordinator.activeExecutions()
+        let inFlight = !active.isEmpty
+        guard inFlight != acquisitionInFlight else { return }
+        acquisitionInFlight = inFlight
+        refreshFirstScreenSupply()
     }
 
     /// PO 2026-10-14: the end of the reader's eligible offer is stated only from the full settled evidence the
@@ -4073,7 +4421,12 @@ final class FeedAssociation {
     func launch() async throws {
         guard active, !launching else { return }
         launching = true
-        defer { launching = false }
+        // The producer fact includes the launch itself; when it ends, the fact must be re-stated — a stale `true`
+        // would hold the page for work that is no longer running.
+        defer {
+            launching = false
+            refreshFirstScreenSupply()
+        }
         // P05: the volume capacity is read once, off the MainActor, before the first budget that can use it.
         await storageCapacity.refresh()
         // P06/A10: the first projection the reader sees already carries the durable bookmark set, prepared here
@@ -4098,11 +4451,24 @@ final class FeedAssociation {
             defer { relay.receive = nil }
             Self.log("cold bootstrap started")
             let now = Date()
-            let outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
-                selectionSeed: 1, editionCreatedAt: now, segmentID: FeedSegmentID(), segmentSeed: 1,
-                segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
-                resources: .init(localExaminedCapacity: 32, acquisition: resources.acquisition)!,
-                backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
+            // The bootstrap is acquisition and preparation in flight: the first screen's producer fact must state it
+            // for the whole run, so a slower source still answering is never mistaken for a finished feed.
+            coldInFlight = true
+            let outcome: ColdFeedBootstrapOutcome
+            do {
+                outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
+                    selectionSeed: 1, editionCreatedAt: now, segmentID: FeedSegmentID(), segmentSeed: 1,
+                    segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
+                    resources: .init(localExaminedCapacity: 32, acquisition: resources.acquisition)!,
+                    backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
+            } catch {
+                coldInFlight = false
+                refreshFirstScreenSupply()
+                throw error
+            }
+            coldInFlight = false
+            refreshFirstScreenSupply()
+            await refreshAcquisitionFacts()
             // The early first-presentation handoff may already have driven and admitted growth while slower
             // bootstrap sources were pending. Its original snapshot must not replace that newer projection.
             // NF-04 journey (DEBUG): a launch has no product path to `deferred`, so the surface's retry could not be
@@ -4128,7 +4494,16 @@ final class FeedAssociation {
             } else if case .published = outcome, let current = await session.currentPresentation() {
                 received = try FeedPresentationHandoff.receive(snapshot: current, into: store.state).reporting(.idle)
             } else {
-                received = try FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state)
+                let handed = try FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state)
+                // F16/next-experience: an attempt that ended without a publication while this window's images are
+                // still undecided is **not** an absence of stories. The reader keeps the preparation page (with its
+                // real evidence) and the fact-derived retry below, instead of being told there is nothing to read.
+                if store.state.presentation == nil, case .unavailable = handed.work,
+                    mediaWindowHasPendingWork, let progress = preparation {
+                    received = handed.reporting(.preparing(progress))
+                } else {
+                    received = handed
+                }
             }
             try install(.init(state: received, bookmarks: preparedBookmarks))
             Self.log("cold bootstrap settled")
@@ -4484,6 +4859,9 @@ final class FeedAssociation {
             let reachable: Bool
             if case .operationalFailure = stop { reachable = false } else { reachable = true }
             progress = progress.applying(.settled(id: target.rawValue.uuidString, contributed: changed, reachable: reachable), at: now)
+            // An attempt just settled: the coordinator's in-flight set changed, and the producer fact is read here
+            // (an async point) rather than from the synchronous decision.
+            await refreshAcquisitionFacts()
             if changed {
                 progress = progress.applying(.admitted(headlines: admittedHeadlines()), at: now)
                 // R7-E: a source that brought supply is **not** the publication-completed event, and the earlier
@@ -4494,7 +4872,15 @@ final class FeedAssociation {
                 // `.published` case below — the same segment the bootstrap returns as its outcome.
             }
         case .preparingMedia:
-            break
+            // The pipeline just asked for these images. The page's counts are stated by the one owner of the fact —
+            // `refreshPreparationMedia` — which reads **which revisions actually declare a card visual** from the
+            // canonical candidates. Counting the whole requested window here made a text feed look image-bearing.
+            await refreshPreparationMedia()
+            return
+        case .publishedCards(let cardIDs):
+            // The first Edition's own identities, stated before its snapshot is admitted. Nothing is published from
+            // the evidence: it is counted, and the first screen's supply facts are re-stated from it.
+            recordPublished(cardIDs)
         case .published(let snapshot):
             progress = progress.applying(.prepared(cards: snapshot.window.items.count), at: now)
             // F06: show the first Edition now; slower feeds keep answering behind the badge.

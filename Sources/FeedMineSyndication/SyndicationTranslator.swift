@@ -89,7 +89,8 @@ public struct SyndicationTranslator: Sendable {
             else { return .failure(.invalidCanonicalObservation) }
             return .success(value)
         }
-        func rss(_ item: RSSFeedItem, kind: String, language: String?) -> Result<AcquisitionObservation, ItemFailure> {
+        func rss(_ item: RSSFeedItem, kind: String, language: String?,
+            channelArtwork: AcquisitionMediaCandidateClaim? = nil) -> Result<AcquisitionObservation, ItemFailure> {
             let object = Self.nonempty(item.guid?.text).map { identity(kind + "-guid", $0) }
                 ?? Self.nonempty(item.link).map { identity(kind + "-link", SyndicationItemIdentity.linkIdentity($0)) }
             let base = Self.webURL(item.link)
@@ -113,6 +114,13 @@ public struct SyndicationTranslator: Sendable {
                     base: base) {
                 media.append(video)
             }
+            // A show's declared cover belongs to its audio episodes, never to ordinary news or video.
+            // Item visuals retain priority; insert before playback so the visual still owns ordinal 0.
+            if !media.contains(where: { $0.role == .cardVisual }),
+                media.contains(where: { $0.role == .playback && $0.mediaClass == .audio }),
+                let channelArtwork {
+                media.insert(channelArtwork, at: 0)
+            }
             let body = Self.readableBody(item.content?.encoded)
             return observation(object, title: item.title, summary: item.description, body: body,
                 bodySourceElement: body == nil ? nil : "content:encoded", fingerprintGeneration: 2,
@@ -121,8 +129,10 @@ public struct SyndicationTranslator: Sendable {
         }
         switch feed {
         case .rss(let document):
-            return try window(document.channel?.items ?? [], kind: .rss, start: startIndex, capacity: itemCapacity) {
-                rss($0, kind: "rss", language: document.channel?.language)
+            let channel = document.channel
+            let channelArtwork = Self.podcastArtwork(in: channel, feedBase: configuration.endpoint)
+            return try window(channel?.items ?? [], kind: .rss, start: startIndex, capacity: itemCapacity) {
+                rss($0, kind: "rss", language: channel?.language, channelArtwork: channelArtwork)
             }
         case .rdf(let document):
             return try window(document.items ?? [], kind: .rdf, start: startIndex, capacity: itemCapacity) {
@@ -288,6 +298,18 @@ public struct SyndicationTranslator: Sendable {
         return .init(role: .cardVisual, mediaClass: .image, remoteURL: url, declaredMimeType: mimeType,
             declaredPixelWidth: dimensions.0, declaredPixelHeight: dimensions.1)
     }
+    /// Source-declared show artwork only; the caller restricts it to audio episodes without an item visual.
+    /// Channel-relative artwork uses the show's link (itself relative to the feed endpoint when necessary),
+    /// or the feed endpoint when no web link exists — never an episode's unrelated permalink.
+    private static func podcastArtwork(in channel: RSSFeedChannel?, feedBase: URL) -> AcquisitionMediaCandidateClaim? {
+        guard let channel else { return nil }
+        let base = channel.link.flatMap { URL(string: $0, relativeTo: feedBase)?.absoluteURL }
+            .flatMap { webURL($0.absoluteString) } ?? feedBase
+        // Admission, not mere presence, decides whether the preferred declaration wins.
+        return media(channel.iTunes?.image?.attributes?.href, base: base)
+            ?? media(channel.image?.url, base: base, width: channel.image?.width, height: channel.image?.height)
+    }
+
     /// V1's enclosure for an audio or video episode: the one playable payload an item can carry. The store
     /// enforces the same rule (at most one per revision), and it is appended *after* the visuals so it never
     /// takes the card's own ordinal 0.

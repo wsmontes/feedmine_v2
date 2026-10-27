@@ -480,7 +480,7 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
 
     /// The site is the platform's `SFSafariViewController`: its chrome, not a fixture page.
     private func siteClose(_ app: XCUIApplication, timeout: TimeInterval = 40) -> XCUIElement? {
-        let safari = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService")
+        let safari = app
         let labels = ["Close", "Fechar", "Done", "Concluído"]
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
@@ -508,10 +508,10 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     private func waitForNoAddress(_ app: XCUIApplication, timeout: TimeInterval = 30) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if !app.buttons["URL"].exists { return true }
+            if !app.staticTexts["reading.web-source"].exists { return true }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        return !app.buttons["URL"].exists
+        return !app.staticTexts["reading.web-source"].exists
     }
 
     private func anchorDelta(_ app: XCUIApplication, uuid: String, from frame: CGRect,
@@ -567,15 +567,15 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             tree.name = "short-site-tree"
             tree.lifetime = .keepAlways
             add(tree)
-            return XCTFail("the teaser opens the site with Safari's own chrome")
+            return XCTFail("the teaser opens the site in the app's own reader sheet")
         }
-        record("short-site", "url=\(app.buttons["URL"].firstMatch.value ?? "-") close=\(close.label)")
+        record("short-site", "url=\(app.staticTexts["reading.web-source"].firstMatch.label ?? "-") close=\(close.label)")
         shot("short-site")
-        XCTAssertTrue(app.buttons["URL"].exists || app.webViews.firstMatch.exists,
+        XCTAssertTrue(app.staticTexts["reading.web-source"].exists || app.webViews.firstMatch.exists,
             "the site page is really presented")
 
         tapSiteClose(app, close)
-        XCTAssertTrue(waitForNoAddress(app), "Safari's chrome is gone, not merely covered")
+        XCTAssertTrue(waitForNoAddress(app), "the reader's site page is gone, not merely covered")
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
         guard let after = anchorDelta(app, uuid: uuid, from: before) else {
             return XCTFail("the feed returns with the same card \(uuid)")
@@ -650,11 +650,11 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         XCTAssertTrue(body.waitForExistence(timeout: 60))
         byIdentifier(app, "reading.open-site").tap()
         guard let siteCloseControl = siteClose(app) else {
-            return XCTFail("open-source presents the site with Safari's own chrome")
+            return XCTFail("open-source presents the site in the app's own reader sheet")
         }
         shot("long-site")
         tapSiteClose(app, siteCloseControl)
-        XCTAssertTrue(waitForNoAddress(app), "Safari's chrome is gone")
+        XCTAssertTrue(waitForNoAddress(app), "the reader's site page is gone")
         XCTAssertTrue(SurfaceTest.waitForAbsence(body, timeout: 20),
             "the site's close ends the reader instead of returning to the hidden text page")
         guard let afterSite = anchorDelta(app, uuid: uuid, from: before) else {

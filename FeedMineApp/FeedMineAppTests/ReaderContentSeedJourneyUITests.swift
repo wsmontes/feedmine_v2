@@ -68,7 +68,7 @@ final class ReaderContentSeedJourneyUITests: XCTestCase {
         chosen.tap()
 
         let headline = app.staticTexts["reading.headline"]
-        let address = app.buttons["URL"].firstMatch
+        let address = app.staticTexts["reading.web-source"].firstMatch
         let opened = headline.waitForExistence(timeout: 60) || address.waitForExistence(timeout: 30)
         XCTAssertTrue(opened, "the sampled card opens the reader; card=\(title)")
         if headline.exists {

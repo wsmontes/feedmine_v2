@@ -76,9 +76,13 @@ public struct FeedScreen: View {
                 // preparation cover is up, which is the surface's stated intent and the only way out of a context
                 // that is still preparing.
                 feedBody
-                    // While the cover is up, the laid-out cards are not on screen: they are measured, not shown,
-                    // and the accessibility tree must say the same thing the pixels do.
+                    // While the page is up, the laid-out cards are **measured, not shown**: the preparation page is
+                    // an opaque surface of its own, and the feed underneath takes no touch and no focus. Hiding it
+                    // from the accessibility tree says the same thing the pixels do; hiding it from hit testing is
+                    // what keeps a reader from scrolling a feed they cannot see. Nothing about publication,
+                    // admission or the cards changes — only whether they are reachable yet.
                     .accessibilityHidden(drawsPreparationCover)
+                    .allowsHitTesting(!drawsPreparationCover)
                     // D4: the transition from preparation to reading is held by the **measured layout**, not by
                     // the arrival of a first card. The cards are laid out here (that is what measurement needs)
                     // and the preparation surface stays over them until they reach the viewport bottom. The judge
@@ -86,7 +90,11 @@ public struct FeedScreen: View {
                     .overlay {
                         if drawsPreparationCover {
                             preparationSurface
-                                .transition(.opacity)
+                                // The page **rendered** is stated from the geometry SwiftUI already reports to this
+                                // file: a positive measured area is the page on screen. It is the same mechanism the
+                                // cards use, it starts no work, and the file's boundary is unchanged (no lifecycle
+                                // hooks, no timers). The store records the filter request as honoured only here.
+                                .modifier(PreparationPageRendered(store: store))
                         }
                     }
             }
@@ -100,6 +108,9 @@ public struct FeedScreen: View {
                 FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
                     onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
                     sourceContextName: sourceContextName)
+                    // A new context with nothing published yet draws the same preparation page; the same measured
+                    // fact states that it rendered.
+                    .modifier(PreparationPageRendered(store: store))
             }
         }
     }
@@ -115,14 +126,42 @@ public struct FeedScreen: View {
         !store.firstScreenReading && store.firstScreenSurface == .preparation
     }
 
-    /// The preparation surface as a cover: the same honest surface the launch already draws (its copy is the
-    /// work state's own), filled and opaque so the reader never sees a half-composed screen beneath it.
-    private var preparationSurface: some View {
-        FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-            onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
-            sourceContextName: sourceContextName)
+    /// The preparation page as a cover: opaque, readable, and image-bearing when real prepared pixels exist.
+    ///
+    /// It draws the pipeline's own evidence plus the pixels already prepared for the window, and — once this
+    /// context has an installed Edition — the headlines and images it really published. It is deliberately not a
+    /// translucent scrim: a reader should be able to read the page, not peer through it at cards still being made.
+    @ViewBuilder private var preparationSurface: some View {
+        preparationPageContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.background)
+            .ignoresSafeArea()
+            .transition(.opacity)
+    }
+
+    /// What the preparation page states.
+    ///
+    /// - a preparation run in flight → the pipeline's evidence **plus** whatever was already published;
+    /// - a **filter change** whose new context restored an Edition (and no run is speaking for it) → the same rich
+    ///   page with the real published headlines and pixels and no invented network work. The request is what the page
+    ///   honours, so the rich page stays for the whole hold — until the gate says the reader is reading — and not only
+    ///   for the pass in which its own drawing was acknowledged;
+    /// - anything else — an absence, a proven failure, the end of the offer, a settled wait, or a context with no
+    ///   installed card — → the work/absence surface, which owns the approved copy and the recovery actions (try
+    ///   again, adjust interests, choose sources).
+    ///
+    /// The second branch is scoped to `requestsPreparationPage` on purpose: taking it for every non-`.preparing`
+    /// state would replace the failure surface the journeys assert.
+    @ViewBuilder private var preparationPageContent: some View {
+        if case .preparing(let progress) = store.work {
+            FeedPreparationView(progress: progress, publishedPreview: store.renderedItems)
+        } else if store.requestsPreparationPage, !store.renderedItems.isEmpty {
+            FeedPreparationView(progress: nil, publishedPreview: store.renderedItems)
+        } else {
+            FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
+                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
+                sourceContextName: sourceContextName)
+        }
     }
 
     /// The chip states the reader's situation. The host can replace it (T5 hook) because the host owns
@@ -288,6 +327,28 @@ public struct FeedScreen: View {
                     FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
                         explicit: true)
                 })
+        }
+    }
+}
+
+/// States, from a **measured** fact, that the preparation page rendered.
+///
+/// The boundary this file lives under forbids lifecycle hooks, timers and tasks; it allows the geometry event the
+/// cards already use. A positive measured area is the page on screen, and that is the only thing that marks a
+/// filter-change request as honoured — no install, no settle and no clock can claim a drawing that never happened.
+@MainActor
+private struct PreparationPageRendered: ViewModifier {
+    let store: FeedScreenStore
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 18, macOS 15, *) {
+            content.onGeometryChange(for: Bool.self, of: { proxy in
+                proxy.size.width > 1 && proxy.size.height > 1
+            }) { rendered in
+                if rendered { store.notePreparationPageDrawn() }
+            }
+        } else {
+            content
         }
     }
 }

@@ -331,6 +331,24 @@ final class FeedScreenRenderingTests: XCTestCase {
     }
 
 
+    func testU15FilterChangeOverARestoredEditionDrawsThePreparationPage() async throws {
+        let f = try fixture(), first = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        // A context whose Edition is already installed: work stays `.idle`, which used to fall through to the
+        // absence copy ("Descobrindo histórias…") even though the reader had just asked for a new feed.
+        try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
+        store.noteFirstScreenAppeared(hasSources: true, maximumWait: .seconds(5),
+            eligibleProviders: 1, requestedPreparation: true)
+        let text = try renderedText(host(FeedScreen(store: store)))
+        XCTAssertTrue(text.contains { $0.contains("Indo atrás") },
+            "the requested page is the preparation page: " + text.description)
+        XCTAssertFalse(text.contains { $0.contains("Descobrindo") },
+            "a restored Edition is not an absence: " + text.description)
+        XCTAssertTrue(text.contains { $0.contains("Zebra headline") || $0.contains("Amber headline")
+            || $0.contains("histórias prontas") || $0.contains("Organizando") },
+            "the page states real published content or the work it is really doing: " + text.description)
+    }
+
     func testU14UIBoundaryHasNoProductionImportsOrHiddenEffects() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let ui = root.appendingPathComponent("Sources/FeedMineUI")
@@ -400,7 +418,9 @@ final class FeedScreenRenderingTests: XCTestCase {
     // Inspect the real declarative ForEach (not a parallel rendering model).
     private func publishedSequence(in value: Any, depth: Int = 0) -> (any PublishedCardSequence)? {
         if let sequence = value as? any PublishedCardSequence { return sequence }
-        guard depth < 24 else { return nil }
+        // SwiftUI nests one `_ModifiedContent` (2 reflection levels) per modifier; the feed's content sits at the
+        // end of a long chain, so the walk's guard is generous. It exists to stop cycles, not to bound the view.
+        guard depth < 64 else { return nil }
         for child in Mirror(reflecting: value).children {
             if let sequence = publishedSequence(in: child.value, depth: depth + 1) { return sequence }
         }

@@ -2580,6 +2580,26 @@
         }
       }
     },
+    "Organizando as histórias que já chegaram": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organizing the stories that already arrived"
+          }
+        }
+      }
+    },
+    "Organizando as histórias que já chegaram.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organizing the stories that already arrived."
+          }
+        }
+      }
+    },
     "Padrão": {
       "localizations": {
         "en": {

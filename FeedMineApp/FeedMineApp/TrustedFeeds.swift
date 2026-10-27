@@ -194,7 +194,7 @@ enum AddFeedFixtureSite {
         }.joined()
         return Data("""
         <?xml version="1.0" encoding="UTF-8"?>
-        <rss version="2.0"><channel><title>\(siteTitle)</title>
+        <rss version="2.0"\(DevelopmentLocalFeeds.mediaNamespace)><channel><title>\(siteTitle)</title>
         <link>\(siteURL)</link><description>Fixture</description><language>pt</language>
         \(items)</channel></rss>
         """.utf8)
@@ -308,6 +308,9 @@ enum DevelopmentLocalFeeds {
         /// reprodução sem rede: o card é áudio de verdade (selo, identidade, `openMedia`), e o player descobre que
         /// não pode tocá-lo. Não é prova de mídia do catálogo (D11): é a prova da superfície de recusa.
         case audio
+        /// A **published podcast card**: an admitted visual and an audio enclosure in the same item. The enclosure
+        /// does not resolve, so the bar states the refusal while the card, its cover and its program are real.
+        case audioImage = "audio-image"
 
         static var current: MediaShape {
             MediaShape(rawValue: ProcessInfo.processInfo.environment["FEEDMINE_FIXTURE_MEDIA"] ?? "") ?? .off
@@ -320,7 +323,7 @@ enum DevelopmentLocalFeeds {
 
     /// O elemento de reprodução da forma `audio` (vazio nas demais).
     static var playbackElement: String {
-        guard mediaShape == .audio else { return "" }
+        guard mediaShape == .audio || mediaShape == .audioImage else { return "" }
         return "<enclosure url=\"\(unplayableAudioURL)\" type=\"audio/mpeg\" length=\"64\"/>"
     }
 
@@ -366,6 +369,18 @@ enum DevelopmentLocalFeeds {
         return "<enclosure url=\"\(cardImageURL)\" type=\"image/png\" length=\"\(cardImagePNG.count)\"/>"
     }
 
+    /// The visual of the `audio-image` shape. RSS has a single enclosure, and FeedKit exposes it as the episode, so
+    /// the image arrives through RSS Media (`media:content medium="image"`), which the translator already reads.
+    static var mediaContentElement: String {
+        guard mediaShape == .audioImage else { return "" }
+        return "<media:content url=\"\(cardImageURL)\" medium=\"image\" type=\"image/png\"/>"
+    }
+
+    /// The namespace `media:content` needs — emitted only for that shape, so every other document stays byte-identical.
+    static var mediaNamespace: String {
+        mediaShape == .audioImage ? " xmlns:media=\"http://search.yahoo.com/mrss/\"" : ""
+    }
+
     /// O mesmo visual no JSON Feed, que nomeia o seu campo (`item.image`).
     private static var imageField: String {
         guard mediaShape == .image else { return "" }
@@ -375,7 +390,7 @@ enum DevelopmentLocalFeeds {
     /// Whether this is the fixture's own card visual — the third endpoint of this transport, and only when the
     /// run asked for it: a `off` run answers it exactly as an unreachable address.
     static func answersCardImage(_ url: URL) -> Bool {
-        mediaShape == .image && url.absoluteString == cardImageURL
+        (mediaShape == .image || mediaShape == .audioImage) && url.absoluteString == cardImageURL
     }
 
     /// **Quantos itens por feed esta execução serve.** O default (6) mantém todo documento byte-idêntico ao que este
@@ -442,6 +457,7 @@ enum DevelopmentLocalFeeds {
               <guid>\(url.absoluteString)#\(index + 1)</guid>
               \(summaryElement(index, feedTitle))
               \(DevelopmentLocalFeeds.imageElement)
+              \(DevelopmentLocalFeeds.mediaContentElement)
               \(DevelopmentLocalFeeds.playbackElement)
               <pubDate>Sun, 05 Oct 2026 12:00:00 GMT</pubDate>
             </item>
@@ -449,7 +465,7 @@ enum DevelopmentLocalFeeds {
         }.joined(separator: "\n")
         let xml = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <rss version="2.0"><channel>
+        <rss version="2.0"\(DevelopmentLocalFeeds.mediaNamespace)><channel>
           <title>\(feedTitle)</title>
           <link>\(url.absoluteString)</link>
           <description>Fixture feed</description>

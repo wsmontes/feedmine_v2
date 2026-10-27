@@ -1,10 +1,24 @@
 import XCTest
 import Foundation
+import CoreGraphics
 import AVFoundation
 import MediaPlayer
+import UIKit
 import FeedMineDomain
 import FeedMineRuntime
 @testable import FeedMine
+
+/// Only the immutable, already-published artwork crosses into the background request. No metadata or adapter
+/// state is shared, and the SDK artwork has no mutation API used by this test.
+private struct BackgroundArtworkRequest: @unchecked Sendable {
+    let artwork: MPMediaItemArtwork
+
+    nonisolated func requestImage() -> (wasMainThread: Bool, pixels: CGImage?) {
+        let wasMainThread = Thread.isMainThread
+        let image = artwork.image(at: CGSize(width: 600, height: 600))
+        return (wasMainThread, image?.cgImage)
+    }
+}
 
 /// The app's player, driven through the same doors the system uses: V1's `AudioPlayerManager` behaviours — the
 /// lock screen's own metadata and commands, what an interruption and unplugged headphones do, and the position a
@@ -65,6 +79,17 @@ final class PlaybackTests: XCTestCase {
         return condition()
     }
 
+    /// Pixels of the kind the presentation admits: a real CGImage of the size V1 limited its lock-screen box to.
+    private func cover(pixels: Int = 1200, key: String? = nil) throws -> PresentationImage {
+        let context = try XCTUnwrap(CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.85, green: 0.2, blue: 0.55, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: pixels, height: pixels))
+        return PresentationImage.decoded(key: key ?? "cover-\(pixels)-\(UUID().uuidString)",
+            cgImage: try XCTUnwrap(context.makeImage()))
+    }
+
     /// Playing states the item, and the lock screen gets V1's own dictionary: title, rate, duration and the
     /// reader's key.
     func testPlayingStatesTheItemAndWhatTheLockScreenShows() async throws {
@@ -84,6 +109,8 @@ final class PlaybackTests: XCTestCase {
         XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "Feedmine")
         XCTAssertEqual(info[MPNowPlayingInfoPropertyAssetURL] as? String, item.url.absoluteString)
         XCTAssertEqual(info[MediaPlaybackAdapter.nowPlayingCardKey] as? String, item.cardID.rawValue.uuidString)
+        XCTAssertNil(info[MPMediaItemPropertyArtwork],
+            "an occurrence with no admitted image states none instead of drawing a fabricated cover")
 
         await adapter.seek(to: 6)
         await adapter.pause()
@@ -390,5 +417,130 @@ final class PlaybackTests: XCTestCase {
         adapter.teardown()
         XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
         XCTAssertEqual(adapter.state, .idle)
+    }
+
+    // MARK: - Artwork
+
+    /// V1 published the image its cache held; V2 publishes the pixels the played card was admitted with. The
+    /// dictionary's own card key is what proves the artwork belongs to this occurrence.
+    func testTheLockScreenCarriesThePlayingEpisodesArtwork() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let artwork = try cover()
+        let item = ReaderMediaItem(cardID: PublicationCardID(), url: try Self.silentWave(seconds: 2),
+            title: "Com capa", mimeType: "audio/wav", source: "O Programa", artwork: artwork)
+
+        try await adapter.play(item)
+        let published = await wait {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil
+        }
+        XCTAssertTrue(published, "the admitted pixels reach the lock screen")
+        let info = try XCTUnwrap(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+        XCTAssertEqual(info[MediaPlaybackAdapter.nowPlayingCardKey] as? String, item.cardID.rawValue.uuidString)
+        XCTAssertEqual(info[MPMediaItemPropertyArtist] as? String, "O Programa")
+
+        // A position tick must not drop the artwork the same item already published.
+        adapter.updateNowPlaying(force: true)
+        adapter.updateNowPlaying(force: true)
+        XCTAssertNotNil(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork],
+            "the published cover survives the clock")
+    }
+
+    /// MediaPlayer may synchronously request the published pixels from its own non-main queue.
+    func testPublishedArtworkCanBeRequestedFromABackgroundQueue() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let source = try cover(pixels: 1_200)
+        try await adapter.play(ReaderMediaItem(cardID: PublicationCardID(),
+            url: try Self.silentWave(seconds: 2), title: "Com capa", mimeType: "audio/wav", artwork: source))
+        let published = await wait {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil
+        }
+        XCTAssertTrue(published, "the real publication must supply the background request")
+        let artwork = try XCTUnwrap(
+            MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)
+        let request = BackgroundArtworkRequest(artwork: artwork)
+        let (wasMainThread, requestedPixels) = await Task.detached {
+            request.requestImage()
+        }.value
+        XCTAssertFalse(wasMainThread, "exercise the same isolation boundary as MediaPlayer's access queue")
+        let pixels = try XCTUnwrap(requestedPixels)
+        XCTAssertEqual(pixels.width, 600)
+        XCTAssertEqual(pixels.height, 600)
+        XCTAssertEqual(artwork.bounds.size, CGSize(width: 600, height: 600))
+
+        // Compare actual rendered RGBA values, not just the existence of an image or its dimensions.
+        func rgba(_ image: CGImage) throws -> [UInt8] {
+            let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+            let context = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: space,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+            return Array(UnsafeBufferPointer(start: bytes, count: 4))
+        }
+        let expected = try rgba(source.cgImage)
+        let actual = try rgba(pixels)
+        for channel in 0..<4 {
+            XCTAssertEqual(Double(actual[channel]), Double(expected[channel]), accuracy: 2,
+                "the background request retains the admitted cover's RGBA channel \(channel)")
+        }
+        XCTAssertEqual(actual[3], 255, "the returned cover remains opaque")
+    }
+
+    /// The completion is bound to the occurrence it was started for: a quick switch cannot paint the new episode
+    /// with the previous cover, even when the scaling task finishes after the switch.
+    func testANewEpisodeDoesNotInheritThePreviousArtwork() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let first = ReaderMediaItem(cardID: PublicationCardID(), url: try Self.silentWave(seconds: 2),
+            title: "A com capa", mimeType: "audio/wav", artwork: try cover())
+        try await adapter.play(first)
+        _ = await wait { MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil }
+
+        let second = try episode(title: "B sem capa")
+        try await adapter.play(second)
+        let switched = await wait {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo?[MediaPlaybackAdapter.nowPlayingCardKey] as? String
+                == second.cardID.rawValue.uuidString
+        }
+        XCTAssertTrue(switched, "the lock screen moved to the second episode")
+        // Give a late completion for the first item the chance to (wrongly) publish.
+        try await Task.sleep(for: .milliseconds(400))
+        let info = try XCTUnwrap(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+        XCTAssertEqual(info[MediaPlaybackAdapter.nowPlayingCardKey] as? String, second.cardID.rawValue.uuidString)
+        XCTAssertNil(info[MPMediaItemPropertyArtwork], "the previous cover cannot follow the new episode")
+    }
+
+    /// Stop is the reader ending playback: the lock screen keeps neither the item nor its artwork.
+    func testStoppingTakesTheArtworkAwayWithTheItem() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        try await adapter.play(ReaderMediaItem(cardID: PublicationCardID(),
+            url: try Self.silentWave(seconds: 2), title: "Com capa", mimeType: "audio/wav",
+            artwork: try cover()))
+        _ = await wait { MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil }
+
+        await adapter.stop()
+        XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo,
+            "nothing of the stopped episode is left on the lock screen")
+        XCTAssertEqual(adapter.state, .idle)
+    }
+
+    /// The scaling that keeps a hero cover off the render thread: only downwards, bounded by V1's 600 pt box.
+    func testArtworkIsScaledDownToTheLockScreenBoundAndNeverUpwards() throws {
+        let large = try cover(pixels: 1_200)
+        let scaled = MediaPlaybackAdapter.scaledArtwork(large.cgImage, maxPixel: 600)
+        XCTAssertEqual(max(scaled.width, scaled.height), 600)
+        XCTAssertEqual(scaled.width, scaled.height)
+
+        let small = try cover(pixels: 80)
+        let untouched = MediaPlaybackAdapter.scaledArtwork(small.cgImage, maxPixel: 600)
+        XCTAssertEqual(untouched.width, 80, "an image inside the bound is not resampled")
+        XCTAssertEqual(untouched.height, 80)
     }
 }

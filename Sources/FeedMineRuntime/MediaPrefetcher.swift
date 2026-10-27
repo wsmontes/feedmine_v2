@@ -46,6 +46,15 @@ public final class MediaReadiness: @unchecked Sendable {
         return settled.contains(revision)
     }
 
+    /// Whether this revision's settlement was **the feed declaring no card image** — the designed text case. It is
+    /// the one fact that separates "this feed is text by design" from "this feed declares images and they are not
+    /// here yet"; a caller deciding whether media work exists for a window needs it, and the readiness index is its
+    /// only owner. A revision that is unsettled, or that settled with a usable image, answers false.
+    public func isTextDeclared(_ revision: OriginRevisionID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return textDeclared.contains(revision)
+    }
+
     /// How many revisions this index has decided at all, and how many of those carry a prepared image. Stated for
     /// the device console's journey line (PO, 2026-10-15): the media pipeline's own numbers, so a run says what it
     /// really prepared instead of a second registry having to guess. No state is added — these read what the two
@@ -63,10 +72,14 @@ public final class MediaReadiness: @unchecked Sendable {
     /// failure cannot inherit "declared text" by omitting it and turn a missing image into `.textOnly`.
     @discardableResult
     func record(_ revision: OriginRevisionID, _ value: Ready?, textDeclared: Bool) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard !settled.contains(revision) else { return false }
+        lock.lock()
+        guard !settled.contains(revision) else { lock.unlock(); return false }
         settled.insert(revision)
         if let value { ready[revision] = value } else if textDeclared { self.textDeclared.insert(revision) }
+        // The decision is stored under the same lock a waiter registers under, so no waiter can miss it: the
+        // resume happens after unlocking, through the waiter's own exactly-once finish.
+        lock.unlock()
+        resumeSatisfiedWaiters()
         return true
     }
 
@@ -97,6 +110,173 @@ public final class MediaReadiness: @unchecked Sendable {
         case .thumbnail: return .image(value.result, layout: .thumbnail)
         case .unsuitable: return .textOnly
         }
+    }
+
+    /// Decoded, slot-sized pixels for the revisions that already carry a prepared image — the preparation page's
+    /// only image source. It decodes through the same `PresentationImageDecoder` that admission uses, from the
+    /// assets the media pipeline already materialized: no download, no second pipeline, and no image that was not
+    /// prepared. The decision is read under the lock; decoding happens outside it, because a decode is the one part
+    /// of this that is not a value read.
+    public func previewImages(for revisions: [OriginRevisionID], limit: Int,
+        decoder: PresentationImageDecoder) -> [PresentationImage] {
+        guard limit > 0 else { return [] }
+        var prepared: [(PublishedMediaKey, PresentationCardLayout)] = []
+        prepared.reserveCapacity(min(limit, revisions.count))
+        lock.lock()
+        for revision in revisions {
+            guard let value = ready[revision], case .usable(let asset) = value.result.state else { continue }
+            switch value.fit {
+            case .hero: prepared.append((asset.key, .hero))
+            case .thumbnail: prepared.append((asset.key, .thumbnail))
+            case .unsuitable: continue
+            }
+            if prepared.count >= limit { break }
+        }
+        lock.unlock()
+        var images: [PresentationImage] = []
+        images.reserveCapacity(prepared.count)
+        for (key, layout) in prepared {
+            guard let image = decoder.image(key: key, layout: layout) else { continue }
+            images.append(image)
+            if images.count >= limit { break }
+        }
+        return images
+    }
+
+    // MARK: - Bounded, event-driven preparation wait
+
+    /// One waiter. A class, not a struct, so the cancellation handler, the deadline racer and the registration
+    /// path observe the **same** state — and every one of them mutates it under `lock`.
+    private final class MediaWaiter: @unchecked Sendable {
+        let id: UInt64
+        let revisions: [OriginRevisionID]
+        let target: Int
+        var continuation: CheckedContinuation<Int, Never>?
+        var timer: Task<Void, Never>?
+        var cancelled = false
+        var finished = false
+
+        init(id: UInt64, revisions: [OriginRevisionID], target: Int) {
+            self.id = id; self.revisions = revisions; self.target = target
+        }
+    }
+
+    private var waiters: [UInt64: MediaWaiter] = [:]
+    private var nextWaiterID: UInt64 = 0
+
+    /// How many waits are registered right now. Internal, for the tests that prove a cancelled or satisfied wait
+    /// leaves nothing behind — the one fact a leak would show.
+    var outstandingWaiterCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return waiters.count
+    }
+
+    /// Waits until `target` of these revisions carry a **usable prepared image**, **or** every one of them is
+    /// settled (so nothing more can arrive), **or** the deadline passes — whichever comes first.
+    ///
+    /// `target` counts image presentations only: a revision settled as text-by-design or as an unsuitable bitmap is
+    /// decided, but it is not an image card, so it never satisfies an image target.
+    ///
+    /// Every shared read and write happens under `lock`; the continuation is stored in the same critical section
+    /// that registers the waiter, so a `record` can never miss it. Cancellation is handled through the waiter's own
+    /// state: arriving before registration marks it cancelled and the registration path resumes immediately;
+    /// arriving after it resumes through the same exactly-once `finish`. The deadline is a second racer whose task
+    /// is retained and cancelled when the waiter ends — no orphan task, no leaked continuation.
+    public func waitForPrepared(_ revisions: [OriginRevisionID], atLeast target: Int,
+        until deadline: ContinuousClock.Instant) async -> Int {
+        guard !revisions.isEmpty, target > 0 else { return 0 }
+        let unique = Array(Set(revisions))
+        let clock = ContinuousClock()
+        let waiter: MediaWaiter? = {
+            lock.lock(); defer { lock.unlock() }
+            if imageCountLocked(unique) >= target || allSettledLocked(unique) { return nil }
+            if clock.now >= deadline { return nil }
+            nextWaiterID &+= 1
+            let waiter = MediaWaiter(id: nextWaiterID, revisions: unique, target: target)
+            waiters[waiter.id] = waiter
+            return waiter
+        }()
+        guard let waiter else { return currentImageCount(unique) }
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Int, Never>) in
+                lock.lock()
+                if waiter.cancelled || waiter.finished {
+                    // Cancelled (or finished by a settlement) before the continuation existed: resume here, and
+                    // leave nothing registered.
+                    waiter.finished = true
+                    waiters.removeValue(forKey: waiter.id)
+                    let count = imageCountLocked(unique)
+                    lock.unlock()
+                    continuation.resume(returning: count)
+                    return
+                }
+                waiter.continuation = continuation
+                let timer = Task { [weak self] in
+                    guard !Task.isCancelled else { return }
+                    try? await Task.sleep(until: deadline, clock: clock)
+                    guard !Task.isCancelled else { return }
+                    self?.finishWaiter(waiter, cancelled: false)
+                }
+                waiter.timer = timer
+                lock.unlock()
+            }
+            return currentImageCount(unique)
+        } onCancel: {
+            self.finishWaiter(waiter, cancelled: true)
+        }
+    }
+
+    /// The number of **usable** prepared images among these revisions. Never counted from `settled`: a text-only
+    /// decision and an unsuitable bitmap are decisions without pixels.
+    private func imageCountLocked(_ revisions: [OriginRevisionID]) -> Int {
+        var count = 0
+        for revision in revisions {
+            guard let value = ready[revision] else { continue }
+            if value.fit != .unsuitable { count += 1 }
+        }
+        return count
+    }
+
+    private func currentImageCount(_ revisions: [OriginRevisionID]) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return imageCountLocked(revisions)
+    }
+
+    private func allSettledLocked(_ revisions: [OriginRevisionID]) -> Bool {
+        for revision in revisions where !settled.contains(revision) { return false }
+        return true
+    }
+
+    /// Ends one waiter exactly once: removes it, cancels its deadline task and resumes its continuation outside the
+    /// lock. Idempotent, because a settlement, the deadline and cancellation can all race for the same waiter.
+    private func finishWaiter(_ waiter: MediaWaiter, cancelled: Bool) {
+        lock.lock()
+        if cancelled { waiter.cancelled = true }
+        guard !waiter.finished else { lock.unlock(); return }
+        waiter.finished = true
+        waiters.removeValue(forKey: waiter.id)
+        let continuation = waiter.continuation
+        waiter.continuation = nil
+        let timer = waiter.timer
+        waiter.timer = nil
+        let count = imageCountLocked(waiter.revisions)
+        lock.unlock()
+        timer?.cancel()
+        continuation?.resume(returning: count)
+    }
+
+    /// Resumes every waiter whose condition the just-recorded decision satisfied. Called **without** the lock (it
+    /// takes it per waiter and resumes outside it).
+    private func resumeSatisfiedWaiters() {
+        lock.lock()
+        let satisfied = waiters.values.filter { waiter in
+            !waiter.finished && !waiter.cancelled
+                && (imageCountLocked(waiter.revisions) >= waiter.target
+                    || allSettledLocked(waiter.revisions))
+        }
+        lock.unlock()
+        for waiter in satisfied { finishWaiter(waiter, cancelled: false) }
     }
 }
 

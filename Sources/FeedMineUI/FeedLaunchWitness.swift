@@ -25,6 +25,7 @@
 
 #if DEBUG
 import Foundation
+import Observation
 
 /// The reader's relaunch, as the app itself saw it.
 ///
@@ -73,7 +74,16 @@ public enum FeedLaunchWitness {
     /// It is deliberately **not** the first layout pass: the product holds the preparation surface over the cards
     /// while the layout is proven, so a layout that was measured under the cover was never a first screen. The proof
     /// must observe the exposure.
-    private static var firstExposure: (count: Int, contentBottom: Double, viewportHeight: Double)?
+    /// The filter-change preparation page: a new feed being made for a context the reader just chose. Recorded once
+    /// per process, and only when the page was really drawn.
+    public private(set) static var filterPreparationShown = 0
+    public static func noteFilterPreparation() {
+        filterPreparationShown += 1
+        revision.bump()
+    }
+
+    private static var firstExposure: (count: Int, contentBottom: Double, viewportHeight: Double,
+        images: Int, providers: Int, ahead: Int, published: Int, batchReached: Bool, reason: String, hold: Double)?
 
     /// The origin every fact is stated from. The app arms it at the very top of its own construction
     /// (`FeedMineApp.init`), so the record's numbers read as "milliseconds since this launch began".
@@ -88,6 +98,32 @@ public enum FeedLaunchWitness {
     }
     private static var origin: Double?
 
+    /// The record's own version, bumped by the facts that change it and **only** by them. A debug surface observes
+    /// this instead of polling: the witness's `static var` writes are not observable by SwiftUI, and a periodic read
+    /// was both a timer and a lie (it re-read the same string every second while the facts never changed).
+    ///
+    /// It is diagnostics, not policy: nothing reads it to decide anything, and bumping it starts no work.
+    @MainActor
+    @Observable
+    public final class RecordRevision {
+        /// The version a reader observes. Written through its setter, never read to compute the next value.
+        public private(set) var value: UInt64 = 0
+        /// The increment's own storage. `@ObservationIgnored` is the point: `value &+= 1` is a **read** of `value`,
+        /// and a read performed while a view body is running (the host's `note(branch)` does exactly that) enrols
+        /// that view in the observation — the next bump then invalidated it, its body noted the branch again, and
+        /// the record spun (measured 2026-10-27: the main runloop was busy for 30 s and the journey could not even
+        /// match a snapshot). This counter is not observed, so stating a branch never subscribes to the record.
+        @ObservationIgnored private var serial: UInt64 = 0
+
+        public init() {}
+
+        func bump() {
+            serial &+= 1
+            value = serial
+        }
+    }
+    public static let revision = RecordRevision()
+
     /// One pass of the host's own body, stating what it is drawing. Called once per pass; a pass that draws the
     /// reader's feed is not a wait, and a pass that draws neither is not evidence about either.
     public static func note(_ branch: Branch) {
@@ -98,6 +134,7 @@ public enum FeedLaunchWitness {
         case .cards(let count):
             guard firstCards == nil else { return }
             firstCards = (count, elapsedMilliseconds())
+            revision.bump()
         }
     }
 
@@ -105,9 +142,32 @@ public enum FeedLaunchWitness {
     /// `FeedScreen` states it once, at that moment, from the measurements it made under the preparation surface. The
     /// first value is kept, so a later scroll or window change cannot rewrite what the first screen showed. The count
     /// is a fact about that layout (its distinct cards), never a threshold: the criterion is the geometry.
-    public static func noteFirstExposure(cardCount: Int, contentBottom: Double, viewportHeight: Double) {
+    /// Why the reading surface was exposed. It is the honest answer to "did the page do its job, or did a bound end
+    /// the wait?" — a ceiling or stall fallback is recorded as such, never reported as a quality page.
+    public enum ExposureReason: String, Sendable {
+        case initialLoad = "initial"
+        case filterChange = "filter"
+        /// The stall ended the wait: no card, no lower bottom and no newly prepared image for the tolerance.
+        case stallFallback = "stall"
+        /// The total ceiling ended the wait, whatever the pipeline was still doing.
+        case ceilingFallback = "ceiling"
+        /// The reading surface was exposed while a content target was still unmet — the publisher ended, or the
+        /// pipeline stopped. It is a fallback and is recorded as one, never as a page that met its targets.
+        case partialContent = "partial"
+        /// A relaunch on an installed window: no page was ever drawn for it.
+        case immediateResume = "resume"
+    }
+
+    /// The first exposure's content facts, recorded with its geometry. `published`/`ahead` are the **publication's**
+    /// own counts, `images`/`providers` the published page's, `hold` is how long the page was up, and `reason` says
+    /// which exit exposed the surface. Diagnostics only: nothing reads this to decide anything.
+    public static func noteFirstExposure(cardCount: Int, contentBottom: Double, viewportHeight: Double,
+        images: Int = 0, providers: Int = 0, ahead: Int = 0, published: Int = 0, batchReached: Bool = false,
+        reason: ExposureReason = .initialLoad, holdMilliseconds: Double = 0) {
         guard firstExposure == nil, cardCount > 0, contentBottom.isFinite, viewportHeight.isFinite else { return }
-        firstExposure = (cardCount, contentBottom, viewportHeight)
+        firstExposure = (cardCount, contentBottom, viewportHeight, images, providers, ahead, published,
+            batchReached, reason.rawValue, holdMilliseconds)
+        revision.bump()
     }
 
     private static func noteWaitSurface(_ kind: String) {
@@ -115,6 +175,7 @@ public enum FeedLaunchWitness {
         waitPasses += 1
         lastWaitAt = now
         if firstWait == nil { firstWait = (kind, now) }
+        revision.bump()
     }
 
     /// The record as one line, for a run's output: fields a script can read.
@@ -129,6 +190,11 @@ public enum FeedLaunchWitness {
             + " content_bottom=\(exposure.map { clock($0.contentBottom) } ?? "n/a")"
             + " viewport_height=\(exposure.map { clock($0.viewportHeight) } ?? "n/a")"
             + " render_ready_cards=\(exposure?.count ?? 0)"
+            + " images=\(exposure?.images ?? 0) providers=\(exposure?.providers ?? 0) ahead=\(exposure?.ahead ?? 0)"
+            + " published=\(exposure?.published ?? 0)"
+            + " batch_reached=\((exposure?.batchReached ?? false) ? 1 : 0)"
+            + " reason=\(exposure?.reason ?? "n/a") hold_ms=\(exposure.map { clock($0.hold) } ?? "n/a")"
+            + " filter_page=\(filterPreparationShown)"
     }
 
     /// Whether the reader's first reading surface was already their feed: no wait surface was rendered at all, or
@@ -152,7 +218,9 @@ public enum FeedLaunchWitness {
         lastWaitAt = nil
         firstCards = nil
         firstExposure = nil
+        filterPreparationShown = 0
         origin = nil
+        revision.bump()
     }
 
     private static func elapsedMilliseconds() -> Double {

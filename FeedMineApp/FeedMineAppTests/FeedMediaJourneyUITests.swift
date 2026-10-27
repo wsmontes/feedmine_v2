@@ -648,7 +648,7 @@ final class FeedMediaJourneyUITests: XCTestCase {
         open.tap()
         let surfaceDeadline = Date().addingTimeInterval(budget(25))
         while Date() < surfaceDeadline {
-            if app.buttons["URL"].exists || app.webViews.firstMatch.exists { break }
+            if app.staticTexts["reading.web-source"].exists || app.webViews.firstMatch.exists { break }
             if app.staticTexts["reading.headline"].exists { break }
             Thread.sleep(forTimeInterval: 0.5)
         }
@@ -660,7 +660,7 @@ final class FeedMediaJourneyUITests: XCTestCase {
     }
 
     private func browserAddress(_ app: XCUIApplication, within seconds: TimeInterval) -> String? {
-        let control = app.buttons["URL"].firstMatch
+        let control = app.staticTexts["reading.web-source"].firstMatch
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             if control.exists {

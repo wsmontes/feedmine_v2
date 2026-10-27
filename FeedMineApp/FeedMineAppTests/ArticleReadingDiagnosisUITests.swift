@@ -30,8 +30,9 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
     /// store makes it absent, which is exactly what happened to the real-article question below.
     private static let readerWithContent = "3E1B4C1A-6F2D-4A5B-9C7E-8D5A2F0B7C31"
 
-    /// The site's control, as `SFSafariViewController` labels it on this device.
-    private func siteReaderClose(_ app: XCUIApplication) -> XCUIElement { app.buttons["Close"] }
+    /// The reader sheet's own close control — kept as the convenient fallback now that the site opens in the app's
+    /// own sheet instead of `SFSafariViewController`.
+    private func siteReaderClose(_ app: XCUIApplication) -> XCUIElement { app.buttons["reading.close"] }
 
     /// The card's own *open* control. `FeedItemCardView.openingSurface` names it `card.open`; the compact row
     /// answers the same tap with a gesture and has no control of its own, hence the card itself.
@@ -664,10 +665,10 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
     }
 
     /// Polls instead of sleeping: the number reported has to be the reader's own latency, not the test's patience.
-    /// Both reader surfaces count: `Close` is `SFSafariViewController`'s control, `reading.close` and the body are
-    /// the app's own local reading surface.
+    /// Both reader pages count: the local text page (`reading.body`) and the publisher page, which is the app's own
+    /// `WKWebView` (`reading.web` / `webViews`). `reading.close` is the sheet's kept control.
     private func readerIsUp(_ app: XCUIApplication) -> Bool {
-        app.buttons["Close"].exists || app.buttons["reading.close"].exists
+        app.buttons["reading.close"].exists
             || app.staticTexts["reading.body"].exists || app.webViews.count > 0
     }
 
@@ -698,7 +699,7 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         let controls = snapshot.children
             .filter { $0.elementType == .button && $0.frame.minY < 110 }
             .map { "\($0.identifier.isEmpty ? "-" : $0.identifier)/\($0.label)" }
-        let address = app.buttons["URL"].firstMatch
+        let address = app.staticTexts["reading.web-source"].firstMatch
         let value = address.exists ? String(describing: address.value) : "none"
         return "controls=[\(controls.joined(separator: ", "))] address=\(value)"
     }

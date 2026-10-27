@@ -123,6 +123,77 @@ final class FeedVisibleExperienceUITests: XCTestCase {
             + "\(violations.joined(separator: " | ")) — record=\(record.raw) json=\(line)")
     }
 
+    // MARK: - 1b. The page that is made before it
+
+    /// Next-experience: a new feed is not shown as a trickle. The app's own first-exposure record must state an
+    /// image-bearing, buffered, multi-source page, and the **reason** the reading surface was exposed must be the
+    /// page meeting its targets — not a bound that ended the wait. A `reason=stall`/`ceiling` result fails this test
+    /// on purpose: those are honest fallbacks, and they are not the quality claim.
+    func testFirstExposureIsImageRichBufferedAndNotAFallback() throws {
+        let app = XCUIApplication()
+        let namespace = UUID().uuidString
+        var environment = configured(app, namespace: namespace, items: "16")
+        environment["FEEDMINE_FIXTURE_MEDIA"] = "image"
+        // One feed answers eight seconds late: slower than the 5 s stall and slower than the media budget, so the
+        // first exposure exercises a real producer still fetching instead of a page that only had to wait for print.
+        environment["FEEDMINE_SLOW_FEED_SECONDS"] = "8"
+        for (key, value) in environment { app.launchEnvironment[key] = value }
+        app.launch()
+
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 120), "o feed precisa chegar à tela")
+        let record = try launchRecord(app, name: "next-experience-first-exposure", waitForExposure: true)
+
+        func integer(_ field: String) -> Int? {
+            record.raw.split(separator: " ").map(String.init).first { $0.hasPrefix(field + "=") }
+                .flatMap { Int($0.dropFirst(field.count + 1)) }
+        }
+        func text(_ field: String) -> String? {
+            record.raw.split(separator: " ").map(String.init).first { $0.hasPrefix(field + "=") }
+                .map { String($0.dropFirst(field.count + 1)) }
+        }
+
+        let cards = record.cards
+        let images = integer("images") ?? -1
+        let providers = integer("providers") ?? -1
+        let ahead = integer("ahead") ?? -1
+        let published = integer("published") ?? -1
+        let reason = text("reason") ?? "n/a"
+        let waitPasses = record.waitPasses
+
+        var violations: [String] = []
+        if waitPasses < 1 { violations.append("no waiting surface was ever drawn; the page was never exercised") }
+        // `cards` is the **laid-out** count (a lazy list draws ~3). It is recorded as information and deliberately
+        // not asserted: the buffer is measured on the publication, below.
+        if cards < 1 { violations.append("the first exposure recorded no laid-out card at all") }
+        if published < 12 {
+            violations.append("the publication held \(published) cards (< 12; the fixture offers 16 per source)")
+        }
+        if images < 6 { violations.append("first exposure carried \(images) image cards (< 6)") }
+        if providers < 2 { violations.append("first exposure carried \(providers) providers (< 2, the fixture's supply)") }
+        if ahead < 12 { violations.append("first exposure published \(ahead) cards ahead of the anchor (< 12)") }
+        if reason != "initial" {
+            violations.append("the reading surface was exposed by \(reason), not by the page meeting its targets")
+        }
+        if record.contentBottom == nil || record.viewportHeight == nil {
+            violations.append("the record did not capture the first exposure's geometry")
+        } else if let bottom = record.contentBottom, let height = record.viewportHeight, bottom < height - 1 {
+            violations.append("the first exposure stops at \(compact(bottom)) pt of a \(compact(height)) pt viewport")
+        }
+
+        let evidence: [String: Any] = [
+            "test": "next-experience-first-exposure", "namespace": namespace, "env": environment,
+            "launch_record": record.raw, "cards": cards, "images": images, "providers": providers,
+            "ahead": ahead, "published": published, "reason": reason, "wait_passes": waitPasses,
+            "violations": violations
+        ]
+        let line = jsonLine(evidence)
+        print("NEXT_EXPERIENCE_FIRST_EXPOSURE_JSON=\(line)")
+        attach(app, name: "next-experience-first-exposure", json: line)
+        XCTAssertTrue(violations.isEmpty, "a primeira exposição não é uma página pronta: "
+            + "\(violations.joined(separator: " | ")) — record=\(record.raw) json=\(line)")
+    }
+
     // MARK: - 2. The visible failure
 
     /// The transport fault is the app's own fixture transport, made to fail until the reader's retry: the first
@@ -166,7 +237,8 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         #if DEBUG
         let recordElement = app.descendants(matching: .any)["feed-launch-record"]
         recordAvailable = recordElement.waitForExistence(timeout: 5)
-        record = recordAvailable ? try launchRecord(app, name: "published-first-screen") : nil
+        XCTAssertTrue(recordAvailable, "Debug must report the actual exposure, not silently substitute AX geometry")
+        record = recordAvailable ? try launchRecord(app, name: "published-first-screen", waitForExposure: true) : nil
         #else
         recordAvailable = false
         record = nil
@@ -185,16 +257,35 @@ final class FeedVisibleExperienceUITests: XCTestCase {
             violations.append("o primeiro conteúdo apresentado termina em \(compact(contentBottom)) pt de um "
                 + "viewport de \(compact(viewportHeight)) pt: \(compact(viewportHeight - contentBottom)) pt vazios")
         }
-        attach(app, name: "published-first-screen",
-            json: jsonLine(["namespace": recordAvailable ? namespace : "fresh-device-default-container",
-                "measurement": recordAvailable ? "app-record" : "native-AX",
-                "cards": cards, "content_bottom": contentBottom,
-                "viewport_height": viewportHeight, "render_ready": record?.renderReadyCards ?? -1,
-                "threshold_points": viewportHeight,
-                "threshold_basis": recordAvailable
-                    ? "app record viewport_height (proof.height)" :
-                    "AX ScrollView height; the app proof.height is smaller by the bottom inset",
-                "launch_record": record?.raw ?? "", "violations": violations]))
+        // Geometry is not a live image-quality proof. Record the independent quality facts without promising
+        // that variable public supply meets them; the controlled first-exposure test asserts those floors.
+        let images = record?.value("images").flatMap(Int.init) ?? -1
+        let providers = record?.value("providers").flatMap(Int.init) ?? -1
+        let ahead = record?.value("ahead").flatMap(Int.init) ?? -1
+        let published = record?.value("published").flatMap(Int.init) ?? -1
+        let reason = record?.value("reason") ?? "not_measured"
+        if recordAvailable {
+            if images < 0 || providers < 0 || ahead < 0 || published < 1 || reason == "n/a" {
+                violations.append("the exposure witness omitted image/provider/buffer facts: \(record?.raw ?? "")")
+            }
+        }
+        let evidence: [String: Any] = [
+            "namespace": recordAvailable ? namespace : "fresh-device-default-container",
+            "measurement": recordAvailable ? "app-record" : "native-AX",
+            "cards": cards, "content_bottom": contentBottom,
+            "viewport_height": viewportHeight, "render_ready": record?.renderReadyCards ?? -1,
+            "images_first12": images, "providers": providers, "ahead": ahead, "published": published,
+            "exposure_reason": reason, "hold_ms": record?.value("hold_ms").flatMap(Int.init) ?? -1,
+            "quality_measured": recordAvailable, "quality_asserted": false,
+            "threshold_points": viewportHeight,
+            "threshold_basis": recordAvailable
+                ? "app record viewport_height (proof.height)" :
+                "AX ScrollView height; the app proof.height is smaller by the bottom inset",
+            "launch_record": record?.raw ?? "", "violations": violations
+        ]
+        let line = jsonLine(evidence)
+        print("PUBLISHED_FIRST_SCREEN_JSON=\(line)")
+        attach(app, name: "published-first-screen", json: line)
         XCTAssertTrue(violations.isEmpty, "published-first-screen: " + violations.joined(separator: " | "))
     }
 
@@ -666,12 +757,26 @@ final class FeedVisibleExperienceUITests: XCTestCase {
     }
 
     /// The record is an invisible text the app publishes (`feed-launch-record`). With `waitForCards` the read waits
-    /// until the first pass that carried cards is on the record — the fact the first-screen test judges.
+    /// until the first pass that carried cards is on the record; with `waitForExposure` it waits until the **first
+    /// exposure** is on the record (geometry and a reason), which is a later fact — the exposure is written when the
+    /// measured layout settles, so reading the label before it exists would judge a launch that has not finished.
     private func launchRecord(_ app: XCUIApplication, name: String,
-        waitForCards: Bool = true) throws -> LaunchRecord {
+        waitForCards: Bool = true, waitForExposure: Bool = false) throws -> LaunchRecord {
         let element = app.descendants(matching: .any)["feed-launch-record"]
         XCTAssertTrue(element.waitForExistence(timeout: 60), "\(name): o registro do próprio app é publicado")
-        if waitForCards {
+        if waitForExposure {
+            // One bounded, **unordered** wait: the record writes its fields in one line, and three sequential waits
+            // (plus a redundant cards wait) spent the budget three times over on a record that had not been
+            // re-stated yet. The fields are the same facts the quality assertions then read.
+            let fields = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "label MATCHES %@", ".*content_bottom=-?[0-9].*"),
+                NSPredicate(format: "NOT (label CONTAINS %@)", "reason=n/a"),
+                NSPredicate(format: "label MATCHES %@", ".*published=[0-9]+.*")
+            ])
+            let exposure = XCTNSPredicateExpectation(predicate: fields, object: element)
+            XCTAssertEqual(XCTWaiter.wait(for: [exposure], timeout: 60), .completed,
+                "\(name): the record never published a complete first exposure: \(element.label)")
+        } else if waitForCards {
             let settled = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "label MATCHES %@", ".*cards=[1-9].*content_bottom=-?[0-9].*"), object: element)
             _ = XCTWaiter.wait(for: [settled], timeout: 60)

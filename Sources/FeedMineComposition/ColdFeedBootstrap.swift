@@ -57,6 +57,28 @@ public enum ColdFeedBootstrapOutcome: Hashable, Sendable {
     case noPublicationAfterAcquisition(LocalProductionProgress, [AcquisitionExecutionResult])
 }
 
+/// The **one** media budget of a whole first publication.
+///
+/// It is fixed the first time there is actually something to wait for — the first window with candidates — and never
+/// again: eight empty windows cannot add up to eight budgets, and media acquired *later* (the acquisition round's
+/// own supply) still gets a real opportunity from that same clock instead of a budget that expired before it existed.
+final class PublicationMediaBudget: @unchecked Sendable {
+    private let duration: Duration
+    private let lock = NSLock()
+    private var boundAt: ContinuousClock.Instant?
+
+    init(duration: Duration) { self.duration = duration }
+
+    /// The shared instant this budget runs out at; computed once, under the lock, on first use.
+    func instant() -> ContinuousClock.Instant {
+        lock.lock(); defer { lock.unlock() }
+        if let boundAt { return boundAt }
+        let instant = ContinuousClock.now + duration
+        boundAt = instant
+        return instant
+    }
+}
+
 /// PD-3: real first-launch evidence for an entertaining, honest preparation screen.
 public enum ColdFeedEvidence: Hashable, Sendable {
     case contacting([AcquisitionTargetID])
@@ -64,6 +86,10 @@ public enum ColdFeedEvidence: Hashable, Sendable {
     case preparingMedia
     /// Review F06: the first Edition is installed; slower feeds are still answering.
     case published(FeedPresentationSnapshot)
+    /// The **identities** the first publication wrote, stated before the snapshot is admitted. It is the same fact
+    /// a later segment's receipt carries, and it is what lets the first screen measure its buffer on the publication
+    /// instead of on the admitted window.
+    case publishedCards([PublicationCardID])
 }
 
 /// First-publication result shared by the per-target callbacks (serialized by the coordinator).
@@ -103,6 +129,9 @@ private final class ColdPublicationAuthority: @unchecked Sendable {
         return try operation()
     }
 
+    /// The wait below is not a publication commit, but it must still stop when the bootstrap was closed: an
+    /// abandoned association may not keep decoding media for a context that is no longer on screen.
+    func ensureActive() throws { _ = try perform {} }
     func currentCursor() throws -> CandidateSupplyCursor? { try perform { cursor } }
     func restartExamination() throws { try perform { cursor = nil } }
     func examine(after expectedCursor: CandidateSupplyCursor?,
@@ -130,6 +159,13 @@ public struct ColdFeedBootstrap: Sendable {
     private let coordinator: AcquisitionCoordinator
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
     private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
+    /// The index the first publication waits on. It is the same object the slice reads, so the wait and the
+    /// selection can never disagree about what is ready.
+    private let readiness: MediaReadiness?
+    /// How many prepared images the first publication wants before it examines, and the **one** budget for it.
+    /// The budget is spent across every window this run walks: a second window does not renew it.
+    private let firstPublicationMediaTarget: Int
+    private let firstPublicationMediaBudget: Duration?
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let evidence: (@Sendable (ColdFeedEvidence) async -> Void)?
     /// The durable ingestion fact of every per-target result whose selectable supply changed. It is stated to the
@@ -150,12 +186,20 @@ public struct ColdFeedBootstrap: Sendable {
         // The same cap the live walk uses: the first publication may not publish more cards than the reserve target
         // the host states. Nil keeps the uncapped first publication; a capped one leaves the rest ready.
         publicationLimit: Int? = nil,
+        // The first screen's own priority: wait for this many prepared images (clamped to the candidates this
+        // window actually offers) but only until the shared bound below. Nil budget keeps the previous
+        // behavior — examine what is ready and never wait.
+        firstPublicationMediaTarget: Int = 6,
+        firstPublicationMediaBudget: Duration? = nil,
         // The ingestion receipt this run produces for the consumer that owns local work. `selectableSupplyChanged` is
         // the same durable fact this bootstrap uses to reopen its own examination; the composition states it to the
         // driver so the walk the first drive declared exhausted can be reopened by supply that arrived later.
         onDurableSupply: (@Sendable () async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
         self.makeMediaOpportunity = makeMediaOpportunity
+        self.readiness = readiness
+        self.firstPublicationMediaTarget = max(1, firstPublicationMediaTarget)
+        self.firstPublicationMediaBudget = firstPublicationMediaBudget
         self.onDiscoveryPage = onDiscoveryPage
         self.onDurableSupply = onDurableSupply
         self.evidence = evidence
@@ -178,10 +222,13 @@ public struct ColdFeedBootstrap: Sendable {
             await onDiscoveryPage?(page.entries)
         }
         let mediaOpportunity = await makeMediaOpportunity?()
+        // One budget for the whole first publication, fixed at the first window that has something to wait for.
+        let mediaBudget = firstPublicationMediaBudget.map { PublicationMediaBudget(duration: $0) }
         let firstProgress: LocalProductionProgress
         switch try await attemptFirstPublication(identity: identity, resources: resources,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
-            keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity) {
+            keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity,
+            mediaBudget: mediaBudget) {
         case .published(let snapshot): return .published(snapshot)
         case .notYet(let progress):
             guard progress.exhausted else { return .localWorkRemaining(progress) }
@@ -240,7 +287,8 @@ public struct ColdFeedBootstrap: Sendable {
             try self.authority.restartExamination()
             if case .published(let snapshot) = try await self.attemptFirstPublication(identity: identity, resources: resources,
                 backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
-                keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity) {
+                keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity,
+                mediaBudget: mediaBudget) {
                 first.snapshot = snapshot
                 await evidence?(.published(snapshot))
             }
@@ -250,7 +298,8 @@ public struct ColdFeedBootstrap: Sendable {
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
         switch try await attemptFirstPublication(identity: identity, resources: resources,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
-            keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity) {
+            keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity,
+            mediaBudget: mediaBudget) {
         case .published(let snapshot): return .published(snapshot)
         case .notYet(let progress): return .noPublicationAfterAcquisition(progress, results)
         }
@@ -260,7 +309,8 @@ public struct ColdFeedBootstrap: Sendable {
     /// A pending head advances examination without reserving an Edition or reader position.
     private func attemptFirstPublication(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
         backwardCapacity: Int, forwardCapacity: Int, keepsAdmittedHead: Bool,
-        remainingWindows: Int? = nil, mediaOpportunity: MediaPreparationOpportunity? = nil) async throws -> PublicationAttempt {
+        remainingWindows: Int? = nil, mediaOpportunity: MediaPreparationOpportunity? = nil,
+        mediaBudget: PublicationMediaBudget? = nil) async throws -> PublicationAttempt {
         try Task.checkCancellation()
         let remaining = remainingWindows ?? resources.localWindowCapacity
         let after = try authority.currentCursor()
@@ -268,13 +318,28 @@ public struct ColdFeedBootstrap: Sendable {
         let outcome: InitialProductionSliceOutcome
         let mediaRevisions = try initialProductionSlice.revisionsToPrepare(for: request)
         if let mediaOpportunity, !mediaRevisions.isEmpty {
-            // R07: the first screen states its priority and examines what is ready; it never waits for media.
+            // The first screen states its priority: it asks for the images of the window it is about to examine and
+            // then **waits, bounded**, for them. Publishing a sparse page and hoping images arrive later was the
+            // measured cause of a text-only first screen (only what happened to be ready got published), so the
+            // wait is what makes an image-bearing first page possible.
             await evidence?(.preparingMedia)
             mediaOpportunity.request(mediaRevisions)
+            if let readiness, let mediaBudget {
+                // The target is clamped to this window's own candidate count: a window that offers three stories
+                // is not a failure to find six images, and must not spend the budget waiting for them.
+                let target = min(firstPublicationMediaTarget, mediaRevisions.count)
+                _ = await readiness.waitForPrepared(mediaRevisions, atLeast: target, until: mediaBudget.instant())
+                try Task.checkCancellation()
+                try authority.ensureActive()
+            }
         }
         outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
         switch outcome {
-        case .published:
+        case .published(_, let receipt):
+            // The publication's own identity leaves here, before the snapshot is admitted: the recipient counts the
+            // first Edition's cards the same way it counts every later segment's. Without it the first screen's
+            // buffer could only be measured on the admitted window (≤17), which is not what the publication holds.
+            await evidence?(.publishedCards(receipt.cardIDs))
             guard case .published(let snapshot) = try await installedPublication(identity: identity,
                 backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
                 keepsAdmittedHead: keepsAdmittedHead) else {
@@ -288,7 +353,8 @@ public struct ColdFeedBootstrap: Sendable {
             return try await attemptFirstPublication(identity: identity, resources: resources,
                 backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
                 keepsAdmittedHead: keepsAdmittedHead,
-                remainingWindows: remaining - 1, mediaOpportunity: mediaOpportunity)
+                remainingWindows: remaining - 1, mediaOpportunity: mediaOpportunity,
+                mediaBudget: mediaBudget)
         }
     }
 

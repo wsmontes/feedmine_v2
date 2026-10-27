@@ -24,14 +24,25 @@ public enum ReaderMediaIntentOutcome: Equatable, Sendable {
     case unavailable(String, presentedByBar: Bool)
 }
 
+/// The playing occurrence's cover, when the host can name pixels the presentation already admitted. The provider
+/// must return a value it already holds (the admitted card's image, or the persisted asset decoded once) and must
+/// never download or decode per clock tick: the player publishes the same immutable image for the whole episode.
+public typealias ReaderMediaArtworkProvider = @MainActor (PublicationCardID) async -> PresentationImage?
+
 @MainActor
 public final class ReaderMediaCoordinator {
     private let database: RuntimeDatabase
     private let player: any ReaderMediaPlaying
+    private let artworkProvider: ReaderMediaArtworkProvider?
 
-    public init(database: RuntimeDatabase, player: any ReaderMediaPlaying) {
+    /// `artworkProvider` is optional so an existing host keeps compiling and a card whose cover is not available
+    /// still plays: the surfaces then draw V1's waveform instead of claiming an image. The host supplies it so the
+    /// coordinator never learns how images are stored.
+    public init(database: RuntimeDatabase, player: any ReaderMediaPlaying,
+        artworkProvider: ReaderMediaArtworkProvider? = nil) {
         self.database = database
         self.player = player
+        self.artworkProvider = artworkProvider
     }
 
     public var state: ReaderMediaState { player.state }
@@ -69,14 +80,17 @@ public final class ReaderMediaCoordinator {
         try await player.play(mediaItem(cardID: cardID))
     }
 
-    /// The occurrence's own playable payload, resolved once per intent.
+    /// The occurrence's own playable payload, resolved once per intent. The cover is whatever the host can name
+    /// for the same published card in the same pass, never a second lookup the player would repeat per tick.
     private func mediaItem(cardID: PublicationCardID) async throws -> ReaderMediaItem {
         let target = try await ReaderActionCoordinator(database: database).perform(.openMedia, cardID: cardID)
         guard case .media(let media) = target else {
             throw ReaderActionError.actionUnavailable(.openMedia)
         }
+        var artwork: PresentationImage?
+        if let artworkProvider { artwork = await artworkProvider(cardID) }
         return ReaderMediaItem(cardID: cardID, url: media.url, title: media.title,
-            mimeType: media.mimeType, source: media.source)
+            mimeType: media.mimeType, source: media.source, artwork: artwork)
     }
 
     public func pause() async { await player.pause() }

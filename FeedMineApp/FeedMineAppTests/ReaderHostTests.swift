@@ -2,19 +2,18 @@
 // File: ReaderHostTests.swift
 // Module: FeedMineAppTests
 //
-// The reader host's own presentation, proved in process: one page at a time, one presentation of it, and the
-// question of whether the reader is up answered only by what the platform reported. The platform acts are
-// replaced by a double because a presentation that is refused leaves no trace — UIKit raises no error and calls
-// no completion — so nothing else can exercise the refusal that left the reader's close and its two site
-// controls wired to nothing.
+// The reader host's own presentation, proved in process: one page at a time, one presentation of it, the sheet
+// style that makes it draggable, the one finish route (close control, the sheet's own drag, the page's pull-down)
+// and the question of whether the reader is up answered only by what the platform reported. The platform acts are
+// replaced by a double because a presentation that is refused leaves no trace — UIKit raises no error and calls no
+// completion — so nothing else can exercise the refusal that left the reader's close and its site controls wired
+// to nothing.
 //
-// The four cases below are the measured defects and the rule the fix chose: a refused `present` stranding a page
-// for the life of the process, a dismissal skipped because the controller reported no `presentingViewController`,
-// a page the reader's chrome asks for stacked as a second presentation, and a close control reporting to the
-// closures the host was built with instead of the ones the app has now.
+// Round 11 also proves two things that are not presentation: a page load is identified by the address the surface
+// was given (a redirect does not restart the article) and the pull-down rule is a single shared threshold.
 import XCTest
 import SwiftUI
-import SafariServices
+import WebKit
 import FeedMineUI
 @testable import FeedMine
 
@@ -61,33 +60,25 @@ final class ReaderHostTests: XCTestCase {
     @MainActor
     private final class Recorder {
         var close: (() -> Void)?
+        /// The page's own top-state report, exactly what the host hands the page for the sheet's drag rule.
+        var reportTop: ((Bool) -> Void)?
         var finishes = 0
         var pages: [Page] = []
     }
 
-    private func reader(_ recorder: Recorder) -> (Page, @escaping () -> Void) -> AnyView {
-        { page, close in
+    private func reader(_ recorder: Recorder)
+        -> (Page, @escaping () -> Void, @escaping (Bool) -> Void) -> AnyView {
+        { page, close, atTop in
             recorder.pages.append(page)
             recorder.close = close
+            recorder.reportTop = atTop
             return AnyView(Text(verbatim: "reader"))
         }
     }
 
-    /// The site's platform act, replaced: the site is a modal presentation of its own, so the test records what
-    /// was raised and from which controller without a Safari view service.
-    @MainActor
-    private final class SiteRecorder {
-        var raised: [(safari: SFSafariViewController, url: URL, presenter: UIViewController)] = []
-    }
-
-    private func coordinator(_ platform: PlatformDouble, _ recorder: Recorder,
-        _ sites: SiteRecorder = SiteRecorder()) -> Host.Coordinator {
+    private func coordinator(_ platform: PlatformDouble, _ recorder: Recorder) -> Host.Coordinator {
         Host.Coordinator(platform: platform, reader: reader(recorder),
-            onFinish: { recorder.finishes += 1 },
-            raiseSite: { safari, url, presenter, done in
-                sites.raised.append((safari, url, presenter))
-                done(true)
-            })
+            onFinish: { recorder.finishes += 1 })
     }
 
     /// The host presents on its own turn of the main actor, so a run that has just asked for a page waits for the
@@ -98,6 +89,78 @@ final class ReaderHostTests: XCTestCase {
             if condition() { return }
             try? await Task.sleep(for: .milliseconds(10))
         }
+    }
+
+    /// V1's reader model, restated as the rule: the site is a page of the **same** sheet, not a second modal
+    /// presentation. The controller that is up draws it, the app keeps one reader level, and closing it returns to
+    /// the surface the reader was opened from.
+    func testTheSitePageIsDrawnByTheSameReaderSheet() async {
+        let platform = PlatformDouble()
+        let recorder = Recorder()
+        let coordinator = coordinator(platform, recorder)
+
+        coordinator.show(.local(Self.content))
+        await waitUntil { platform.up != nil }
+        guard let readerController = platform.up else { return XCTFail("the reader went up") }
+
+        coordinator.show(.site(Self.url))
+        await waitUntil { recorder.pages.count == 2 }
+
+        XCTAssertEqual(platform.attempts.count, 1, "the site is not a second presentation")
+        XCTAssertTrue(platform.up === readerController, "the sheet that is up is the sheet that draws the site")
+        XCTAssertEqual(platform.dismissals.count, 0, "and nothing was taken down to get there")
+        guard case .site(let url) = recorder.pages.last else {
+            return XCTFail("the page the app has is the one the sheet draws")
+        }
+        XCTAssertEqual(url, Self.url)
+    }
+
+    /// The presentation the reader is given: a draggable page sheet — one large detent, the system grabber, and
+    /// not modal-in-presentation, so the platform's own drag can end it. The style is asserted on the controller
+    /// the host really built, not on a value a test could agree with without the screen agreeing too.
+    func testTheReaderIsADraggablePageSheetWithAGrabber() async {
+        let platform = PlatformDouble()
+        let coordinator = coordinator(platform, Recorder())
+
+        coordinator.show(.local(Self.content))
+        await waitUntil { platform.up != nil }
+        guard let controller = platform.up else { return XCTFail("the reader went up") }
+
+        XCTAssertEqual(controller.modalPresentationStyle, .pageSheet,
+            "the reader is a sheet, not a full-screen presentation")
+        XCTAssertFalse(controller.isModalInPresentation,
+            "the platform's own drag is allowed to end it")
+        XCTAssertEqual(controller.overrideUserInterfaceStyle, .light,
+            "the legibility declaration travels with the presentation")
+        guard let sheet = controller.sheetPresentationController else {
+            return XCTFail("a page sheet has a sheet presentation controller")
+        }
+        XCTAssertEqual(sheet.detents.count, 1)
+        XCTAssertEqual(sheet.detents.first?.identifier, .large,
+            "one large detent: the reader is a page, not a peek")
+        XCTAssertTrue(sheet.prefersGrabberVisible, "the grabber is the visible affordance")
+    }
+
+    /// The sheet's own drag reports through the presentation delegate. That report is the reader's finish: it
+    /// reaches the app once, and the app's own state afterwards asks the platform for nothing — the controller is
+    /// already dismissed, and a second transition would fight the one the reader just made.
+    func testTheSheetsOwnDragFinishesTheReaderOnceAndTheStateAsksForNothingMore() async {
+        let platform = PlatformDouble()
+        let recorder = Recorder()
+        let coordinator = coordinator(platform, recorder)
+
+        coordinator.show(.local(Self.content))
+        await waitUntil { platform.up != nil }
+        guard let controller = platform.up else { return XCTFail("the reader went up") }
+
+        let presentation = UIPresentationController(presentedViewController: controller, presenting: nil)
+        coordinator.presentationControllerDidDismiss(presentation)
+        XCTAssertEqual(recorder.finishes, 1, "the drag ends the reader once")
+
+        coordinator.show(nil)
+        XCTAssertEqual(recorder.finishes, 1, "the app's state does not finish it a second time")
+        XCTAssertEqual(platform.dismissals.count, 0,
+            "and the platform is not asked to dismiss a controller that already went down")
     }
 
     /// A presentation the platform refuses must not strand the page: the host makes the attempt again, on the
@@ -159,6 +222,10 @@ final class ReaderHostTests: XCTestCase {
         coordinator.show(nil)
         XCTAssertEqual(platform.dismissals.count, 1, "the app's own state took the reader down")
         XCTAssertNil(platform.up, "and nothing is up afterwards")
+        // The finish was already reported by the close control; the state change does not report it again.
+        XCTAssertEqual(recorder.finishes, 1, "the finish is reported once, whatever route reached it")
+        coordinator.show(nil)
+        XCTAssertEqual(platform.dismissals.count, 1, "a repeated state change asks for nothing")
     }
 
     /// The on-screen reader's controls report to the closures the app has *now*: the host view is rebuilt with the
@@ -180,122 +247,57 @@ final class ReaderHostTests: XCTestCase {
         XCTAssertEqual(second.finishes, 1, "and its close reports to the app as it is now")
     }
 
+    /// A redirect changes the browser's own address. That address is the *result* of a load, never an input:
+    /// a later render must not load the article again because of it. V1 had this defect, fixed with the same rule.
+    func testARedirectDoesNotRestartTheArticle() async {
+        let webView = WKWebView()
+        let coordinator = ReaderWebContainer.Coordinator()
+        var loads: [ReaderWebRequest] = []
+        coordinator.requestLoader = { _, request in loads.append(request) }
+        let request = ReaderWebRequest(url: Self.url)
 
-    /// The site is not content of the reader's hosting page: Apple requires SFSafariViewController to be presented
-    /// modally, so the host raises it from the reader that is already up and the text page is not asked to draw
-    /// it. A second hosting presentation is not made.
-    func testTheSitePageIsPresentedModallyAndIsNotDrawnByTheReaderPage() async {
-        let platform = PlatformDouble()
-        let recorder = Recorder()
-        let sites = SiteRecorder()
-        let coordinator = coordinator(platform, recorder, sites)
+        coordinator.apply(request, to: webView)
+        XCTAssertEqual(loads, [request], "the first render starts the load")
 
-        coordinator.show(.local(Self.content))
-        await waitUntil { platform.up != nil }
-        guard let readerController = platform.up else { return XCTFail("the reader went up") }
-
-        coordinator.show(.site(Self.url))
-        await waitUntil { sites.raised.count == 1 }
-
-        XCTAssertEqual(sites.raised.first?.url, Self.url, "the site the chrome asked for is what is raised")
-        XCTAssertTrue(sites.raised.first?.presenter === readerController,
-            "and it is presented from the reader that is up, so the two presentations are sequential")
-        XCTAssertEqual(recorder.pages.count, 1, "the site is not drawn by the reader's hosting page")
-        XCTAssertEqual(platform.attempts.count, 1, "and no second hosting presentation was made")
-    }
-
-    /// A site presentation the platform refuses must not strand `.site`: the next attempt is made on the
-    /// platform's own report, mirroring the reader's presentation, instead of `open-site` going inert for the
-    /// life of the reader.
-    func testARefusedSitePresentationIsAttemptedAgain() async {
-        let recorder = Recorder()
-        let sites = SiteRecorder()
-        var attempts = 0
-        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(recorder),
-            onFinish: { recorder.finishes += 1 },
-            raiseSite: { safari, url, presenter, done in
-                attempts += 1
-                sites.raised.append((safari, url, presenter))
-                done(attempts > 1)
-            })
-
-        coordinator.show(.site(Self.url))
-        await waitUntil { attempts >= 2 }
-
-        XCTAssertGreaterThanOrEqual(attempts, 2, "a refused site presentation is attempted again")
-        XCTAssertEqual(sites.raised.last?.url, Self.url)
-    }
-
-    /// A site the platform refuses every time must stop at the reader's own attempt bound, leaving the state
-    /// clear so a later open-site can try again — the retry budget is never reset by the retry itself.
-    func testAPersistentlyRefusedSitePresentationStopsAtTheBound() async {
-        var attempts = 0
-        let recorder = Recorder()
-        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(recorder),
-            onFinish: { recorder.finishes += 1 },
-            raiseSite: { _, _, _, done in
-                attempts += 1
-                done(false)
-            })
-
-        coordinator.show(.site(Self.url))
-        // The host calls show(.site) on every app render; those renders must not open another budget while the
-        // chain is pending.
-        for _ in 0..<30 {
-            coordinator.show(.site(Self.url))
-            try? await Task.sleep(for: .milliseconds(10))
+        // The browser follows the request somewhere else. One runloop turn is enough for the web view to own a
+        // new URL; whether it does is not the point — the identity under test is the requested address.
+        webView.loadHTMLString("<p>redirected</p>",
+            baseURL: URL(string: "https://redirected.example/final"))
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline, webView.url?.host != "redirected.example" {
+            try? await Task.sleep(for: .milliseconds(20))
         }
-        await waitUntil({ attempts >= 20 }, seconds: 3)
-        let settled = attempts
-        try? await Task.sleep(for: .milliseconds(300))
 
-        XCTAssertGreaterThanOrEqual(settled, 2, "the refusal was retried")
-        XCTAssertLessThanOrEqual(settled, 20, "and the retries are bounded")
-        XCTAssertEqual(attempts, settled, "no retry survives the bound")
-        XCTAssertEqual(recorder.finishes, 1, "the exhausted budget ends the reader once, through its finish route")
-        coordinator.show(.site(Self.url))
-        try? await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(attempts, settled, "a render for the same refused request does not restart the budget")
-        coordinator.show(nil)
-        coordinator.show(.site(Self.url))
-        await waitUntil { attempts > settled }
-        XCTAssertGreaterThan(attempts, settled, "closing and reopening the reader starts a fresh attempt")
+        coordinator.apply(request, to: webView)
+        XCTAssertEqual(loads.count, 1, "the same request is not loaded again after a redirect")
+
+        coordinator.apply(ReaderWebRequest(url: Self.url, attempt: 1), to: webView)
+        XCTAssertEqual(loads.count, 2, "a retry the reader asked for is an explicit new attempt")
+        XCTAssertEqual(loads.last?.attempt, 1)
     }
 
-    /// Closing the reader while a refused site attempt is waiting for its retry must cancel that retry: otherwise
-    /// Safari appears over the feed with no reader state to return to.
-    func testAClosedReaderCancelsAPendingSiteRetry() async {
-        let recorder = Recorder()
-        var attempts = 0
-        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(recorder),
-            onFinish: { recorder.finishes += 1 },
-            raiseSite: { _, _, _, done in
-                attempts += 1
-                done(false)
-            })
+    /// The pull-down rule is one value, shared by the text page and the publisher's page. The negative cases are
+    /// the ones the product promised: a page scrolled down does not dismiss, a bounce after release does not, and
+    /// a sideways swipe does not.
+    func testThePullDownRuleIsOneSharedThreshold() {
+        XCTAssertEqual(ReaderSheetPullDown.dismissalDistance, 80)
+        XCTAssertTrue(ReaderSheetPullDown.dismisses(startedAtTop: true, isTracking: true, verticalPull: 80),
+            "a deliberate pull at the top dismisses")
+        XCTAssertFalse(ReaderSheetPullDown.dismisses(startedAtTop: true, isTracking: true, verticalPull: 79.9),
+            "a stray bounce does not")
+        XCTAssertFalse(ReaderSheetPullDown.dismisses(startedAtTop: true, isTracking: false, verticalPull: 400),
+            "nothing counts once the finger is up")
+        XCTAssertFalse(ReaderSheetPullDown.dismisses(startedAtTop: false, isTracking: true, verticalPull: 400),
+            "a page scrolled down does not dismiss when the drag reaches the top")
+        XCTAssertFalse(ReaderSheetPullDown.dismisses(startedAtTop: true, isTracking: true,
+            verticalPull: 90, horizontalPull: 80), "a diagonal swipe is not a pull")
 
-        coordinator.show(.site(Self.url))
-        await waitUntil { attempts == 1 }
-        coordinator.show(nil)
-        try? await Task.sleep(for: .milliseconds(200))
-
-        XCTAssertEqual(attempts, 1, "a retry for a closed reader is not attempted")
-    }
-
-    /// Apple's delegate contract dismisses the controller after the delegate returns. The reader's state must be
-    /// cleared once, in the delegate, not chained to a redundant dismissal's completion (which UIKit does not owe
-    /// for a dismissal it is already making).
-    func testSafariFinishingEndsTheReaderOnce() async {
-        let recorder = Recorder()
-        let sites = SiteRecorder()
-        let coordinator = coordinator(PlatformDouble(), recorder, sites)
-        coordinator.show(.site(Self.url))
-        await waitUntil { sites.raised.count == 1 }
-        guard let safari = sites.raised.first?.safari else { return XCTFail("the site was raised") }
-
-        coordinator.safariViewControllerDidFinish(safari)
-
-        XCTAssertEqual(recorder.finishes, 1, "Safari's finish ends the reader once")
+        XCTAssertEqual(ReaderSheetPullDown.pull(contentOffsetY: -140, topInset: 60), 80,
+            "rest is -topInset; what is beyond it is the pull")
+        XCTAssertEqual(ReaderSheetPullDown.pull(contentOffsetY: 300, topInset: 60), 0,
+            "a page scrolled down has no pull")
+        XCTAssertTrue(ReaderSheetPullDown.isAtTop(contentOffsetY: -60, topInset: 60))
+        XCTAssertFalse(ReaderSheetPullDown.isAtTop(contentOffsetY: -30, topInset: 60))
     }
 
     /// Only a surface that really has the reader is asked to take it down. A controller whose presentation was
@@ -315,22 +317,58 @@ final class ReaderHostTests: XCTestCase {
 
     /// The rule the reader's own close depends on: a page the chrome asks for while a reader is up replaces that
     /// reader, and the surface it was opened from — the feed, or the list inside a sheet — is what it returns to.
+    /// Every opener context the product offers is covered: sources, bookmark boxes and collections.
     func testAReaderRequestReplacesThePageThatIsUpInsteadOfAddingALevel() {
-        let overASheet = FeedMineApp.pushingReader(.local(Self.content), onto: [.sheet(.sources)])
-        XCTAssertEqual(overASheet.count, 2, "the reader is a level over the surface that asked for it")
-        guard case .reader(.local)? = overASheet.last else { return XCTFail("the reader is what is up") }
+        for opener in [FeedMineApp.SheetSurface.sources, .bookmarkBoxes, .collections] {
+            let overASheet = FeedMineApp.pushingReader(.local(Self.content), onto: [.sheet(opener)])
+            XCTAssertEqual(overASheet.count, 2, "the reader is a level over the surface that asked for it")
+            guard case .reader(.local)? = overASheet.last else { return XCTFail("the reader is what is up") }
 
-        let replaced = FeedMineApp.pushingReader(.site(Self.url), onto: overASheet)
-        XCTAssertEqual(replaced.count, 2, "a page the chrome asks for replaces that reader, it does not stack")
-        guard case .reader(.site(let url))? = replaced.last else { return XCTFail("the site is what is up") }
-        XCTAssertEqual(url, Self.url)
-        guard case .sheet(.sources)? = replaced.first else {
-            return XCTFail("and the surface the reader was opened from is still there to return to")
+            let replaced = FeedMineApp.pushingReader(.site(Self.url), onto: overASheet)
+            XCTAssertEqual(replaced.count, 2,
+                "a page the chrome asks for replaces that reader, it does not stack")
+            guard case .reader(.site(let url))? = replaced.last else {
+                return XCTFail("the site is what is up")
+            }
+            XCTAssertEqual(url, Self.url)
+            guard case .sheet(let kept)? = replaced.first else {
+                return XCTFail("and the surface the reader was opened from is still there to return to")
+            }
+            XCTAssertEqual(kept.id, opener.id, "the opener keeps its own identity and its own list")
         }
 
         guard case .reader(.site)? = FeedMineApp.pushingReader(.site(Self.url), onto: []).last else {
             return XCTFail("with no reader up, the reader is pushed over the feed")
         }
+    }
+
+    /// The platform's own drag obeys the product rule, through the page's own report: at the top it dismisses;
+    /// scrolled down it does not, and the reader keeps reading. A re-render of the same page (a playback tick, a
+    /// feed advance) must not re-arm the drag — that would dismiss a reader who is deep in the article.
+    func testAScrolledPageRefusesTheSheetsDragAndATopPageAllowsIt() async {
+        let platform = PlatformDouble()
+        let recorder = Recorder()
+        let coordinator = coordinator(platform, recorder)
+
+        coordinator.show(.local(Self.content))
+        await waitUntil { platform.up != nil }
+        guard let controller = platform.up else { return XCTFail("the reader went up") }
+        let presentation = UIPresentationController(presentedViewController: controller, presenting: nil)
+
+        XCTAssertTrue(coordinator.presentationControllerShouldDismiss(presentation),
+            "a page at its top may be dismissed by the sheet's own drag")
+
+        recorder.reportTop?(false)
+        XCTAssertFalse(coordinator.presentationControllerShouldDismiss(presentation),
+            "a page scrolled down scrolls instead of dismissing")
+
+        coordinator.show(.local(Self.content))
+        XCTAssertFalse(coordinator.presentationControllerShouldDismiss(presentation),
+            "a re-render of the page that is up does not reset where the reader is in it")
+
+        recorder.reportTop?(true)
+        XCTAssertTrue(coordinator.presentationControllerShouldDismiss(presentation),
+            "back at the top, the drag dismisses again")
     }
 
     private static let content = FeedReadingContent(origin: .sourceBody, sourceName: "BBC",

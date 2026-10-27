@@ -210,7 +210,7 @@ final class VideoCardJourneyUITests: XCTestCase {
                     headline.exists, !headline.label.isEmpty {
                     readerHeadline = headline.label
                 }
-                if app.buttons["URL"].exists || app.webViews.firstMatch.exists {
+                if app.staticTexts["reading.web-source"].exists || app.webViews.firstMatch.exists {
                     reachedOrigin = true
                     break
                 }
@@ -510,7 +510,7 @@ final class VideoCardJourneyUITests: XCTestCase {
     }
 
     private func browserAddress(_ app: XCUIApplication, within seconds: TimeInterval) -> String? {
-        let control = app.buttons["URL"].firstMatch
+        let control = app.staticTexts["reading.web-source"].firstMatch
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             if control.exists {
@@ -579,7 +579,7 @@ final class VideoCardJourneyUITests: XCTestCase {
             app.buttons["reading.close"].tap()
         }
         let safariDeadline = Date().addingTimeInterval(20)
-        while Date() < safariDeadline, app.buttons["URL"].exists { Thread.sleep(forTimeInterval: 0.3) }
+        while Date() < safariDeadline, app.staticTexts["reading.web-source"].exists { Thread.sleep(forTimeInterval: 0.3) }
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             if !app.staticTexts["reading.headline"].exists && !app.webViews.firstMatch.exists {

@@ -859,7 +859,7 @@ final class FeedMineUITests: XCTestCase {
     private func systemShareCloseControl(_ app: XCUIApplication,
         timeout: TimeInterval = 240) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(timeout)
-        let handles = [app.buttons["header.closeButton"], app.buttons["Close"], app.buttons["Fechar"]]
+        let handles = [app.buttons["header.closeButton"], app.buttons["reading.close"], app.buttons["Fechar"]]
         while Date() < deadline {
             for control in handles where control.exists && control.isHittable { return control }
             Thread.sleep(forTimeInterval: 1)
@@ -1975,7 +1975,7 @@ final class FeedMineUITests: XCTestCase {
         // Safari view service, not to the app's own button tree. Do not infer "closed" from `webViews` leaving the
         // app tree — that can happen while the reader is still on screen.
         if !dismissed {
-            let safari = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService")
+            let safari = app
             for label in ["Close", "Fechar", "Done", "Concluído"] {
                 let button = safari.buttons[label].firstMatch
                 if button.waitForExistence(timeout: 3) { button.tap(); dismissed = true; break }

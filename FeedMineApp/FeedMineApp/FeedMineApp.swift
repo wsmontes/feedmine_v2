@@ -1,5 +1,4 @@
 import SwiftUI
-import SafariServices
 import UniformTypeIdentifiers
 import FeedMineUI
 import FeedMineDomain
@@ -191,6 +190,11 @@ struct FeedMineApp: App {
     /// T9: the link a card asked to share, presented by the platform surface, and the full player.
     @State private var sharedLink: SharedLink?
     @State private var showsPlayer = false
+    /// A card action the reader chose **from the player**. The player is a sheet: its own button cannot present a
+    /// browser, another sheet or the share panel over itself without them landing behind it. So the choice closes
+    /// the player and the action runs on its dismissal — the reader keeps the playback, and the destination is in
+    /// front of the feed where it belongs. Nothing is invented: it is the same event the card would have emitted.
+    @State private var pendingPlayerAction: ReaderCardActionEvent?
     /// T10: the settings surface and the appearance the reader's preferences imply. The appearance is refreshed
     /// when the reader changes something, when the app comes back, and at launch — a clock moving the palette
     /// never rebuilds a session.
@@ -505,19 +509,40 @@ struct FeedMineApp: App {
                                 // One captured limit for the whole wait: the gate stored it at appearance, and a
                                 // later live composition value must not renew the hold without a context reset.
                                 let limit = association.store.firstScreenWaitLimit
+                                // The ceiling is captured once, with the stall bound: both are facts of this
+                                // appearance, and neither may be renewed by a later live value.
+                                let ceiling = association.store.firstScreenCeilingLimit
+                                let appeared = ContinuousClock.now
                                 while !Task.isCancelled,
                                     association.store.firstScreenSurface == .preparation {
+                                    let elapsed = ContinuousClock.now - appeared
+                                    if elapsed >= ceiling { break }
                                     let remaining = limit - association.store.firstScreenWaited
-                                    if remaining > .zero { try? await Task.sleep(for: remaining) }
+                                    // After the stall has already expired the clock keeps its sticky fact, so the
+                                    // remainder is zero; the loop must still advance to the ceiling instead of
+                                    // spinning or returning. A 250 ms tick bounds the wait and the wake-ups.
+                                    let step = remaining > .zero
+                                        ? min(remaining, ceiling - elapsed)
+                                        : min(.milliseconds(250), ceiling - elapsed)
+                                    if step > .zero { try? await Task.sleep(for: step) }
                                     guard !Task.isCancelled,
                                         association.store.firstScreenSurface == .preparation else { return }
+                                    if ContinuousClock.now - appeared >= ceiling { break }
                                     guard association.store.firstScreenWaited >= limit else {
-                                        continue // a card arrived during the sleep and reset the stall clock
+                                        continue // a card (or a prepared image) arrived and reset the stall clock
                                     }
+                                    // The stall is spent. It releases the page only when no media work is scheduled
+                                    // (the gate decides that); if the page is still up, the **total ceiling** is
+                                    // what ends the wait, so this loop keeps running instead of returning — a
+                                    // measure that left the cover up forever was the defect this loop closes.
                                     association.store.expireFirstScreenWait()
                                     reportFirstScreenSurface(of: association)
-                                    return
                                 }
+                                guard !Task.isCancelled,
+                                    association.store.firstScreenSurface == .preparation else { return }
+                                // The total ceiling: the last legitimate exit, whatever the supply is still doing.
+                                association.store.expireFirstScreenCeiling()
+                                reportFirstScreenSurface(of: association)
                             }
                             .task(id: association.store.state.presentation?.window) {
                                 recordWindowFacts(of: association)
@@ -564,15 +589,30 @@ struct FeedMineApp: App {
                     if composition.mediaState.item != nil {
                         MiniPlayerBar(state: composition.mediaState,
                             onToggle: { Task { await composition.toggleMedia() } },
-                            onOpen: { showsPlayer = true })
+                            onOpen: { showsPlayer = true },
+                            onStop: { Task { await composition.stopMedia() } })
                     }
                 }
-                .sheet(isPresented: $showsPlayer) {
+                .sheet(isPresented: $showsPlayer, onDismiss: {
+                    // The choice the reader made in the player runs **after** the player is gone, so the browser,
+                    // sheet or share panel it opens is in front of the feed and not behind a covering sheet.
+                    if let action = pendingPlayerAction {
+                        pendingPlayerAction = nil
+                        composition.performMediaAction(action)
+                    }
+                }) {
+                    let playingCardID = composition.mediaState.item?.cardID
                     FullPlayerView(state: composition.mediaState,
                         onToggle: { Task { await composition.toggleMedia() } },
                         onSkip: { seconds in Task { await composition.skipMedia(by: seconds) } },
                         onSeek: { position in Task { await composition.seekMedia(to: position) } },
-                        onClose: { showsPlayer = false })
+                        onClose: { showsPlayer = false },
+                        availableActions: composition.mediaPlayerActions(for: playingCardID),
+                        isBookmarked: composition.isMediaBookmarked(playingCardID),
+                        onAction: { event in
+                            pendingPlayerAction = event
+                            showsPlayer = false
+                        })
                 }
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(item: sheetItem, onDismiss: {
@@ -712,7 +752,9 @@ struct FeedMineApp: App {
                     onDismiss: { presentOnboardingImportIfPending() }) { onboardingCover }
                 // U2: the reader's own presentation, above whatever surface asked for it.
                 .background(ReaderHost(page: readerPage, playback: composition.mediaState.isPlaying,
-                    reader: { page, close in AnyView(readerBody(page, close: close)) },
+                    reader: { page, close, atTop in
+                        AnyView(readerBody(page, close: close, onTopChange: atTop))
+                    },
                     onFinish: { finishReader() }))
                 // NN-08: the preview the first contact asked for is gone — confirmed or cancelled — and, if the
                 // reader came from the gate, the gate comes back.
@@ -942,18 +984,28 @@ struct FeedMineApp: App {
     }
 
 
-    /// U2: the reader's own presentation. `SFSafariViewController` ends the presentation it is in when its
-    /// own close control is used — that is the control's contract — so the reader has to *be* a presentation:
-    /// a reader drawn inside the sheet that opened it went down with that sheet (measured: the reader's close
-    /// took the boxes sheet, and the saved list with it). This host lives in the app's own hierarchy, never in
-    /// the surface that asked for the reader, so that surface survives the reader and is what the reader
-    /// returns to. It draws nothing and takes no touch: it is a place, not a surface.
+    /// U2: the reader's own presentation. The reader has to *be* a presentation: a reader drawn inside the sheet
+    /// that opened it went down with that sheet (measured: the reader's close took the boxes sheet, and the saved
+    /// list with it). This host lives in the app's own hierarchy, never in the surface that asked for the reader,
+    /// so that surface survives the reader and is what the reader returns to. It draws nothing and takes no touch:
+    /// it is a place, not a surface.
+    ///
+    /// Round 11 (V1 parity): the presentation is a draggable page sheet — one large detent, the system grabber —
+    /// and it draws **both** pages: the text the app already holds and the publisher's page in an in-app web view
+    /// (`ReaderWebSurface`). V1 read the site in a WKWebView inside such a sheet; the SFSafariViewController that
+    /// stood here brought chrome the app does not own and its own close control, which cannot carry the product's
+    /// dismissal rule. "Abrir no Safari" in the web page's header remains the explicit escape.
     ///
     /// One page at a time and one presentation of it: the page the reader draws follows the app's own state, and
     /// whether it is really up is only ever what the platform reported. Both matter — a `present` the platform
     /// refuses raises no error and calls no completion, so a host that inferred the reader's state from
     /// `presentingViewController`, or that marked a page shown before it was, left the reader on screen with its
     /// close and its site controls wired to nothing.
+    ///
+    /// The dismissal is one route, and it is idempotent: the close control, the sheet's own grabber drag and the
+    /// pull-down-at-top gesture all report `onFinish`. The app's surface stack pops only an open reader, so a
+    /// second report is a no-op; the coordinator also never asks the platform to dismiss a controller that is
+    /// already going down.
     /// Presents the one-time V1-upgrade notice above whatever the app is showing — including presentations that
 /// happen *after* the notice (the reader takes the topmost controller within a second of launch, and an alert
 /// presented before it is covered by it: measured 2026-10-20, the alert was drawn at 0.3 s and gone under the
@@ -1072,7 +1124,9 @@ struct ReaderHost: UIViewControllerRepresentable {
         /// view it was presented with (a review measured a bar frozen at whatever it was built with).
         let page: ReaderPage?
         let playback: Bool
-        let reader: (ReaderPage, @escaping () -> Void) -> AnyView
+        /// The page the sheet draws. The second closure is the one finish route; the third reports whether the
+        /// page is at its top edge, which is the only position the platform's own drag may dismiss from.
+        let reader: (ReaderPage, @escaping () -> Void, @escaping (Bool) -> Void) -> AnyView
         let onFinish: () -> Void
 
         func makeCoordinator() -> Coordinator {
@@ -1143,8 +1197,8 @@ struct ReaderHost: UIViewControllerRepresentable {
             }
 
             /// The topmost surface the app has up: the reader is presented over it, and it is what the reader
-            /// returns to. The site presentation is made from it too: SFSafariViewController is presented
-            /// modally, as Apple requires, never embedded.
+            /// returns to. Nothing else is presented from here: the publisher's page is drawn inside the
+            /// reader's own sheet, not as a second presentation.
             static func topmost() -> UIViewController? {
                 let windows = UIApplication.shared.connectedScenes
                     .compactMap { $0 as? UIWindowScene }
@@ -1156,10 +1210,10 @@ struct ReaderHost: UIViewControllerRepresentable {
         }
 
         @MainActor
-        final class Coordinator: NSObject, SFSafariViewControllerDelegate {
+        final class Coordinator: NSObject, UIAdaptivePresentationControllerDelegate {
             /// The reader's content and what its chrome reports: both are refreshed by every render of the host,
             /// never kept as the values the coordinator happened to be built with.
-            private var reader: (ReaderPage, @escaping () -> Void) -> AnyView
+            private var reader: (ReaderPage, @escaping () -> Void, @escaping (Bool) -> Void) -> AnyView
             private var onFinish: () -> Void
             private let platform: Presentation
             /// The page the reader's controller draws — the app's state, not the platform's, and the reason a
@@ -1171,49 +1225,27 @@ struct ReaderHost: UIViewControllerRepresentable {
             private var isUp = false
             /// An attempt is being made, and its report is still owed: one at a time, whatever re-renders.
             private var isAttempting = false
-            /// The site page is its own modal presentation. Apple requires SFSafariViewController to be
-            /// presented, never embedded in another controller's hierarchy; the text page's hosting controller
-            /// cannot host it. The site therefore covers the reader's text page and ends the reader when its own
-            /// close control reports back — the product's "site replaces the text; closing returns to the feed".
-            private var site: SFSafariViewController?
-            private var siteURL: URL?
-            /// A site presentation attempt is in flight; one at a time, whatever re-renders.
-            private var siteRaising = false
-            /// The site the app state asks for. A retry only belongs to this request; closing the reader or
-            /// changing page invalidates it.
-            private var requestedSite: URL?
-            /// The site whose attempts were exhausted. It blocks render-driven retries for that same request;
-            /// clearing the request (close, local page, a different site) clears it.
-            private var refusedSite: URL?
-            /// One site presentation chain at a time: a render during an attempt or its pending retry must not
-            /// start a second budget. Only the chain itself clears this (success, exhaustion, teardown).
-            private var sitePending = false
-            /// Bumped by every teardown: a pending retry that captured an older generation is dropped.
-            private var siteGeneration = 0
-            /// The one platform act that raises the site page. It is a seam for the same reason as `Presentation`:
-            /// a test can see the modal presentation and its presenter without a Safari view service. Production
-            /// presents with the platform's own modal presentation, as Apple requires.
-            typealias SiteAct = (SFSafariViewController, URL, UIViewController,
-                @escaping (Bool) -> Void) -> Void
-            private let raiseSite: SiteAct
+            /// The finish was reported for the page that is up. The close control, the sheet's own grabber drag
+            /// and the pull-down gesture all end here; only the first report goes to the app, and a finish is not
+            /// reported again until a page is shown.
+            private var isFinishing = false
+            /// Whether the page that is up sits at its top edge. The platform asks before its own drag dismisses;
+            /// this is the answer, so a reader scrolled down through the article is never taken out of it by a
+            /// normal scroll. Both pages report the fact: the text page and the web page.
+            private var pageAtTop = true
 
             init(platform: Presentation,
-                reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
-                onFinish: @escaping () -> Void,
-                raiseSite: @escaping SiteAct = { safari, _, presenter, done in
-                    presenter.present(safari, animated: true)
-                    // A refused presentation leaves no error; where the controller ended up is its account.
-                    done(presenter.presentedViewController === safari)
-                }) {
+                reader: @escaping (ReaderPage, @escaping () -> Void, @escaping (Bool) -> Void) -> AnyView,
+                onFinish: @escaping () -> Void) {
                 self.platform = platform
                 self.reader = reader
                 self.onFinish = onFinish
-                self.raiseSite = raiseSite
                 super.init()
             }
 
             /// The closures the reader's own chrome reports to, kept current by the host's own render.
-            func refresh(reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
+            func refresh(reader: @escaping (ReaderPage, @escaping () -> Void,
+                @escaping (Bool) -> Void) -> AnyView,
                 onFinish: @escaping () -> Void) {
                 self.reader = reader
                 self.onFinish = onFinish
@@ -1228,34 +1260,48 @@ struct ReaderHost: UIViewControllerRepresentable {
                     dismissReader()
                     return
                 }
-                switch page {
-                case .site(let url):
-                    requestedSite = url
-                    showSite(url)
-                case .local:
-                    requestedSite = nil
-                    refusedSite = nil
-                    showLocal(page)
-                }
+                showPage(page)
             }
 
-            /// The text page: the reader's own hosting controller, presented full screen.
-            private func showLocal(_ page: ReaderPage) {
-                // The local page and the site never coexist: a page the chrome asks for replaces the one up.
-                dismissSite()
-                let content = reader(page) { [weak self] in self?.onFinish() }
+            /// One page, one presentation. The text the app already holds and the publisher's page — drawn by
+            /// `ReaderWebSurface` inside the same sheet — replace what the controller draws; neither is ever a
+            /// second presentation, which would leave a controller underneath outliving the app state that put it
+            /// there.
+            private func showPage(_ page: ReaderPage) {
+                // A finished reader is not presented again. The app's own state is about to stop saying the reader
+                // is up; a render that still carries the old page (a playback tick between the finish and that
+                // state change) must not bring the sheet back.
+                guard !isFinishing else { return }
+                // A page different from the one drawn starts at its own top: that is where its scroll view is,
+                // and it is the only position from which the sheet's drag may dismiss it. A re-render of the
+                // page already up must not reset the fact the page reported (a playback tick mid-scroll would
+                // otherwise re-arm the sheet's drag).
+                if shown != page { pageAtTop = true }
+                let content = reader(page, { [weak self] in self?.finish() },
+                    { [weak self] atTop in self?.pageAtTop = atTop })
                 if let controller = presented {
-                    // The reader that is up draws the page the app has now. Presenting again for a new page
-                    // would stack a second presentation on the first, and the one underneath would outlive the
-                    // app state that put it there.
                     controller.rootView = content
                     shown = page
+                    // The host's own render reaches this branch; wiring the delegate here too keeps a page
+                    // shown before the presentation reported up from losing its sheet dismissal.
+                    controller.presentationController?.delegate = self
                     open(controller, page: page, tries: Self.presentationAttempts)
                     return
                 }
                 let controller = UIHostingController(rootView: content)
-                controller.modalPresentationStyle = .fullScreen
+                // V1's reader was a draggable sheet; this states the same presentation explicitly instead of
+                // relying on the platform's default style. One large detent: the reader is a page, not a peek.
+                controller.modalPresentationStyle = .pageSheet
+                controller.isModalInPresentation = false
                 controller.view.backgroundColor = .systemBackground
+                if let sheet = controller.sheetPresentationController {
+                    sheet.detents = [.large()]
+                    sheet.prefersGrabberVisible = true
+                    sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+                    sheet.prefersEdgeAttachedInCompactHeight = true
+                    sheet.widthFollowsPreferredContentSizeWhenEdgeAttached = true
+                    sheet.preferredCornerRadius = 16
+                }
                 // UI-READABILITY-01: the reader is the app's second presentation root, and this controller is
                 // where its appearance is declared. The window content's `.preferredColorScheme(.light)` reaches
                 // every SwiftUI presentation but not a controller presented through UIKit (`presenter.present`),
@@ -1269,121 +1315,53 @@ struct ReaderHost: UIViewControllerRepresentable {
                 open(controller, page: page, tries: Self.presentationAttempts)
             }
 
-            /// The site page: SFSafariViewController presented modally with the default style, as Apple
-            /// requires, from the surface that asked for the reader. It is not a child of the reader's hosting
-            /// controller and the text page is taken down while it is up — the site replaces the text. Its own
-            /// close control reports through the delegate; finishing ends the reader and returns to the surface
-            /// that opened it. Playback lives in the composition, so audio and system controls continue.
-            private func showSite(_ url: URL, tries: Int? = nil, retry: Bool = false) {
-                let tries = tries ?? Self.presentationAttempts
-                if refusedSite != url { refusedSite = nil }
-                guard refusedSite != url else { return }
-                if site != nil, siteURL == url { return }
-                if !retry, sitePending { return }
-                dismissSite()
-                // Presenting from the reader that is already up keeps the two presentations sequential: UIKit
-                // refuses a present made while a dismissal is in flight, so the text page is not taken down
-                // first. It stays underneath, invisible under Safari; the reader's own dismissal happens after
-                // Safari reports its close, through `onFinish` → `dismissReader`.
-                guard let presenter = presented ?? WindowReaderPresentation.topmost() else { return }
-                let configuration = SFSafariViewController.Configuration()
-                configuration.entersReaderIfAvailable = false
-                let controller = SFSafariViewController(url: url, configuration: configuration)
-                controller.delegate = self
-                controller.dismissButtonStyle = .close
-                controller.preferredControlTintColor = .tintColor
-                site = controller
-                siteURL = url
-                sitePending = true
-                raise(controller, url, presenter, tries: tries)
-            }
-
-            /// The site's presentation is made on the platform's own turn and reports whether it really went up.
-            /// A refusal raises no error and calls no completion, so a page the chrome asks for is attempted
-            /// again — bounded, on the platform's own report — instead of being stranded behind a stale `site`.
-            private func raise(_ controller: SFSafariViewController, _ url: URL,
-                _ presenter: UIViewController, tries: Int) {
-                guard tries > 0, !siteRaising, site === controller, siteURL == url else { return }
-                siteRaising = true
-                Task { @MainActor in
-                    guard siteRaising, site === controller else {
-                        siteRaising = false
-                        return
-                    }
-                    raiseSite(controller, url, presenter) { [weak self] isUp in
-                        guard let self, self.siteRaising else { return }
-                        self.siteRaising = false
-                        guard self.site === controller, self.siteURL == url else { return }
-                        guard !isUp else {
-                            self.sitePending = false
-                            return
-                        }
-                        self.site = nil
-                        self.siteURL = nil
-                        let generation = self.siteGeneration
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(50))
-                            guard self.siteGeneration == generation, self.requestedSite == url,
-                                self.site == nil, self.siteURL == nil else {
-                                self.sitePending = false
-                                return
-                            }
-                            guard tries > 1 else {
-                                // The budget is spent: the reader ends through its existing finish route, so the
-                                // surface it was opened from is back and the same card can ask again. No control
-                                // is left visible while ignoring the URL.
-                                self.refusedSite = url
-                                self.sitePending = false
-                                self.onFinish()
-                                return
-                            }
-                            self.showSite(url, tries: tries - 1, retry: true)
-                        }
-                    }
-                }
-            }
-
-            private func dismissSite() {
-                siteRaising = false
-                sitePending = false
-                siteGeneration &+= 1
-                guard let controller = site else { return }
-                site = nil
-                siteURL = nil
-                controller.dismiss(animated: false)
-            }
-
             /// The reader goes down when the app's state says it is no longer up, and the platform is asked to
             /// take it down: the dismissal is never inferred from the controller's own state, which reports no
             /// `presentingViewController` for a presentation that was refused.
             private func dismissReader() {
-                requestedSite = nil
-                refusedSite = nil
                 shown = nil
                 isUp = false
                 isAttempting = false
-                dismissSite()
+                // The reader is gone: the next one to be opened is a new page and can be finished again.
+                isFinishing = false
                 guard let controller = presented else { return }
                 presented = nil
+                controller.presentationController?.delegate = nil
+                // The sheet's own drag is already a dismissal in flight and reports itself through the
+                // presentation delegate; asking the presenter to dismiss it too would be a second transition.
+                guard !controller.isBeingDismissed else { return }
                 platform.dismiss(controller)
             }
 
-            /// Safari's own close control: the reader asked to leave the site. Safari dismisses itself after the
-            /// delegate returns; the reader state is cleared only after that dismissal completes, so the host
-            /// never asks a dismissing presentation to take its presenter down at the same time.
-            nonisolated func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
-                MainActor.assumeIsolated {
-                    guard site === controller else { return }
-                    // Apple's delegate contract: cleanup here, and the view controller is dismissed afterwards.
-                    // No second dismissal is asked for, and the reader's state is not chained to a completion
-                    // UIKit does not owe for a dismissal it is already making.
-                    site = nil
-                    siteURL = nil
-                    siteRaising = false
-                    sitePending = false
-                    requestedSite = nil
-                    onFinish()
-                }
+            /// The one finish route. The close control, the sheet's native drag (below) and the page's
+            /// pull-down gesture all report here; the first report is forwarded and the rest are no-ops, so a
+            /// dismissal that arrives through two mechanisms ends the reader once.
+            private func finish() {
+                guard !isFinishing else { return }
+                isFinishing = true
+                onFinish()
+            }
+
+            /// The reader finished the sheet's own drag: by the grabber or by pulling the page down at its top.
+            /// UIKit has already dismissed the controller; the app state is what makes the reader go away, and
+            /// it is cleared after — never chained to a completion UIKit does not owe for a dismissal it is
+            /// already making. A subsequent `show(nil)` finds no controller and asks the platform for nothing.
+            func presentationControllerDidDismiss(_ presentation: UIPresentationController) {
+                guard presentation.presentedViewController === presented else { return }
+                shown = nil
+                isUp = false
+                isAttempting = false
+                presented = nil
+                finish()
+            }
+
+            /// Whether the platform's own drag may dismiss the sheet — asked when the drag begins. The answer is
+            /// the page's own position: at the top, the drag dismisses (as V1's sheet did); scrolled down, it
+            /// scrolls the article instead, and the reader is not taken out of what they are reading. The visible
+            /// close control stays available from any position.
+            func presentationControllerShouldDismiss(_ presentation: UIPresentationController) -> Bool {
+                guard presentation.presentedViewController === presented else { return true }
+                return pageAtTop
             }
 
             /// The reader is presented from the surface the app has on top, so it covers whatever asked for it
@@ -1405,6 +1383,10 @@ struct ReaderHost: UIViewControllerRepresentable {
                         guard self.shown == page, self.presented === controller else { return }
                         guard !isReallyUp else {
                             self.isUp = true
+                            // The sheet's own drag is the reader's second dismissal path. UIKit assigns the
+                            // presentation controller when the presentation really happens, so the delegate is
+                            // wired here — the first moment at which there is one to wire.
+                            controller.presentationController?.delegate = self
                             return
                         }
                         Task { @MainActor in
@@ -1422,24 +1404,27 @@ struct ReaderHost: UIViewControllerRepresentable {
     }
 
     /// T9: the article the reader opened, with the playback bar kept visible inside it (V1's own reader).
-    /// U-reading: the local reading surface. The site is not content of this page: SFSafariViewController must be
-    /// presented modally (Apple's contract), so `ReaderHost` presents it as its own modal and this page never
-    /// embeds it.
-    @ViewBuilder private func readerBody(_ page: ReaderPage, close: @escaping () -> Void) -> some View {
+    /// U-reading: the local reading surface, and V1's web reader for the site. Both are pages of the **same**
+    /// sheet: `ReaderHost` owns the one presentation, so a page the reader's chrome asks for (the site, from the
+    /// text the app holds) replaces what that sheet draws. Playback lives one level up in the composition, so the
+    /// bar is the same value — and the same callbacks — on both pages.
+    @ViewBuilder private func readerBody(_ page: ReaderPage, close: @escaping () -> Void,
+        onTopChange: @escaping (Bool) -> Void) -> some View {
         VStack(spacing: 0) {
             switch page {
-            case .site:
-                // Unreachable: the host draws only the local page and presents the site itself.
-                EmptyView()
+            case .site(let url):
+                ReaderWebSurface(url: url, appearance: composition.currentAppearance(), onClose: close,
+                    onTopChange: onTopChange)
             case .local(let content):
                 let openSite: (() -> Void)? = content.siteURL.map { url in { pushReader(.site(url)) } }
                 FeedReadingSurface(content: content, appearance: composition.currentAppearance(),
-                    onOpenSite: openSite, onClose: close)
+                    onOpenSite: openSite, onClose: close, onTopChange: onTopChange)
             }
             if composition.mediaState.item != nil {
                 MiniPlayerBar(state: composition.mediaState,
                     onToggle: { Task { await composition.toggleMedia() } },
-                    onOpen: { showsPlayer = true })
+                    onOpen: { showsPlayer = true },
+                    onStop: { Task { await composition.stopMedia() } })
                     .background(.ultraThinMaterial)
             }
         }
@@ -1651,8 +1636,15 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// screen). The decision itself is `FeedScreenStore.firstScreenSurface`, which the screen draws and this host's
     /// launch record reads.
     @MainActor private func prepareFirstScreen(of association: FeedAssociation) {
+        // The request (a filter/source change asks for the new feed's page) and the wait/provider/sources facts are
+        // bound to this association's store by the composition **before** the association is published. This pass
+        // only re-states the policy for the screen it draws — it never re-decides the request, so an appearance that
+        // arrives after a warm projection was measured cannot skip a page that was already asked for.
         association.store.noteFirstScreenAppeared(hasSources: composition.surfaceHasSources,
-            maximumWait: composition.firstScreenWait)
+            maximumWait: composition.firstScreenWait,
+            ceiling: composition.firstScreenCeiling,
+            eligibleProviders: composition.firstScreenEligibleProviders)
+        if association.firstScreenDeclaresImages { association.store.noteFirstScreenDeclaresImages() }
     }
 
     /// The reading surface is on screen: state it where the launch record and the durability of the decision read it.
@@ -2103,7 +2095,23 @@ private struct FeedLaunchWitnessProof: View {
     let branch: FeedLaunchWitness.Branch
 
     var body: some View {
+        // The **parent** only states the branch: it never reads the record, so a record change can never invalidate
+        // the pass that produced this branch (which would re-note it, bump again, and spin).
         let _: Void = FeedLaunchWitness.note(branch)
+        FeedLaunchWitnessRecord()
+    }
+}
+
+/// The record itself, as an invisible accessibility element.
+///
+/// Reading it is what makes SwiftUI re-render when the witness writes: the record's facts are `static var`s, which
+/// SwiftUI cannot observe, so this body reads the witness's own **event-driven** revision (bumped only by a fact
+/// that really changed) and then formats the record. No timer, no poll, and no fabricated write: a body pass here
+/// writes nothing back to the witness.
+@MainActor
+private struct FeedLaunchWitnessRecord: View {
+    var body: some View {
+        let _ = FeedLaunchWitness.revision.value
         Text(verbatim: FeedLaunchWitness.record)
             .font(.system(size: 1))
             .frame(width: 1, height: 1)

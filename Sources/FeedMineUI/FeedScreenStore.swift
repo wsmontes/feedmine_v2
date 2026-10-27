@@ -300,12 +300,23 @@ public final class FeedScreenStore {
         let rendered = presentationState.presentation?.window.items
         if rendered != renderedItems { renderedItems = rendered ?? [] }
         if received.work != work { work = received.work }
+        // The stall this gate waits out measures **meaningful progress**, and a newly prepared image is progress:
+        // the same clock that a new card resets is reset here, so an active media wait is never mistaken for a
+        // stalled pipeline (and `mediaPending` keeps the exit from firing regardless).
+        if case .preparing(let progress) = received.work, progress.imagesPrepared > firstScreen.imagesPreparedSeen {
+            firstScreen.imagesPreparedSeen = progress.imagesPrepared
+            firstScreen.hold.noteProgress()
+        }
         if presentationState.presentation?.editionID != renderedEditionID {
             renderedEditionID = presentationState.presentation?.editionID
         }
         if presentationState.presentation?.contextKey != renderedContextKey {
             renderedContextKey = presentationState.presentation?.contextKey
         }
+        // The filter-change witness is **not** recorded here: an install may happen before the host has consumed the
+        // preparation request (an Edition the new context already had is installed during construction), so this pass
+        // can precede the very fact it would record. It is recorded by the page's own measured rendering
+        // (`notePreparationPageDrawn`).
     }
 
     /// O que a lista desenha, publicado **apenas quando muda**. Nenhuma leitura daqui depende da posição do leitor.
@@ -321,9 +332,85 @@ public final class FeedScreenStore {
     let firstScreen = FeedFirstScreenFacts()
 
     /// D4: the surface the feed is drawing, from the facts this store and the screen both own. Pure: it reads the
-    /// measured layout, the reported work, the search state, the elapsed wait and the sticky exposure fact.
+    /// measured layout, the reported work, the search state, the elapsed wait, the published page and the sticky
+    /// exposure fact.
     public var firstScreenSurface: FeedFirstScreenSurface {
-        firstScreen.surface(isSearching: isSearching, cardCount: renderedItems.count, work: work)
+        // The facts object owns `requestedPreparation`/`filterPageShown` and forwards them to the gate itself: this
+        // call states only what the facts do not own (the search state, the published card count and the work).
+        firstScreen.surface(isSearching: isSearching, cardCount: renderedItems.count, work: work,
+            content: firstScreenContent)
+    }
+
+    /// What the **published page** states for the first screen.
+    ///
+    /// It prefers the **publication's** own supply facts (`FirstScreenSupplyFacts`, stated by the composition from
+    /// the receipts' card identities): the admitted window projects at most 16 cards ahead of the anchor, so a
+    /// window count can never say how much the publication holds or whether the buffer is really short. The window
+    /// is the fallback for a host that states none (a unit render, an association without a receipt yet), never the
+    /// other way round.
+    public var firstScreenContent: FeedFirstScreenContent {
+        let items = renderedItems
+        let page = Array(items.prefix(FeedFirstScreenContent.firstPageCards))
+        let anchorID = state.presentation?.window.anchor.cardID
+        let anchorIndex = anchorID.flatMap { id in items.firstIndex(where: { $0.id == id }) } ?? 0
+        let progress: PreparationProgress? = {
+            if case .preparing(let progress) = work { return progress }
+            return nil
+        }()
+        // A context declares images only on **evidence**: the host's scoped fact (which the composition derives from
+        // the canonical candidates), a prepared image count, or a published image slot. `imagesPending` is
+        // deliberately not a term here — it would make `mediaPending = declaresImages && pending > 0` an identity and
+        // re-create the hold for text revisions the moment a caller broadened `pending`.
+        let declaresImages = firstScreen.sawImageRequest
+            || (progress?.imagesPrepared ?? 0) > 0
+            || page.contains { $0.isImageBearing }
+        let supply = firstScreen.supply
+        return FeedFirstScreenContent(publishedCards: supply?.publishedCards ?? items.count,
+            publishedAhead: supply?.publishedAhead ?? max(0, items.count - anchorIndex - 1),
+            distinctProviders: Set(items.compactMap(\.sourceID)).count,
+            eligibleProviders: firstScreen.eligibleProviders,
+            imageCardsInFirstPage: page.filter { $0.image != nil }.count,
+            firstPageCount: page.count,
+            declaresImages: declaresImages,
+            // A text feed has no media wait at all: the opportunity was handed its revisions, but none of them
+            // declares a card image, so an unsettled revision there is not work the page should hold for. Counting
+            // them kept the stall blocked forever on a text-only fixture (measured: the feed took >3 min to publish).
+            mediaPending: declaresImages && (progress?.imagesPending ?? 0) > 0,
+            supplyProducing: supply?.producing ?? productionActive)
+    }
+
+    /// Whether the screen draws the **rich** preparation page for a new feed it was asked to prepare.
+    ///
+    /// The host's request is honoured by the page itself, not by one drawn pass: while the gate still says the cover
+    /// is up, the page keeps the restored Edition's own headlines and pixels. The acknowledgement that the page
+    /// really rendered (`notePreparationPageDrawn`, written from the measured geometry) is the witness record — it is
+    /// not what takes the page away, so a layout still too short to cover the viewport cannot fall back to the
+    /// work/absence copy under a cover that remains.
+    ///
+    /// Scoped to the states in which the requested context shows the content it already has: an absence, a proven
+    /// failure, the end of the offer and the settled-wait facts keep the approved work/recovery surface, which owns
+    /// their copy and their actions.
+    public var requestsPreparationPage: Bool {
+        guard firstScreen.requestedPreparation, !firstScreen.reading else { return false }
+        switch work {
+        case .idle, .pending, .preparing: return true
+        case .unavailable, .deferred, .unreachable, .failed, .endOfContent: return false
+        }
+    }
+
+    /// The composition states the publication's own supply facts. Nil withdraws them (the association retired, or
+    /// its receipts belong to another context) and the window becomes the fallback again.
+    public func noteFirstScreenSupply(_ facts: FirstScreenSupplyFacts?) {
+        firstScreen.supply = facts
+        // A supply change can be the fact that settles the decision (e.g. `producing` going false when the last
+        // acquisition ends). Re-making it here keeps the cover and the exposure record in step: a visible cover
+        // would otherwise leave with no first exposure written until the next geometry or work event.
+        //
+        // Only once a preparation was really asked for: before the screen appears `preparationShown` is false and the
+        // gate would answer `reading` by definition, which would stamp the exposure and skip the page this supply
+        // fact arrived to serve.
+        guard firstScreen.hold.preparationShown || firstScreen.requestedPreparation else { return }
+        settleFirstScreen()
     }
 
     /// Whether the reading surface has been shown (sticky). Observable: the cover leaves on the pass a
@@ -339,12 +426,48 @@ public final class FeedScreenStore {
     /// appearance (the context reset), which is what `noteFirstScreenAppeared` states.
     public var firstScreenWaitLimit: Duration { firstScreen.maximumWait }
 
+    /// The **total** ceiling captured when the first screen appeared. The host loop uses this value (not a live
+    /// composition value) so a later change cannot renew the hold without a new appearance.
+    public var firstScreenCeilingLimit: Duration { firstScreen.ceiling }
+
     /// The host's own inputs for the decision, stated when the screen appears and whenever its window becomes empty
     /// again; an empty window is what makes the hold legitimate (a durable restore was never prepared here).
-    public func noteFirstScreenAppeared(hasSources: Bool, maximumWait: Duration) {
+    ///
+    /// `requestedPreparation` is the explicit opposite fact: a **filter change** is a new feed being prepared, so
+    /// its page is drawn even when the new context restores an Edition it already had on the first pass. `eligibleProviders`
+    /// is how many sources the reader's selection can contribute at all — the variety target is capped by it, so a
+    /// single-source context is never held waiting for three.
+    public func noteFirstScreenAppeared(hasSources: Bool, maximumWait: Duration,
+        ceiling: Duration = .seconds(30), eligibleProviders: Int = 1,
+        requestedPreparation: Bool = false) {
         firstScreen.hasSources = hasSources
         firstScreen.maximumWait = maximumWait
-        if renderedItems.isEmpty { firstScreen.hold.notePreparationShown() }
+        firstScreen.ceiling = ceiling
+        firstScreen.eligibleProviders = eligibleProviders
+        if requestedPreparation { firstScreen.requestedPreparation = true }
+        if renderedItems.isEmpty || requestedPreparation { firstScreen.hold.notePreparationShown() }
+    }
+
+    /// The host asked for the preparation page because a **new feed** is being made (a filter/source change). Sticky:
+    /// only the page being drawn clears it, and the request is bound to this store — the store of the association
+    /// being installed — before that association is published, so no appearance or measurement can pre-empt it.
+    public func noteFirstScreenPreparationRequested() {
+        firstScreen.requestedPreparation = true
+        firstScreen.hold.notePreparationShown()
+    }
+
+    /// The page declares images: stated by the host when the selection's supply is known to carry media. It keeps
+    /// the image target honest before any card or media count exists.
+    public func noteFirstScreenDeclaresImages() { firstScreen.sawImageRequest = true }
+
+    /// Whether a producer is active for this context right now. `preparing`/`pending` mean acquisition or
+    /// preparation is in flight; every other work state is a settled fact (idle after a concluded attempt, an
+    /// end, or a proven failure), and none of them may keep the batch target alive.
+    private var productionActive: Bool {
+        switch work {
+        case .pending, .preparing: return true
+        case .idle, .unavailable, .deferred, .unreachable, .failed, .endOfContent: return false
+        }
     }
 
     /// One laid-out card, as the scroll view measured it. The layout is the evidence, and this is where the decision
@@ -352,6 +475,24 @@ public final class FeedScreenStore {
     /// above it are already part of the value.
     public func noteFirstScreenLayout(cardID: PublicationCardID, contentBottom: CGFloat, viewportHeight: CGFloat) {
         firstScreen.hold.record(cardID: cardID, contentBottom: contentBottom, viewportHeight: viewportHeight)
+        settleFirstScreen()
+    }
+
+    /// The preparation page was **rendered**. The view states it from its own `onAppear`, which is the only fact that
+    /// means "the page was on screen": marking it from a settle, from an install or from a timer would let the
+    /// witness claim a drawing that never happened (the filter journey's `filter_page` is exactly that claim).
+    public func notePreparationPageDrawn() {
+        guard firstScreen.requestedPreparation, !firstScreen.filterPageShown else { return }
+        firstScreen.filterPageShown = true
+        #if DEBUG
+        if !firstScreen.filterPreparationNoted {
+            firstScreen.filterPreparationNoted = true
+            FeedLaunchWitness.noteFilterPreparation()
+        }
+        #endif
+        // The acknowledgement is a fact that settles the decision (with the request honoured, the gate can answer
+        // `reading`), so it is re-made here: the cover leaves and the first exposure is recorded on this pass,
+        // instead of waiting for another geometry or work event that may never come.
         settleFirstScreen()
     }
 
@@ -365,6 +506,26 @@ public final class FeedScreenStore {
         if !firstScreen.waitExpired { firstScreen.waitExpired = true }
     }
 
+    /// The host states that the **total** ceiling for this appearance has elapsed. Sticky, and stronger than the
+    /// stall: it ends the hold whatever the supply is still doing.
+    public func expireFirstScreenCeiling() {
+        if !firstScreen.ceilingExpired { firstScreen.ceilingExpired = true }
+    }
+
+    /// Which exit exposed the reading surface. It states the truth of the wait: a bound that ended it, or a page
+    /// that was exposed while a content target was still unmet, is recorded as a fallback — never as a page that met
+    /// its targets.
+    #if DEBUG
+    private var exposureReason: FeedLaunchWitness.ExposureReason {
+        if !firstScreen.hold.preparationShown && !firstScreen.requestedPreparation { return .immediateResume }
+        if firstScreen.ceilingExpired { return .ceilingFallback }
+        if firstScreenContent.holdsForContent { return .partialContent }
+        if firstScreen.waitExpired { return .stallFallback }
+        if firstScreen.requestedPreparation { return .filterChange }
+        return .initialLoad
+    }
+    #endif
+
     /// The one transition the store owns: the reading surface was shown, and the first exposure is on the record.
     private func settleFirstScreen() {
         guard firstScreenSurface == .reading else { return }
@@ -372,8 +533,13 @@ public final class FeedScreenStore {
         #if DEBUG
         if !firstScreen.noteRecorded, let coverage = firstScreen.hold.coverage {
             firstScreen.noteRecorded = true
+            let content = firstScreenContent
             FeedLaunchWitness.noteFirstExposure(cardCount: coverage.laidOutCards,
-                contentBottom: Double(coverage.contentBottom), viewportHeight: Double(coverage.viewportHeight))
+                contentBottom: Double(coverage.contentBottom), viewportHeight: Double(coverage.viewportHeight),
+                images: content.imageCardsInFirstPage, providers: content.distinctProviders,
+                ahead: content.publishedAhead, published: content.publishedCards,
+                batchReached: content.batchReached, reason: exposureReason,
+                holdMilliseconds: (firstScreen.hold.elapsed / .seconds(1)) * 1000)
         }
         #endif
         // The measurement exists to decide the transition once; a long read must not keep a ledger of cards it will
@@ -426,22 +592,48 @@ final class FeedFirstScreenFacts {
     /// operation.
     @ObservationIgnored var hasSources = true
     @ObservationIgnored var maximumWait: Duration = .seconds(5)
+    /// The total ceiling for one appearance (host fact), and whether it has elapsed.
+    @ObservationIgnored var ceiling: Duration = .seconds(30)
+    /// How many distinct sources the reader's selection can contribute — the cap on the variety target.
+    @ObservationIgnored var eligibleProviders = 1
+    /// The host asked for the preparation page for a **new feed** (a filter change), even when the new context
+    /// restores an Edition it already had immediately.
+    @ObservationIgnored var requestedPreparation = false
+    /// The page is known to declare images, stated by the host before any count exists.
+    @ObservationIgnored var sawImageRequest = false
+    /// The publication's own supply facts, stated by the composition; nil falls back to the installed window.
+    /// Observable on purpose: the facts change when a publication concludes or media is decided, and the surface and
+    /// the record must be re-made on that pass — an ignored value would leave the decision reading the previous one.
+    var supply: FirstScreenSupplyFacts?
+    /// The filter-change page was already recorded for this context.
+    @ObservationIgnored var filterPreparationNoted = false
+    /// The filter-change page has been drawn once with a measured layout under it. Observable: it is the request's
+    /// own acknowledgement — the gate draws that page at least once before the terminal exits — and the witness
+    /// record is written on this pass. It does not take the page away: the gate's own `preparation` decision does.
+    var filterPageShown = false
+    /// The last media count this store reacted to, so a newly prepared image resets the stall clock once.
+    @ObservationIgnored var imagesPreparedSeen = 0
     /// The reading surface has been shown. Sticky: it is never taken back.
     var reading = false
     /// The host's fact that the run's bounded maximum wait is over.
     var waitExpired = false
+    /// The host's fact that the total ceiling for this appearance is over. Sticky.
+    var ceilingExpired = false
     #if DEBUG
     /// Whether the first exposure was already written to the launch record.
     var noteRecorded = false
     #endif
 
     /// The decision, from the facts above and the ones the store owns.
-    func surface(isSearching: Bool, cardCount: Int, work: FeedPresentationState.Work) -> FeedFirstScreenSurface {
+    func surface(isSearching: Bool, cardCount: Int, work: FeedPresentationState.Work,
+        content: FeedFirstScreenContent) -> FeedFirstScreenSurface {
         FeedFirstScreenGate.surface(hasSources: hasSources, isSearching: isSearching,
-            preparationShown: hold.preparationShown, cardCount: cardCount, coverage: hold.coverage, work: work,
+            preparationShown: hold.preparationShown, requestedPreparation: requestedPreparation,
+            filterPageShown: filterPageShown,
+            cardCount: cardCount, coverage: hold.coverage, work: work, content: content,
             // The host's expiry is the bound's own fact; before it, the wait is the measured elapsed time.
             waited: waitExpired ? maximumWait : hold.waited,
-            maximumWait: maximumWait, alreadyExposed: reading)
+            maximumWait: maximumWait, ceilingExpired: ceilingExpired, alreadyExposed: reading)
     }
 }
 
@@ -460,6 +652,8 @@ final class FeedFirstScreenHold {
     /// buy another stall window: only a real, monotonic advance of the coverage resets the clock.
     private var highWaterBottom: CGFloat = 0
     private var startedAt: Double?
+    /// When the waiting surface first appeared for this context: the denominator of the hold the record states.
+    private var appearedAt: Double?
     private let clock: () -> Double
     private(set) var preparationShown = false
 
@@ -487,7 +681,16 @@ final class FeedFirstScreenHold {
     }
 
     /// The screen drew a surface that waits: that is what makes holding the transition legitimate.
-    func notePreparationShown() { preparationShown = true }
+    func notePreparationShown() {
+        if !preparationShown { appearedAt = clock() }
+        preparationShown = true
+    }
+
+    /// How long the waiting surface has been up for this context (zero when none was drawn).
+    var elapsed: Duration {
+        guard let appearedAt else { return .zero }
+        return .seconds(max(0, clock() - appearedAt))
+    }
 
     /// One laid-out card, as the scroll view measured it. The bottom is in viewport coordinates, so the card's own
     /// height and every spacing above it are already part of the value.
@@ -503,6 +706,13 @@ final class FeedFirstScreenHold {
         if startedAt == nil || advanced {
             startedAt = instant ?? clock()
         }
+    }
+
+    /// Meaningful progress that is not geometry: a newly prepared image. It resets the stall the same way a new
+    /// card does, because the wait it measures is the whole pipeline's, not the layout's alone.
+    func noteProgress(at instant: Double? = nil) {
+        guard !frozen, startedAt != nil else { return }
+        startedAt = instant ?? clock()
     }
 
     /// Stop recording: the transition is decided and the first exposure is stated.

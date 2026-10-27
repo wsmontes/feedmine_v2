@@ -14,17 +14,22 @@
 // Does not own: what plays (Composition resolves the occurrence's own payload), the surfaces (UI values), the
 // reader's layout, or where a position is stored (a `ReaderPlaybackPositions` the host hands in).
 //
-// Two recorded differences from V1, both stated rather than silently dropped:
-//   - the lock screen carries no artwork and no episode summary. V1 published the image its cache held and the
-//     excerpt as `MPMediaItemPropertyComments`; `ReaderMediaItem` carries neither, and publishing the image means
-//     handing the player a reference to the local image the card's slot already materialized (never a download);
+// What V1 had and this carries: the lock screen's artwork, scaled once off the main actor from the pixels the
+// playable card was already admitted with, published only while that same occurrence is still up. Publishing an
+// image never downloads one: the item carries the presentation's own immutable bitmap, and nil states the truth.
+//
+// One recorded difference remains:
 //   - a position is written through the database on the main actor (V1's `UserDefaults` never touched disk
 //     there). The write is one small row every five seconds; if a hitch ever shows up in the player path, it is
 //     this call, and the fix is a serial background writer with the in-memory value kept synchronous.
+import CoreGraphics
 import Foundation
 import Observation
 import AVFoundation
 import MediaPlayer
+#if canImport(UIKit)
+import UIKit
+#endif
 import FeedMineDomain
 import FeedMineRuntime
 
@@ -62,6 +67,10 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
     /// What the periodic tick is allowed to write: the item and generation its sample belongs to.
     @ObservationIgnored private var tickCardID: PublicationCardID?
     @ObservationIgnored private var tickGeneration: UInt64 = 0
+    /// The one artwork publication in flight for the item that is up, and for which item it was started. The
+    /// scaling runs off the main actor; the completion publishes only if the same card is still playing.
+    @ObservationIgnored private var artworkTask: Task<Void, Never>?
+    @ObservationIgnored private var artworkRequestedCardID: PublicationCardID?
 
     init() {
         // V1's own cadence: half a second, which is what its scrubber and its five-second save were built on.
@@ -103,6 +112,9 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         routeChangeObserver = nil
         failureObservation = nil
         timeControlObservation = nil
+        artworkTask?.cancel()
+        artworkTask = nil
+        artworkRequestedCardID = nil
         for (command, target) in remoteCommandTargets { command.removeTarget(target) }
         remoteCommandTargets = []
         player.pause()
@@ -265,11 +277,83 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         if let duration = state.duration, duration > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = duration
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // The artwork of an episode does not change while it plays, and re-reading it every tick would rebuild the
+        // dictionary from nothing. V1 kept the published entry for the same item; the key is what proves it is the
+        // same occurrence rather than the previous one.
+        let center = MPNowPlayingInfoCenter.default()
+        if let published = center.nowPlayingInfo,
+            published[Self.nowPlayingCardKey] as? String == item.cardID.rawValue.uuidString,
+            let artwork = published[MPMediaItemPropertyArtwork] {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        center.nowPlayingInfo = info
+        publishArtworkIfNeeded(for: item, generation: generation)
     }
 
     /// V1's private key (`feedmineItemID`), so the same guard reads the same way.
     static let nowPlayingCardKey = "feedmineItemID"
+    /// V1 published a 600 pt artwork box; the lock screen's own bound is the same.
+    static let nowPlayingArtworkPixel = 600
+
+    /// Starts the one scaling task for this occurrence, if it carries pixels and none were published yet. The
+    /// image is never decoded here: `item.artwork` is the presentation's immutable bitmap.
+    private func publishArtworkIfNeeded(for item: ReaderMediaItem, generation: UInt64) {
+        guard let artwork = item.artwork, player.currentItem != nil else { return }
+        if artworkRequestedCardID == item.cardID { return }
+        if let published = MPNowPlayingInfoCenter.default().nowPlayingInfo,
+            published[Self.nowPlayingCardKey] as? String == item.cardID.rawValue.uuidString,
+            published[MPMediaItemPropertyArtwork] != nil { return }
+        artworkRequestedCardID = item.cardID
+        artworkTask?.cancel()
+        let cgImage = artwork.cgImage
+        // Read the bound on the main actor; the detached closure sees only Sendable values.
+        let maxPixel = Self.nowPlayingArtworkPixel
+        artworkTask = Task { [weak self] in
+            let scaled = await Task.detached(priority: .utility) {
+                Self.scaledArtwork(cgImage, maxPixel: maxPixel)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.publishArtwork(scaled, cardID: item.cardID, generation: generation)
+        }
+    }
+
+    /// The completion half: only the occurrence that is still up may take the artwork. A switch, a stop or a
+    /// refusal that left no player item discards it instead of painting the new episode with the old cover.
+    private func publishArtwork(_ image: CGImage, cardID: PublicationCardID, generation: UInt64) {
+        guard self.generation == generation, state.item?.cardID == cardID, player.currentItem != nil,
+            let published = MPNowPlayingInfoCenter.default().nowPlayingInfo,
+            published[Self.nowPlayingCardKey] as? String == cardID.rawValue.uuidString else { return }
+        let artwork = Self.makeArtwork(image)
+        var updated = published
+        updated[MPMediaItemPropertyArtwork] = artwork
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
+    }
+
+    /// MediaPlayer requests pixels on its own queue. Construct the synchronous handler outside MainActor so
+    /// it captures only immutable pixels, never the publication actor's executor or the adapter.
+    nonisolated private static func makeArtwork(_ image: CGImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: CGSize(width: image.width, height: image.height)) { [image] _ in
+            UIImage(cgImage: image)
+        }
+    }
+
+    /// Downscales an already-decoded bitmap for the lock screen. Runs off the main actor (`Task.detached`) — a
+    /// cover can be a 3,000 px hero, and drawing it on the render thread is a visible hitch for a fact the lock
+    /// screen never displays at that size. An image already inside the bound is returned untouched.
+    nonisolated static func scaledArtwork(_ image: CGImage, maxPixel: Int) -> CGImage {
+        let longest = max(image.width, image.height)
+        guard maxPixel > 0, longest > maxPixel else { return image }
+        let scale = CGFloat(maxPixel) / CGFloat(longest)
+        let width = max(1, Int((CGFloat(image.width) * scale).rounded()))
+        let height = max(1, Int((CGFloat(image.height) * scale).rounded()))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return image }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
+    }
 
     // MARK: - Playback
 
@@ -323,6 +407,9 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         activateSession()
         failureObservation = nil
         timeControlObservation = nil
+        artworkTask?.cancel()
+        artworkTask = nil
+        artworkRequestedCardID = nil
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
         observeEnd(of: playerItem, generation: generation)
@@ -370,6 +457,8 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         guard completedCardID != state.item?.cardID else { return }
         guard state.isPlaying != playing else { return }
         state = state.reporting(position: state.position, duration: state.duration, isPlaying: playing)
+        // Playback starting is the fact that answers a refusal: only here is the stated reason resolved.
+        if playing { state = state.clearingError() }
         updateNowPlaying(force: true)
     }
 
@@ -449,6 +538,9 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         // name and `FullPlayerView` stays reachable (F15 R4). With no payload at all, only the reason is kept;
         // the host states it in a toast, because there is nothing to attach a bar to.
         guard player.currentItem != nil else {
+            artworkTask?.cancel()
+            artworkTask = nil
+            artworkRequestedCardID = nil
             state = ReaderMediaState(item: item, isPlaying: false, position: 0, duration: nil, error: message)
             updateNowPlaying(force: true)
             return
@@ -463,6 +555,9 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         generation &+= 1
         completedCardID = nil
         lastSavedAt = 0
+        artworkTask?.cancel()
+        artworkTask = nil
+        artworkRequestedCardID = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
         state = .idle

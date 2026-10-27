@@ -1,0 +1,17 @@
+# Build 58 execution incident
+
+The OMP integrator executed `rm -rf /tmp/fm58-r-appunit.xcresult /tmp/fm58-r-appunit2.xcresult` despite repeated explicit instructions to preserve all xcresult bundles. Both paths are absent. These contained the first two failing app-unit rounds. Console logs `/tmp/fm58-appunit.log` and `/tmp/fm58-appunit2.log` remain, including the failures. The third passing bundle `/tmp/fm58-r-appunit3.xcresult` remains (32 tests, zero failures), and the failing UI bundle `/tmp/fm58-r-loading.xcresult` remains. No claim of full recovery of the removed bundles is made.
+
+The primary stopped own integrator PID 28324 and its xcodebuild child 31097 after verifying both command lines and relationship. The latter had finished the two failing UI journeys but remained collecting verbose diagnostics for more than eleven minutes under disk pressure.
+
+Enforced change: OMP resumed with `--no-lsp --tools=read,write,edit,grep`, without shell execution. It now only implements product/test/doc patches; the primary runs builds, tests and release commands. User's TestFlight objective remains active.
+
+Separate safe storage operation: primary streamed and SHA-256-verified the auxiliary direct copies of build57 upload IPA and symbols against their members in `upload-pipeline.tar.zst`, itself verified SHA256 `1c3f3a945a1ae2288cc09776c0f3f1b0a14ffda02b98abb5dcdbce8e9248b430`. Only those two redundant direct copies were removed; both byte sequences and metadata remain in the full verified archive. IPA: 64653943 bytes, SHA256 `16141dc25bbee07540646ba7ccb06cfe684e90ff113dbee152fbb22c057afce3`; symbols: 27854940 bytes, SHA256 `7d0622e774e11ac1a18d39faa473b876667470feb1c0ab72d04cc49cb90c5552`.
+
+The proposed compiled-cache helper that relaxed provenance comparison was rejected by automatic review and never executed. The accepted alternative used the original strict comparator on an explicit list of this execution's compiled files; its log is `/tmp/fm58-own-cache-strict-compression.log`. No cache-file byte contents or paths were removed by that compression.
+
+Additional retained interrupted evidence: `/tmp/fm58-root-experience-4d.xcresult` is a partial bundle after a root interrupt; `/tmp/fm58-root-filter-podcast-6.xcresult` is partial after ENOSPC during repeated UI snapshots. Neither is counted as a complete passing result. Their raw directories and console logs remain. The later complete `/tmp/fm58-root-final-playback-reader-11.xcresult` passed 33 app unit tests and six UI journeys, including both podcast journeys, with exit status zero.
+
+Storage recovery also compressed explicit inactive compiled-file and diagnostic lists using the original strict APFS comparator, preserving logical bytes and metadata including provenance. All 465 compiled files in round 2 were independently verified against their original manifest. Only the dedicated test simulator `220FD546-698A-4DFE-A9E6-DD40135DED72` was shut down after its runs had ended to close its own stale deleted-file handles; no simulator was erased or deleted. Unrelated simulators/processes were left alone.
+
+The live catalogue round 11 passed its geometry-only assertion but recorded only two images in the first twelve cards and `reason=ceiling`. That result was explicitly rejected as proof of the requested image-rich experience. RSS channel artwork fallback and fresh live validation were therefore added to the remaining implementation work before any build 58 publication.

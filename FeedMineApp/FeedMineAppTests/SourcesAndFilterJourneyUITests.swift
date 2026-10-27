@@ -183,4 +183,73 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         add(proof)
     }
 
+
+    /// **A filter change is a new feed.** Changing the criteria replaces the association, so the app must draw its
+    /// preparation page for the new context — not keep the old feed on screen as if nothing had happened — and the
+    /// page is recorded by the app itself (`filter_page`), because `XCUIApplication.launch()` returns only when the
+    /// app is idle and a journey can never sample that transition in the moment it exists.
+    ///
+    /// The second half removes the criterion: that is another new context, so the page is drawn again. Both halves
+    /// read the applied lens (not the sheet's draft), which is the discriminating fact of a real filter change.
+    @MainActor
+    func testFilterChangeDrawsThePreparationPageForTheNewFeed() throws {
+        let app = SurfaceTest.launchFixture(["FEEDMINE_FIXTURE_MEDIA": "image"])
+        let record = app.descendants(matching: .any)["feed-launch-record"]
+        XCTAssertTrue(record.waitForExistence(timeout: 60), "the app publishes its own launch record")
+
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 30), "the filter sheet is presented")
+        // Xcode 26 draws a SwiftUI picker option as a button on one idiom and as another element on the next; the
+        // criterion is what matters, not its element type.
+        let preset = app.descendants(matching: .any)["preset-option-lastClicked"].firstMatch
+        XCTAssertTrue(preset.waitForExistence(timeout: 20), "the sheet offers its preset criterion")
+        XCTAssertEqual(preset.value as? String, "not selected", "premise: the draft starts clean")
+        preset.tap()
+        XCTAssertEqual(preset.value as? String, "selected",
+            "the tap really selected the criterion, so the change below is a real one")
+        app.buttons["filter-done"].tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["filter-done"], timeout: 20),
+            "applying the criterion closes the sheet")
+
+        // Fail fast on the fact this journey exists for. A failed `XCTAssertTrue` keeps running, and two 90 s waits
+        // of repeated accessibility snapshots filled the volume (measured 2026-10-27). 60 s is the fixture's bound.
+        guard waitForRecord(record, containing: "filter_page=1", timeout: 60) else {
+            return XCTFail("the new context's preparation page was never drawn: \(record.label)")
+        }
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60), "the new feed arrives")
+        // The chip **is** its removal control (`ReaderFilterLens`: one button per chip whose action removes its own
+        // criterion). There is no separate removal identifier, and inventing one made the journey wait 30 s for a
+        // control that never existed.
+        let lens = app.descendants(matching: .any)["lens-chip-preset"].firstMatch
+        guard lens.waitForExistence(timeout: 60) else {
+            return XCTFail("the applied criterion is not stated by the feed's own lens: \(record.label)")
+        }
+        lens.tap()
+        guard SurfaceTest.waitForAbsence(lens, timeout: 60) else {
+            return XCTFail("the criterion did not leave the context: \(record.label)")
+        }
+        guard waitForRecord(record, containing: "filter_page=2", timeout: 60) else {
+            return XCTFail("removing the criterion did not draw another page: \(record.label)")
+        }
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60))
+
+        let proof = XCTAttachment(string: "filter_page=2 record=\(record.label)")
+        proof.name = "filter-change-preparation"
+        proof.lifetime = .keepAlways
+        add(proof)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "filter-change-feed"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// Polls the app's own record instead of sleeping: the transition is the app's, and its record is the only
+    /// witness of a surface that lives for less than a launch.
+    @MainActor
+    private func waitForRecord(_ element: XCUIElement, containing needle: String,
+        timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", needle), object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
 }
