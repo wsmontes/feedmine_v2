@@ -11,14 +11,28 @@ import FeedMineDomain
 extension PublicationStore {
 
     public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord]) throws {
+        try createEdition(edition, firstSegment: firstSegment, cards: cards, expectedSourceExclusions: nil)
+    }
+
+    public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord],
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
         try database.write { db in
+            try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
         }
     }
 
     public func createInitialEdition(_ edition: EditionRecord, firstSegment: SegmentRecord,
         cards: [CardRecord], initialCheckpoint: SessionStore.CheckpointRecord) throws {
+        try createInitialEdition(edition, firstSegment: firstSegment, cards: cards,
+            initialCheckpoint: initialCheckpoint, expectedSourceExclusions: nil)
+    }
+
+    public func createInitialEdition(_ edition: EditionRecord, firstSegment: SegmentRecord,
+        cards: [CardRecord], initialCheckpoint: SessionStore.CheckpointRecord,
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
         try database.write { db in
+            try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             guard firstSegment.editionID == edition.id, firstSegment.ordinal == 0,
                 initialCheckpoint.editionID == edition.id,
                 firstSegment.cardIDs.contains(initialCheckpoint.cardID) else {
@@ -48,12 +62,33 @@ extension PublicationStore {
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord]) throws {
-        try appendSegment(segment, cards: cards, expectedTail: nil, recurrence: .forbidden)
+        try appendSegment(segment, cards: cards, expectedSourceExclusions: nil)
+    }
+
+    public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        try appendSegment(segment, cards: cards, expectedTail: nil, recurrence: .forbidden,
+            expectedSourceExclusions: expectedSourceExclusions)
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
         expectingTailCardID: PublicationCardID, recurrence: OriginRecurrenceRecord = .forbidden) throws {
-        try appendSegment(segment, cards: cards, expectedTail: expectingTailCardID, recurrence: recurrence)
+        try appendSegment(segment, cards: cards, expectingTailCardID: expectingTailCardID,
+            recurrence: recurrence, expectedSourceExclusions: nil)
+    }
+
+    public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
+        expectingTailCardID: PublicationCardID, recurrence: OriginRecurrenceRecord = .forbidden,
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        try appendSegment(segment, cards: cards, expectedTail: expectingTailCardID, recurrence: recurrence,
+            expectedSourceExclusions: expectedSourceExclusions)
+    }
+
+    private static func requireSourceExclusions(_ expected: ReaderSourceExclusionSnapshot?, in db: Database) throws {
+        guard let expected else { return }
+        guard try ReaderPreferencesStore.sourceExclusionSnapshot(in: db) == expected else {
+            throw PublicationStoreError.staleSourceExclusions
+        }
     }
 
     /// Whether an origin already published in the Edition may occur again (PD-1).
@@ -92,8 +127,10 @@ extension PublicationStore {
     }
 
     private func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
-        expectedTail: PublicationCardID?, recurrence: OriginRecurrenceRecord) throws {
+        expectedTail: PublicationCardID?, recurrence: OriginRecurrenceRecord,
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
         try database.write { db in
+            try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
                 arguments: [PersistenceValueCoding.uuid(segment.editionID.rawValue)]) else { throw PublicationStoreError.missingEdition }
             let edition = try Self.decodeEdition(row)

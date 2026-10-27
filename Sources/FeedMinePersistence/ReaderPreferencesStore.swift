@@ -29,6 +29,18 @@ public struct ReaderPreferencesStore: Sendable {
     private let database: RuntimeDatabase
     public init(database: RuntimeDatabase) { self.database = database }
     public func load() throws -> Record? { try database.read { try Self.read($0) } }
+    /// Publication policy is read strictly: corrupt rules must not become an unrestricted default.
+    public func sourceExclusionSnapshot() throws -> ReaderSourceExclusionSnapshot {
+        try database.read { try Self.sourceExclusionSnapshot(in: $0) }
+    }
+
+    /// Shared by the caller's snapshot and the publication writer's existing transaction.
+    static func sourceExclusionSnapshot(in db: Database) throws -> ReaderSourceExclusionSnapshot {
+        let payload = try Data.fetchOne(db,
+            sql: "SELECT settings_json FROM reader_preferences WHERE singleton_id = 1")
+        let settings = try payload.map { try JSONDecoder().decode(ReaderSettings.self, from: $0) } ?? .standard
+        return ReaderSourceExclusionSnapshot(settings: settings)
+    }
     public func initialize(sourceKeys: [String]) throws -> Record {
         try Self.validate(sourceKeys)
         return try database.write { db in

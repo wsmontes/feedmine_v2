@@ -127,3 +127,18 @@ Não usar revoke nem toggle de seleção como regra de exclusão.
 Caveat identificado no host: palavras globais ainda entram em `applied(ContextKey)` e o switch pode
 substituir associação. O plano exige medir esse caso e manter F13 aberto se o histórico não se
 preservar; entregar a nova regra de fonte não certifica todo UX13. Espaço no fim: 707 MiB.
+
+## Execução F13: T1–T3 concluídas
+
+Regra por SourceID e snapshot efetivo persistidos; provider subtrai memberships bloqueadas, preserva
+scope/cursor e expande apenas aliases conhecidos; writer compara política dentro de create/append,
+com captura estrita que não converte settings inválidos em regra vazia. Requests do coordenador
+transportam a expectativa e os caminhos anteriores permanecem compatíveis.
+
+Testes de tarefa: **25/0**, **41/0**, **27/0**. Pacote completo após as três: **1758 testes,
+1 pulado, 0 falhas** (105,896 s). Plano/ledger atualizados; relatório e logs duráveis em
+`2026-10-27-source-exclusions-execution.md`.
+
+Próximo: T4, integração de snapshot/provider/writer nas lanes e no bootstrap, com reset de caminhada
+sem reescrever histórico; depois T5 UI e T6 jornadas. O app ainda não usa as novas regras e não há
+PASS UX13. Disco 641 MiB. Sem build iOS, gate, limpeza ou distribuição.

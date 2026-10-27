@@ -29,7 +29,7 @@
 
 ## Workspace e estado
 
-Base de desenho: `382edf73`. Tasks 1–2 implementadas e verificadas; tarefas 3–6 pendentes. Antes de executar,
+Base de desenho: `382edf73`. Tasks 1–3 implementadas e verificadas; tarefas 4–6 pendentes. Antes de executar,
 verificar worktree/branch e estado atual. Reusar a branch de trabalho isolada se adequada; não copiar
 build caches. Há pouco espaço; não abrir build iOS sem capacidade confirmada. Testes do pacote podem
 reusar `.build/index-build` enquanto existir e couberem.
@@ -59,14 +59,14 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 ### Task 3: Snapshot guard inside publication commit
 
-**Files:** Modify `Sources/FeedMinePersistence/PublicationStore+Writing.swift`, `Sources/FeedMinePersistence/PublicationStore.swift` (errors), `Sources/FeedMinePublication/PublicationCoordinator.swift`; test `Tests/FeedMinePersistenceTests/PublicationSourceExclusionTests.swift`.
+**Files:** Modify `Sources/FeedMinePersistence/ReaderPreferencesStore.swift` (strict reader), `Sources/FeedMinePersistence/PublicationStore+Writing.swift`, `Sources/FeedMinePersistence/PublicationStore.swift` (errors), `Sources/FeedMinePublication/PublicationCoordinator.swift`; test `Tests/FeedMinePersistenceTests/PublicationSourceExclusionTests.swift`.
 
-**Interfaces:** Consumes T1. Add optional `expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil` to createEdition/createInitialEdition/appendSegment public entry points and carry it through coordinator request values. Add `PublicationStoreError.staleSourceExclusions`. Writer decodes current preferences in its existing transaction and compares the effective snapshot before writing. Missing settings use `.standard`, unreadable settings throw. No nested database read from the transaction.
+**Interfaces:** Consumes T1. Add optional `expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil` to createEdition/createInitialEdition/appendSegment public entry points and carry it through coordinator request values. Add `PublicationStoreError.staleSourceExclusions`. Writer decodes current preferences in its existing transaction and compares the effective snapshot before writing. Missing settings use `.standard`, unreadable settings throw. No nested database read from the transaction. Produces also `ReaderPreferencesStore.sourceExclusionSnapshot() throws -> ReaderSourceExclusionSnapshot`, backed by a strict internal projection shared with the writer; do not capture policy via tolerant `load()`.
 
-- [ ] RED: capture empty policy, persist A exclusion, try createInitialEdition and append with old expectation. Assert stale error, identical edition/segments/cards before and after; no partial first Edition. Add master off/on and name-only update cases.
-- [ ] Implement guard for all three writer entry paths, comparing semantic IDs only. Existing callers default to nil; production fiação in T4 must supply the guard.
-- [ ] GREEN: `swift test --scratch-path .build/index-build --disable-index-store --jobs 2 --filter 'PublicationSourceExclusion|PublicationCoordinator|SessionStore|EditedArticleRecurrence'`: zero failures.
-- [ ] Commit writer/coordinator with tests.
+- [x] RED: capture empty policy, persist A exclusion, try createInitialEdition and append with old expectation. Assert stale error, identical edition/segments/cards before and after; no partial first Edition. Add master off/on and name-only update cases.
+- [x] Implement guard for all three writer entry paths, comparing semantic IDs only. Existing callers default to nil; production fiação in T4 must supply the guard.
+- [x] GREEN: `swift test --scratch-path .build/index-build --disable-index-store --jobs 2 --filter 'PublicationSourceExclusion|PublicationCoordinator|SessionStore|EditedArticleRecurrence'`: zero failures.
+- [x] Commit writer/coordinator with tests.
 
 ### Task 4: Production fiação, stale recovery and reconsideration
 
@@ -107,7 +107,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 ## Self-review and handoff
 
 Every design proof maps to T1–T6; domain/snapshot/coordinator names above are the interfaces later tasks consume.
-Tasks 1–2 are complete; tasks 3–6 remain open. Native execution follows the user's autonomous-work instruction;
+Tasks 1–3 are complete; tasks 4–6 remain open. Native execution follows the user's autonomous-work instruction;
 implementation should not dispatch per-task implementers. One final independent review remains required.
 
 Current gating resource: app validation cannot be declared done at 711 MiB free; remeasure before starting.

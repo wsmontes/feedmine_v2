@@ -56,8 +56,20 @@ public struct PublicationCoordinator: Sendable {
         public let segmentSeed: UInt64
         public let segmentCreatedAt: Date
         public let cardIDs: [PublicationCardID]
+        public let expectedSourceExclusions: ReaderSourceExclusionSnapshot?
 
         public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, publicationSchemaVersion: PublicationSchemaVersion, selectionSeed: UInt64, editionCreatedAt: Date, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID]) {
+            self.init(selection: selection, drafts: drafts, editionID: editionID,
+                publicationSchemaVersion: publicationSchemaVersion, selectionSeed: selectionSeed,
+                editionCreatedAt: editionCreatedAt, segmentID: segmentID, segmentSeed: segmentSeed,
+                segmentCreatedAt: segmentCreatedAt, cardIDs: cardIDs, expectedSourceExclusions: nil)
+        }
+
+        public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID,
+            publicationSchemaVersion: PublicationSchemaVersion, selectionSeed: UInt64, editionCreatedAt: Date,
+            segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
+            expectedSourceExclusions: ReaderSourceExclusionSnapshot?) {
+            self.expectedSourceExclusions = expectedSourceExclusions
             self.selection = selection
             self.drafts = drafts
             self.editionID = editionID
@@ -96,10 +108,22 @@ public struct PublicationCoordinator: Sendable {
         /// The replenishment attempt this publication concludes, when a host decided one; nil for work that is not
         /// a replenishment (the first Edition).
         public let operation: FeedReplenishmentOperationID?
+        public let expectedSourceExclusions: ReaderSourceExclusionSnapshot?
 
         public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
             originRecurrence: PublicationOriginRecurrence = .forbidden,
             operation: FeedReplenishmentOperationID? = nil) {
+            self.init(selection: selection, drafts: drafts, editionID: editionID, segmentID: segmentID,
+                segmentSeed: segmentSeed, segmentCreatedAt: segmentCreatedAt, cardIDs: cardIDs,
+                originRecurrence: originRecurrence, operation: operation, expectedSourceExclusions: nil)
+        }
+
+        public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID,
+            segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
+            originRecurrence: PublicationOriginRecurrence = .forbidden,
+            operation: FeedReplenishmentOperationID? = nil,
+            expectedSourceExclusions: ReaderSourceExclusionSnapshot?) {
+            self.expectedSourceExclusions = expectedSourceExclusions
             self.operation = operation
             self.selection = selection
             self.drafts = drafts
@@ -114,7 +138,8 @@ public struct PublicationCoordinator: Sendable {
 
     public func createEdition(_ request: CreateRequest) throws -> PublicationOutcome {
         guard let records = try Self.firstPublication(request) else { return .nothingToPublish }
-        try store.createEdition(records.0, firstSegment: records.1, cards: records.2)
+        try store.createEdition(records.0, firstSegment: records.1, cards: records.2,
+            expectedSourceExclusions: request.expectedSourceExclusions)
         return .published(Self.initialReceipt(request))
     }
 
@@ -124,7 +149,8 @@ public struct PublicationCoordinator: Sendable {
         let cursor = SessionCursor(editionID: publication.editionID,
             anchor: FeedWindowAnchor(cardID: publication.cardIDs[0], placement: request.anchorPlacement))
         try store.createInitialEdition(records.0, firstSegment: records.1, cards: records.2,
-            initialCheckpoint: PublicationPersistenceMapping.checkpoint(cursor, updatedAt: request.checkpointedAt))
+            initialCheckpoint: PublicationPersistenceMapping.checkpoint(cursor, updatedAt: request.checkpointedAt),
+            expectedSourceExclusions: publication.expectedSourceExclusions)
         return .published(Self.initialReceipt(publication))
     }
 
@@ -180,10 +206,12 @@ public struct PublicationCoordinator: Sendable {
         case .whenMaterialChanged: recurrence = .whenMaterialChanged
         }
         if let expectedTail {
-            try store.appendSegment(records.0, cards: records.1, expectingTailCardID: expectedTail, recurrence: recurrence)
+            try store.appendSegment(records.0, cards: records.1, expectingTailCardID: expectedTail, recurrence: recurrence,
+                expectedSourceExclusions: request.expectedSourceExclusions)
         } else {
             guard recurrence == .forbidden else { throw PublicationCoordinatorError.recurrenceRequiresTailExpectation }
-            try store.appendSegment(records.0, cards: records.1)
+            try store.appendSegment(records.0, cards: records.1,
+                expectedSourceExclusions: request.expectedSourceExclusions)
         }
         let receipt = PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
             segmentOrdinal: ordinal, cardIDs: request.cardIDs)
