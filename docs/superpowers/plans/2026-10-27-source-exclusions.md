@@ -29,7 +29,7 @@
 
 ## Workspace e estado
 
-Base de desenho: `382edf73`. Task 1 implementada e verificada; tarefas 2–6 pendentes. Antes de executar,
+Base de desenho: `382edf73`. Tasks 1–2 implementadas e verificadas; tarefas 3–6 pendentes. Antes de executar,
 verificar worktree/branch e estado atual. Reusar a branch de trabalho isolada se adequada; não copiar
 build caches. Há pouco espaço; não abrir build iOS sem capacidade confirmada. Testes do pacote podem
 reusar `.build/index-build` enquanto existir e couberem.
@@ -51,11 +51,11 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 **Interfaces:** Consumes T1. Produces `ReaderSourceExclusionPolicy.sourceIDs(snapshot: ReaderSourceExclusionSnapshot, links: [String: ReaderLibraryStore.SourceLink]) -> Set<SourceID>` (includes each base ID plus verified alias IDs); provider overload adds `excludingSourceIDs: Set<SourceID>` default empty and preserves current scope/cursor behavior.
 
-- [ ] RED: A-only suppressed; A+B returns only B in principal scope B; context A cannot publish B; source-scoped aliases honor existing scope. For each, assert examinedCount/nextCursor unchanged. Assert candidate surviving sourceIDs equals `[B]` and its other fields equal original.
-- [ ] RED: imported/catalog identities, alias old/current both excluded, unknown identity excludes only itself; same display name does not merge rules.
-- [ ] Implement membership subtraction before selection. Context source scoping must be applied before subtraction; preserve current eligible-source restrictions and avoid empty-membership resurrection.
-- [ ] GREEN: `swift test --scratch-path .build/index-build --disable-index-store --jobs 2 --filter 'SourceExclusionSupply|ReaderSourceExclusionPolicy|CandidateProvider|ReaderFilterEligibility|SourceIdentityIndex'`: zero failures.
-- [ ] Commit policy/provider with tests.
+- [x] RED: A-only suppressed; A+B returns only B in principal scope B; context A cannot publish B; source-scoped aliases honor existing scope. For each, assert examinedCount/nextCursor unchanged. Assert candidate surviving sourceIDs equals `[B]` and its other fields equal original.
+- [x] RED: imported/catalog identities, alias old/current both excluded, unknown identity excludes only itself; same display name does not merge rules.
+- [x] Implement membership subtraction before selection. Context source scoping must be applied before subtraction; preserve current eligible-source restrictions and avoid empty-membership resurrection.
+- [x] GREEN: `swift test --scratch-path .build/index-build --disable-index-store --jobs 2 --filter 'SourceExclusionSupply|ReaderSourceExclusionPolicy|CandidateProvider|ReaderFilterEligibility|SourceIdentityIndex'`: zero failures.
+- [x] Commit policy/provider with tests.
 
 ### Task 3: Snapshot guard inside publication commit
 
@@ -107,7 +107,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 ## Self-review and handoff
 
 Every design proof maps to T1–T6; domain/snapshot/coordinator names above are the interfaces later tasks consume.
-Task 1 is complete; tasks 2–6 remain open. Native execution follows the user's autonomous-work instruction;
+Tasks 1–2 are complete; tasks 3–6 remain open. Native execution follows the user's autonomous-work instruction;
 implementation should not dispatch per-task implementers. One final independent review remains required.
 
 Current gating resource: app validation cannot be declared done at 711 MiB free; remeasure before starting.

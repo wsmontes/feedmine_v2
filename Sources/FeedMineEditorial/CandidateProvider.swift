@@ -46,14 +46,33 @@ public struct CandidateProvider: Sendable {
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int,
         sourceScoped: Bool = false, operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",
         trace: ReplenishmentTrace? = nil) throws -> CandidateSupplyWindow {
+        try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity,
+            sourceScoped: sourceScoped, operation: operation, consult: consult, trace: trace,
+            excludingSourceIDs: [])
+    }
+
+    public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int,
+        sourceScoped: Bool = false, operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",
+        trace: ReplenishmentTrace? = nil, excludingSourceIDs: Set<SourceID>) throws -> CandidateSupplyWindow {
         try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil,
-            sourceScoped: sourceScoped, operation: operation, consult: consult, trace: trace)
+            sourceScoped: sourceScoped, operation: operation, consult: consult, trace: trace,
+            excludingSourceIDs: excludingSourceIDs)
     }
 
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?,
         examinedCapacity: Int, originIDs: [OriginRecordID]?, sourceScoped: Bool = false,
         operation: FeedReplenishmentOperationID? = nil,
         consult: String = "slice", trace: ReplenishmentTrace? = nil) throws -> CandidateSupplyWindow {
+        try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: originIDs,
+            sourceScoped: sourceScoped, operation: operation, consult: consult, trace: trace,
+            excludingSourceIDs: [])
+    }
+
+    public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?,
+        examinedCapacity: Int, originIDs: [OriginRecordID]?, sourceScoped: Bool = false,
+        operation: FeedReplenishmentOperationID? = nil,
+        consult: String = "slice", trace: ReplenishmentTrace? = nil,
+        excludingSourceIDs: Set<SourceID>) throws -> CandidateSupplyWindow {
         let sourceID: SourceID?
         switch plan.context.request {
         case .main: sourceID = nil
@@ -74,7 +93,15 @@ public struct CandidateProvider: Sendable {
         // T6: the supply is where a filter is enforced (plan:147 — never on already-drawn cards). Only the
         // criteria this build can answer are consulted, and a missing fact never satisfies one.
         let eligibility = ReaderFilterEligibility(filter: plan.context.key.filter)
-        var candidates = window.records.map { record in
+        var candidates = window.records.compactMap { record -> Candidate? in
+            var sources = Set(record.sourceIDs)
+            if !excludingSourceIDs.isEmpty {
+                // Another membership cannot turn a story from an excluded source context into a
+                // publication by an unrelated source. Main/search retain their existing scope.
+                if let sourceID { sources.formIntersection([sourceID]) }
+                sources.subtract(excludingSourceIDs)
+                guard record.sourceIDs.isEmpty || !sources.isEmpty else { return nil }
+            }
             let kind: CandidateTimestampKind
             switch record.sortDateBasis {
             case .authored: kind = .authored
@@ -96,7 +123,7 @@ public struct CandidateProvider: Sendable {
                 // taxonomy, the catalogue or the story's text. Absence stays absence, and ordering still
                 // reads `timestamp`.
                 topics: CandidateTopicEvidence(record.declaredSubjects),
-                language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
+                language: record.language, providerID: record.providerID, sourceIDs: sources,
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink,
                 declaredBody: record.declaredBody, bodyObserved: record.bodyObserved,
                 mediaKind: record.mediaKind)
