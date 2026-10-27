@@ -1741,3 +1741,55 @@ private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() { DriverHTTPFixture.find(request.url)?.start(self) }
     override func stopLoading() { DriverHTTPFixture.find(request.url)?.stop(self) }
 }
+
+extension FeedRunwayDriverTests {
+    func testSourceRuleRemovalReopensAPassedWalkWithoutReplacingReaderOrDuplicatingHistory() async throws {
+        let f = try fixture(registrations: false)
+        let prefs = ReaderPreferencesStore(database: f.database)
+        _ = try prefs.initialize(sourceKeys: ["source"])
+        var settings = try XCTUnwrap(prefs.load()).settings
+        settings.contentSourceExclusions = [.init(sourceID: f.source, displayName: "Source")]
+        _ = try prefs.setSettings(settings)
+        let revision = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        let before = try await restore(f)
+        _ = try await tail(f, before)
+        _ = try await f.driver.drive(resources: resources())
+        let store = PublicationStore(database: f.database)
+        let first = try XCTUnwrap(store.card(id: f.cards[0]))
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
+        XCTAssertEqual(try store.segments(editionID: f.edition).flatMap(\.cardIDs), f.cards)
+        for _ in 0..<200_000 {
+            let state = await f.runway.snapshot()
+            if state.localSupplyExhausted && !state.localSliceInFlight { break }
+            await Task.yield()
+        }
+        let exhausted = await f.runway.snapshot()
+        XCTAssertTrue(exhausted.localSupplyExhausted, "premise: the walk passed the excluded origin; state=\(exhausted)")
+        guard exhausted.localSupplyExhausted else { return }
+        settings.contentSourceExclusions = []
+        _ = try prefs.setSettings(settings)
+        await f.driver.noteSourceExclusionsChanged()
+        _ = try await f.driver.drive(resources: resources())
+        // The existing late-fact drain is asynchronous; its receipt is the completion signal.
+        for _ in 0..<200_000 {
+            if !f.publications.values.isEmpty { break }
+            await Task.yield()
+        }
+        XCTAssertEqual(f.publications.values.count, 1)
+        let ids = try store.segments(editionID: f.edition).flatMap(\.cardIDs)
+        XCTAssertEqual(ids.count, f.cards.count + 1)
+        XCTAssertEqual(try store.card(id: try XCTUnwrap(ids.last))?.originRevisionID, revision)
+        XCTAssertEqual(try store.card(id: first.id), first)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        let current = await f.session.currentPresentation()
+        let after = try XCTUnwrap(current)
+        XCTAssertEqual(after.editionID, before.editionID)
+        XCTAssertEqual(after.window.anchor, before.window.anchor)
+        let state = await f.runway.snapshot()
+        await f.driver.noteSourceExclusionsChanged()
+        let unchanged = await f.runway.snapshot()
+        XCTAssertEqual(unchanged, state, "an empty unchanged rule set is not another reset")
+        _ = try await f.driver.drive(resources: resources())
+        XCTAssertEqual(try store.segments(editionID: f.edition).flatMap(\.cardIDs), ids)
+    }
+}

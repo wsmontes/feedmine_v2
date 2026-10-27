@@ -272,7 +272,19 @@ public struct ColdFeedBootstrap: Sendable {
             await evidence?(.preparingMedia)
             mediaOpportunity.request(mediaRevisions)
         }
-        outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
+        do {
+            outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
+        } catch InitialProductionSliceError.staleSourceExclusions {
+            // A source-rule edit is not a network/startup failure. Reconsider within this opportunity's
+            // existing finite window budget; never advance the cursor from the rejected policy.
+            try authority.restartExamination()
+            guard remaining > 1 else {
+                return .notYet(.init(examinedCount: 0, nextCursor: nil, exhausted: false))
+            }
+            return try await attemptFirstPublication(identity: identity, resources: resources,
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+                keepsAdmittedHead: keepsAdmittedHead, remainingWindows: remaining - 1, mediaOpportunity: mediaOpportunity)
+        }
         switch outcome {
         case .published:
             guard case .published(let snapshot) = try await installedPublication(identity: identity,
@@ -298,11 +310,13 @@ public struct ColdFeedBootstrap: Sendable {
 
     private func makeRequest(identity: ColdFeedPublicationIdentity,
         resources: ColdFeedBootstrapResources, after: CandidateSupplyCursor?) throws -> InitialProductionSlice.Request {
-        .init(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), examinedCapacity: resources.localExaminedCapacity,
+        var request = InitialProductionSlice.Request(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), examinedCapacity: resources.localExaminedCapacity,
             editionID: identity.editionID, publicationSchemaVersion: identity.publicationSchemaVersion,
             selectionSeed: identity.selectionSeed, editionCreatedAt: identity.editionCreatedAt,
             segmentID: identity.segmentID, segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
             anchorPlacement: identity.anchorPlacement, checkpointedAt: identity.checkpointedAt, after: after)
+        request.sourceExclusions = try ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
+        return request
     }
 
     private func installedPublication(identity: ColdFeedPublicationIdentity, backwardCapacity: Int,

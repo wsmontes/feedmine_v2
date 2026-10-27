@@ -16,6 +16,7 @@ public enum InitialProductionSliceError: Error, Equatable, Sendable {
     case automaticExposurePolicyRequired
     case invalidExposureFacts
     case inconsistentPublicationOutcome
+    case staleSourceExclusions
 }
 
 public struct InitialProductionSlice: Sendable {
@@ -48,6 +49,8 @@ public struct InitialProductionSlice: Sendable {
     }
 
     public struct Request: Sendable {
+        /// Captured once before preparation. Nil preserves callers outside the guarded app pipeline.
+        public var sourceExclusions: ProductionSourceExclusions? = nil
         public let plan: FeedPlan
         public let policy: ResolvedSelectionPolicy
         public let examinedCapacity: Int
@@ -86,7 +89,8 @@ public struct InitialProductionSlice: Sendable {
         let sourceScoped: Bool
         if case .source = request.plan.context.request { sourceScoped = true } else { sourceScoped = false }
         return try candidateProvider.candidates(for: request.plan, after: request.after,
-            examinedCapacity: request.examinedCapacity, sourceScoped: sourceScoped)
+            examinedCapacity: request.examinedCapacity, sourceScoped: sourceScoped,
+            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [])
     }
 
     /// The next bounded structural window, including unresolved revisions so preparation can
@@ -113,7 +117,8 @@ public struct InitialProductionSlice: Sendable {
         // the structural candidates in the array (SelectionEngine orders by its comparator) and contributing nothing
         // to what the walk reports as examined.
         let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
-            editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer)
+            editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer,
+            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [])
         let window = reconsidered.candidates.isEmpty ? structural : CandidateSupplyWindow(
             candidates: reconsidered.candidates + structural.candidates,
             examinedCount: structural.examinedCount, nextCursor: structural.nextCursor,
@@ -160,9 +165,13 @@ public struct InitialProductionSlice: Sendable {
             editionID: request.editionID, publicationSchemaVersion: request.publicationSchemaVersion,
             selectionSeed: request.selectionSeed, editionCreatedAt: request.editionCreatedAt,
             segmentID: request.segmentID, segmentSeed: request.segmentSeed,
-            segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs)
-        switch try coordinator.createInitialEdition(.init(publication: publication,
-            anchorPlacement: request.anchorPlacement, checkpointedAt: request.checkpointedAt)) {
+            segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs,
+            expectedSourceExclusions: request.sourceExclusions?.snapshot)
+        let publicationOutcome: PublicationOutcome
+        do { publicationOutcome = try coordinator.createInitialEdition(.init(publication: publication,
+            anchorPlacement: request.anchorPlacement, checkpointedAt: request.checkpointedAt)) }
+        catch PublicationStoreError.staleSourceExclusions { throw InitialProductionSliceError.staleSourceExclusions }
+        switch publicationOutcome {
         case .published(let receipt):
             #if DEBUG
             MediaPreparationTrace.recordPublished(plan.drafts, in: contentStore, to: trace)

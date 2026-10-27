@@ -31,3 +31,26 @@ final class ReaderSourceExclusionPolicyTests: XCTestCase {
         XCTAssertEqual(ReaderSourceExclusionPolicy.sourceIDs(snapshot: inactive, links: [:]), [])
     }
 }
+
+extension ReaderSourceExclusionPolicyTests {
+    func testUnrestrictedCaptureDoesNotScanTheSourceIdentityIndex() throws {
+        final class Statements: @unchecked Sendable {
+            private let lock = NSLock()
+            private var storage: [String] = []
+            func append(_ value: String) { lock.lock(); storage.append(value); lock.unlock() }
+            func reset() { lock.lock(); storage.removeAll(); lock.unlock() }
+            var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let statements = Statements()
+        let db = try RuntimeDatabase(location: .init(directory: root), sqlTrace: { statements.append($0) })
+        _ = try ReaderPreferencesStore(database: db).initialize(sourceKeys: ["a"])
+        statements.reset()
+        let captured = try ReaderSourceExclusionPolicy.capture(in: db)
+        XCTAssertEqual(captured.snapshot, .unrestricted)
+        XCTAssertEqual(captured.sourceIDs, [])
+        XCTAssertFalse(statements.values.contains { $0.lowercased().contains("from reader_source_identity") },
+            "an opportunity with no active source rule must not scan the whole identity catalogue")
+    }
+}

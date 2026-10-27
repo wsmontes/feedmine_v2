@@ -1,0 +1,14 @@
+{
+  "command": [
+    "xcrun",
+    "swiftc",
+    "-frontend",
+    "-parse",
+    "FeedMineApp/FeedMineApp/AppComposition.swift",
+    "FeedMineApp/FeedMineAppTests/ContentFilterTests.swift"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "scope": "syntax only; no typecheck, linking or app test execution"
+}

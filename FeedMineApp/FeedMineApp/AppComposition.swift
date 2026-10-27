@@ -1871,6 +1871,12 @@ final class AppComposition {
         return ReaderMediaCoordinator(database: database, player: mediaAdapter)
     }
 
+    /// Source-only rules are future eligibility, so they reopen local supply without replacing the reader.
+    func noteSourceExclusionsChanged() async {
+        guard let association, !replacingSession else { return }
+        await association.sourceExclusionsChanged()
+    }
+
     /// The content filters changed (settings or the rules surface): the session is rebuilt, because what it
     /// hides is part of the identity it published under — the same rule the lens criteria follow. Nothing is
     /// erased: the rules stay in the reader's preferences either way.
@@ -4053,6 +4059,18 @@ final class FeedAssociation {
         let settled = FeedPresentationHandoff.work(settledEligibleOffer: settlement)
         guard settled == .endOfContent || store.state.work == .endOfContent else { return }
         try install(store.state.reporting(settled))
+    }
+
+    /// A visible source-rule edit reuses the current reader or its existing cold recovery path.
+    func sourceExclusionsChanged() async {
+        let hasPresentation = await session.currentPresentation() != nil
+        guard active, visible, ingressAuthorized else { return }
+        if hasPresentation {
+            await driver.noteSourceExclusionsChanged()
+        } else {
+            // The existing recovery path can reconsider a previously excluded cold offer too.
+            await foreground()
+        }
     }
 
     /// PO/R3: "Tentar novamente" runs a real attempt, not a repaint: the pending schedule is dropped

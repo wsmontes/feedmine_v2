@@ -1124,3 +1124,22 @@ extension ColdFeedBootstrapTests {
         XCTAssertEqual(accounted.published, 20)
     }
 }
+
+extension ColdFeedBootstrapTests {
+    func testSourceRuleChangeDuringColdPreparationRestartsWithoutStartupFailure() async throws {
+        let f = try fixture(), id = identity()
+        _ = try ReaderPreferencesStore(database: f.database).initialize(sourceKeys: ["source"])
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            prepare: { [database = f.database, source = f.source] selection in
+                let prefs = ReaderPreferencesStore(database: database)
+                var settings = try XCTUnwrap(prefs.load()).settings
+                settings.contentSourceExclusions = [.init(sourceID: source, displayName: "Source")]
+                _ = try prefs.setSettings(settings)
+                return Self.prepared(selection)
+            })
+        _ = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 2)
+        try assertAbsent(f, identity: id)
+        XCTAssertFalse(try canonical(f).isEmpty, "source exclusion keeps legitimate canonical supply")
+    }
+}

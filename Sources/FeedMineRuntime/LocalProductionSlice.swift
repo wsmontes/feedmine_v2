@@ -22,6 +22,12 @@ public struct LocalProductionProgress: Hashable, Sendable {
     public let nextCursor: CandidateSupplyCursor?
     public let exhausted: Bool
 
+    public init(examinedCount: Int, nextCursor: CandidateSupplyCursor?, exhausted: Bool) {
+        self.examinedCount = examinedCount
+        self.nextCursor = nextCursor
+        self.exhausted = exhausted
+    }
+
     /// The walk a publication reports. A capped opportunity that left ready candidates behind (the publication cap,
     /// and PD-4 holding inside a capped walk) must not advance past them: the walk is one-way, so the next window
     /// would start after cards nobody published. Reporting the position the opportunity started from re-examines the
@@ -48,6 +54,7 @@ public enum LocalProductionSliceError: Error, Equatable, Sendable {
     case automaticExposurePolicyRequired
     case invalidExposureFacts
     case inconsistentPublicationOutcome
+    case staleSourceExclusions
 }
 
 public struct LocalProductionSlice: Sendable {
@@ -83,6 +90,8 @@ public struct LocalProductionSlice: Sendable {
     }
 
     public struct Request: Sendable {
+        /// Captured once before preparation. Nil preserves callers outside the guarded app pipeline.
+        public var sourceExclusions: ProductionSourceExclusions? = nil
         public let plan: FeedPlan
         public let policy: ResolvedSelectionPolicy
         public let editionID: FeedEditionID
@@ -124,12 +133,14 @@ public struct LocalProductionSlice: Sendable {
         // slice reports below is this window's, never the reconsidered set's.
         let structural = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity,
-            operation: request.operation, consult: "slice", trace: trace)
+            operation: request.operation, consult: "slice", trace: trace,
+            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [])
         // What the one-way walk already passed and whose media became ready since. It is placed before the
         // structural candidates in the array, but the array is not the order: SelectionEngine orders by its total
         // comparator. The structural walk stays exactly where it was.
         let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
-            editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer)
+            editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer,
+            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [])
         let window = reconsidered.candidates.isEmpty ? structural : CandidateSupplyWindow(
             candidates: reconsidered.candidates + structural.candidates,
             examinedCount: structural.examinedCount, nextCursor: structural.nextCursor,
@@ -214,8 +225,11 @@ public struct LocalProductionSlice: Sendable {
             editionID: request.editionID, segmentID: request.segmentID, segmentSeed: request.segmentSeed,
             segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs,
             originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden,
-            operation: request.operation)
-        switch try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) {
+            operation: request.operation, expectedSourceExclusions: request.sourceExclusions?.snapshot)
+        let publicationOutcome: PublicationOutcome
+        do { publicationOutcome = try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) }
+        catch PublicationStoreError.staleSourceExclusions { throw LocalProductionSliceError.staleSourceExclusions }
+        switch publicationOutcome {
         case .published(let receipt):
             #if DEBUG
             // The slice's contract with the port is that work which is not a replenishment reports nothing; the

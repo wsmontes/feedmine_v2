@@ -97,9 +97,19 @@ public struct RunwayLocalSliceIntent: Hashable, Sendable {
     /// and at the destination — `==` below deliberately ignores it, because the decisions that compare intents
     /// (in-flight completion, acknowledgement) must keep exactly the meaning they had before it existed.
     public let operation: FeedReplenishmentOperationID
+    /// Unlike trace correlation, policy generation fences a traversal invalidated by a rule change.
+    public let sourceExclusionGeneration: UInt64
     public init(scope: RunwayScope, lane: RunwayProductionLane, after: CandidateSupplyCursor?,
         examinedCapacity: Int, startedAt: RunwayMonotonicTime,
         operation: FeedReplenishmentOperationID = FeedReplenishmentOperationID()) {
+        self.init(scope: scope, lane: lane, after: after, examinedCapacity: examinedCapacity,
+            startedAt: startedAt, operation: operation, sourceExclusionGeneration: 0)
+    }
+
+    public init(scope: RunwayScope, lane: RunwayProductionLane, after: CandidateSupplyCursor?,
+        examinedCapacity: Int, startedAt: RunwayMonotonicTime,
+        operation: FeedReplenishmentOperationID = FeedReplenishmentOperationID(), sourceExclusionGeneration: UInt64) {
+        self.sourceExclusionGeneration = sourceExclusionGeneration
         self.scope = scope
         self.lane = lane
         self.after = after
@@ -111,11 +121,13 @@ public struct RunwayLocalSliceIntent: Hashable, Sendable {
     public static func == (left: Self, right: Self) -> Bool {
         left.scope == right.scope && left.lane == right.lane && left.after == right.after
             && left.examinedCapacity == right.examinedCapacity && left.startedAt == right.startedAt
+            && left.sourceExclusionGeneration == right.sourceExclusionGeneration
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(scope); hasher.combine(lane); hasher.combine(after)
         hasher.combine(examinedCapacity); hasher.combine(startedAt)
+        hasher.combine(sourceExclusionGeneration)
     }
 }
 
@@ -199,6 +211,7 @@ public actor RunwayController {
     private var consumptionSamples: [Double] = []
     private var latencySamples: [Double] = []
     private var inFlight: RunwayLocalSliceIntent?
+    private var sourceExclusionGeneration: UInt64 = 0
     private var attemptStartedAt: RunwayMonotonicTime?
     private var episode = Progress()
     private var head: Progress?
@@ -436,7 +449,8 @@ public actor RunwayController {
         if lane == .headReconsideration || !headPending { freshSupplyOpportunity = false }
         let progress = lane == .episode ? episode : head!
         let intent = RunwayLocalSliceIntent(scope: scope, lane: lane, after: progress.cursor,
-            examinedCapacity: resources.examinedCandidateCapacity, startedAt: now)
+            examinedCapacity: resources.examinedCandidateCapacity, startedAt: now,
+            sourceExclusionGeneration: sourceExclusionGeneration)
         inFlight = intent
         if attemptStartedAt == nil { attemptStartedAt = now }
         if coverage == .unknown { bootstrapObservation = observation }
@@ -596,6 +610,27 @@ public actor RunwayController {
         lastFailure = failure
         lastFailureAt = completedAt
         if failure == .failed { consecutiveLocalFailures += 1 }
+    }
+
+    /// A reversible rule change re-examines supply under the same reading scope. Completions of the
+    /// previous policy cannot advance this new walk, including when a clock gives both intents the same time.
+    public func noteSourceExclusionsChanged(scope: RunwayScope) throws {
+        guard let active = self.scope else { throw RunwayControllerError.noActiveScope }
+        guard active == scope else { throw RunwayControllerError.scopeMismatch }
+        sourceExclusionGeneration &+= 1
+        inFlight = nil
+        attemptStartedAt = nil
+        episode = Progress()
+        head = nil
+        pendingReset = false
+        preferredLane = .episode
+        readyAhead = nil
+        bootstrapObservation = nil
+        lastFailure = nil
+        lastFailureAt = nil
+        consecutiveLocalFailures = 0
+        freshSupplyOpportunity = true
+        invalidateAcquisitionDemand()
     }
 
     public func noteLocalSupplyChanged(scope: RunwayScope) throws {

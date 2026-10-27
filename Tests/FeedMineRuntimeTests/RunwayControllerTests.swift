@@ -744,3 +744,32 @@ extension RunwayControllerTests {
         XCTAssertEqual(request["trigger"], "policy")
     }
 }
+extension RunwayControllerTests {
+    func testSourceRuleResetRejectsAnOldCompletionEvenAtTheSameClockInstant() async throws {
+        let sut = controller()
+        let observation = try await start(sut)
+        let old = try await intent(sut, at: 1)
+        try await sut.noteSourceExclusionsChanged(scope: scope())
+        let state = await sut.snapshot()
+        XCTAssertEqual(state.scope, scope())
+        XCTAssertEqual(state.latestObservation, observation)
+        XCTAssertFalse(state.localSliceInFlight)
+        // A fresh measurement is permitted, but cannot change the reader's identity.
+        let next = try await sut.reconsider(resources: resources(), at: time(1))
+        let fresh: RunwayLocalSliceIntent
+        switch next {
+        case .measure:
+            try await sut.acceptMeasurement(facts(observation))
+            fresh = try await intent(sut, at: 1)
+        case .runLocalSlice(let current): fresh = current
+        default: return XCTFail("a policy change must reopen local work")
+        }
+        XCTAssertNil(fresh.after)
+        XCTAssertNotEqual(old, fresh, "same timestamps cannot resurrect an invalidated policy intent")
+        do {
+            try await sut.completeLocalSlice(old, outcome: outcome(old, after: cursor(8)), at: time(2))
+            XCTFail("old completion moved the new traversal")
+        } catch { XCTAssertEqual(error as? RunwayControllerError, .staleCompletion) }
+        try await sut.completeLocalSlice(fresh, outcome: outcome(fresh, after: cursor(2)), at: time(2))
+    }
+}

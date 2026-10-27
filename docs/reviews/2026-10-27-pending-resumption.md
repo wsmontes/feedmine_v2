@@ -142,3 +142,19 @@ Testes de tarefa: **25/0**, **41/0**, **27/0**. Pacote completo após as três: 
 Próximo: T4, integração de snapshot/provider/writer nas lanes e no bootstrap, com reset de caminhada
 sem reescrever histórico; depois T5 UI e T6 jornadas. O app ainda não usa as novas regras e não há
 PASS UX13. Disco 641 MiB. Sem build iOS, gate, limpeza ou distribuição.
+
+## F13 T4: backend integrado, gate iOS bloqueado por capacidade
+
+Snapshots únicos agora atravessam cold, driver, preparação, seleção, reoffers e commit. Uma geração
+protege o reset de caminhada contra conclusão antiga, sem trocar scope/Edition/âncora. O notifier
+source-only e o teste de continuidade foram acrescentados no host do app, mas só passaram por parse.
+
+Pacote completo: **1765 testes, 1 pulado, 0 falhas** (103,696 s). Subconjunto final após reforço das
+provas de B/salvo de A: **149/0** (8,062 s), sem alteração posterior de produção. Recurso sem regra
+não varre o índice de fontes (red/green por SQL). Nenhum gate de benchmark foi reclassificado.
+
+T4 **não concluída**: falta build e execução iOS de ContentFilterTests. T5/T6 permanecem pendentes.
+Bloqueio de espaço reiterado em três retomadas, com ENOSPC real nesta. Agora **670 MiB livres**;
+`/private/tmp` usa o mesmo volume, e o scratch total de 1,3 GiB não bastaria para alcançar a guarda de
+3 GiB nem se fosse apagado integralmente. Não houve limpeza. Detalhes/logs/rulings em
+`2026-10-27-source-exclusions-execution.md`. Nenhum processo próprio permanece em voo.

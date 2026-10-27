@@ -123,7 +123,7 @@ enum MediaSkippedSupply {
     /// selection.
     static func reconsider(provider: CandidateProvider, plan: FeedPlan, editionID: FeedEditionID,
         structural: CandidateSupplyWindow, readiness: MediaReadiness?,
-        reoffer: PendingMediaReconsideration?) throws -> Reconsidered {
+        reoffer: PendingMediaReconsideration?, excludingSourceIDs: Set<SourceID> = []) throws -> Reconsidered {
         guard let readiness, let reoffer else { return Reconsidered() }
         let queued = try reoffer.entries(for: editionID)
         guard !queued.isEmpty else { return Reconsidered() }
@@ -137,7 +137,7 @@ enum MediaSkippedSupply {
         reoffer.forget(decidedWithoutPresentation)
         let ready = queued.filter { presentations[$0.originRevisionID] != nil }
         guard !ready.isEmpty else { return Reconsidered() }
-        let resolution = try resolve(ready, provider: provider, plan: plan)
+        let resolution = try resolve(ready, provider: provider, plan: plan, excludingSourceIDs: excludingSourceIDs)
         // Superseded, withdrawn or filtered out: these skips can never be published under the identity the queue
         // remembers, so they are stated as gone instead of being carried into every future opportunity.
         reoffer.forget(resolution.gone)
@@ -179,7 +179,7 @@ enum MediaSkippedSupply {
     }
 
     static func resolve(_ entries: [PendingMediaReconsideration.Entry], provider: CandidateProvider,
-        plan: FeedPlan) throws -> Resolution {
+        plan: FeedPlan, excludingSourceIDs: Set<SourceID> = []) throws -> Resolution {
         guard !entries.isEmpty else { return Resolution(ready: [], gone: []) }
         // The bounded exact lookup the skip resolution uses: the walk's cursor is not involved, so the skip is
         // resolved without moving — or rewinding — any structural position.
@@ -194,7 +194,10 @@ enum MediaSkippedSupply {
                 gone.append(entry)
                 continue
             }
-            ready.append((entry, candidate))
+            // A source rule is reversible within this Edition: keep the skip while it is masked.
+            guard let permitted = CandidateProvider.excludingSources(excludingSourceIDs,
+                from: candidate, in: plan.context.request) else { continue }
+            ready.append((entry, permitted))
         }
         return Resolution(ready: ready, gone: gone)
     }

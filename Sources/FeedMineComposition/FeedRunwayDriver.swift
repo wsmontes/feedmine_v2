@@ -96,6 +96,7 @@ public actor FeedRunwayDriver {
     private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let selectedSourceCoverage: AcquisitionDemand?
+    private var traversalSourceExclusions: ProductionSourceExclusions?
     private let candidateProvider: CandidateProvider
     /// Optional evidence of the replenishment attempts this driver executes; nil records nothing.
     private let trace: ReplenishmentTrace?
@@ -166,6 +167,7 @@ public actor FeedRunwayDriver {
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
         self.selectedSourceCoverage = selectedSourceCoverage
+        traversalSourceExclusions = try? ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         self.reoffer = reoffer
@@ -189,6 +191,20 @@ public actor FeedRunwayDriver {
     /// empty (a story the walk had not passed yet) simply lets the normal window select it.
     public func noteMediaReadinessChanged() async {
         await noteLocalSupplyFact()
+    }
+
+    /// A rule edit is local eligibility, never a new context or a replacement reader.
+    public func noteSourceExclusionsChanged() async {
+        guard let exclusions = try? ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase),
+            exclusions != traversalSourceExclusions,
+            let scope = try? await validateCurrentScope() else { return }
+        traversalSourceExclusions = exclusions
+        do { try await runway.noteSourceExclusionsChanged(scope: scope) }
+        catch { return }
+        pendingReplenishmentMeasurement = nil
+        causalExecution?.reconsiderRequested = true
+        lateFactScope = scope
+        scheduleLateOpportunity()
     }
 
     /// The **one** vocabulary for a durable local-supply fact, whatever produced it: a media readiness transition
@@ -830,22 +846,40 @@ public actor FeedRunwayDriver {
                     // whose media is still pending is simply not in this publication (INV-17), and the readiness
                     // transition wakes the existing reconsideration. The opportunity is the only channel — the
                     // product always provides it, and an execution without one has nothing to request.
+                    let exclusions = try ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
+                    if exclusions != traversalSourceExclusions {
+                        traversalSourceExclusions = exclusions
+                        pendingReplenishmentMeasurement = nil
+                        try await runway.noteSourceExclusionsChanged(scope: scope)
+                        lateFactScope = scope
+                        scheduleLateOpportunity()
+                        continue
+                    }
                     let revisions = try await nextEditorialRevisions(after: intent.after,
                         capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
-                        operation: intent.operation)
+                        operation: intent.operation, sourceExclusions: exclusions)
                     causalExecution?.mediaOpportunity?.request(revisions)
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
                         return await session.currentPresentation()
                     }
                     let identity = try makeSegmentIdentity()
-                    let request = LocalProductionSlice.Request(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), editionID: intent.scope.editionID,
+                    var request = LocalProductionSlice.Request(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), editionID: intent.scope.editionID,
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,
                         segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
                         readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID,
                         operation: intent.operation)
+                    request.sourceExclusions = exclusions
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
-                    try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
+                    do {
+                        try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
+                    } catch RunwayControllerError.staleCompletion {
+                        // A publication committed before the rule changed is legitimate history, even
+                        // though its old traversal progress no longer owns the controller.
+                        if case .published(_, let receipt) = outcome,
+                            await session.currentRunwayScope() == scope { await onPublication?(receipt) }
+                        continue
+                    }
                     // Publication extends the reserve only. Installing a different admitted list here
                     // was the defect this task removes (analysis §2): no gesture, new cards on screen.
                     // R6-E: what the publication *is*, stated where it concludes — the receipt the line above just
@@ -856,9 +890,17 @@ public actor FeedRunwayDriver {
                         await recordReplenishmentPublication(receipt)
                         await onPublication?(receipt)
                     }
+                } catch LocalProductionSliceError.staleSourceExclusions {
+                    pendingReplenishmentMeasurement = nil
+                    await noteSourceExclusionsChanged()
+                    continue
+                } catch RunwayControllerError.staleCompletion {
+                    continue
                 } catch {
                     pendingReplenishmentMeasurement = nil
-                    try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
+                    do {
+                        try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
+                    } catch RunwayControllerError.staleCompletion { continue }
                     throw error
                 }
             case .requestAcquisition(let intent):
@@ -886,9 +928,10 @@ public actor FeedRunwayDriver {
     /// The same window the coming slice examines, minus origins this Edition already published
     /// (unless edited articles may recur) and origins still waiting ahead of the reader.
     private func nextEditorialRevisions(after cursor: CandidateSupplyCursor?, capacity: Int,
-        editionID: FeedEditionID, operation: FeedReplenishmentOperationID) async throws -> [OriginRevisionID] {
+        editionID: FeedEditionID, operation: FeedReplenishmentOperationID,
+        sourceExclusions: ProductionSourceExclusions) async throws -> [OriginRevisionID] {
         let window = try candidateProvider.candidates(for: plan, after: cursor, examinedCapacity: capacity,
-            operation: operation, consult: "preparation", trace: trace)
+            operation: operation, consult: "preparation", trace: trace, excludingSourceIDs: sourceExclusions.sourceIDs)
         let anchor = await session.currentPresentation()?.window.anchor.cardID
         let facts = try publicationHistory.exposure(editionID: editionID,
             originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: anchor)
@@ -911,10 +954,21 @@ public actor FeedRunwayDriver {
         // preparation is not a publication decision — the slice still selects under exposure and policy.
         if let reoffer {
             var seen = Set(revisions)
-            for entry in try reoffer.pendingEntries(for: editionID, limit: reoffer.ceiling) {
-                guard !facts.publishedOriginIDs.contains(entry.originRecordID),
-                    seen.insert(entry.originRevisionID).inserted else { continue }
-                revisions.append(entry.originRevisionID)
+            let entries = try reoffer.pendingEntries(for: editionID, limit: reoffer.ceiling)
+            if !entries.isEmpty {
+                let offered = try candidateProvider.candidates(for: plan, after: nil,
+                    examinedCapacity: entries.count, originIDs: entries.map(\.originRecordID),
+                    excludingSourceIDs: sourceExclusions.sourceIDs)
+                let byOrigin = Dictionary(uniqueKeysWithValues: offered.candidates.map { ($0.originRecordID, $0) })
+                for entry in entries {
+                    guard let candidate = byOrigin[entry.originRecordID],
+                        candidate.originRevisionID == entry.originRevisionID,
+                        !facts.publishedOriginIDs.contains(entry.originRecordID),
+                        seen.insert(entry.originRevisionID).inserted else { continue }
+                    if case .selectedSources(let sources) = effectivePolicy.eligibility,
+                        candidate.sourceIDs.isDisjoint(with: sources) { continue }
+                    revisions.append(entry.originRevisionID)
+                }
             }
         }
         return revisions

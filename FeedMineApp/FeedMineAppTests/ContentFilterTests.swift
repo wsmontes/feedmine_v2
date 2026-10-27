@@ -179,3 +179,25 @@ final class ContentFilterTests: XCTestCase {
         await association.close()
     }
 }
+
+extension ContentFilterTests {
+    func testSourceOnlyRuleKeepsTheAssociationEditionAnchorAndPublishedPrefix() async throws {
+        let directory = directory(), root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let before = try XCTUnwrap(association.store.state.presentation)
+        let ids = before.window.items.map(\.id)
+        XCTAssertFalse(ids.isEmpty, "the continuity proof starts with published history")
+        let rule = ReaderSourceExclusion(sourceID: TrustedFeed.development[0].sourceID, displayName: "Fixture source")
+        try setSettings(directory) { $0.contentSourceExclusions = [rule] }
+        await root.noteSourceExclusionsChanged()
+        await root.reapplyReaderFilters()
+        XCTAssertTrue(root.association === association)
+        let after = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(after.editionID, before.editionID)
+        XCTAssertEqual(after.window.anchor, before.window.anchor)
+        XCTAssertEqual(Array(after.window.items.map(\.id).prefix(ids.count)), ids)
+        XCTAssertEqual(try settings(directory).contentSourceExclusions, [rule])
+        await association.close()
+    }
+}

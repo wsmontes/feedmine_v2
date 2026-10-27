@@ -70,14 +70,16 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 ### Task 4: Production fiação, stale recovery and reconsideration
 
-**Files:** Modify `Sources/FeedMineRuntime/LocalProductionSlice.swift`, `Sources/FeedMineRuntime/RunwayController.swift`, `Sources/FeedMineComposition/FeedRunwayDriver.swift`, `Sources/FeedMineComposition/ColdFeedBootstrap.swift`, `FeedMineApp/FeedMineApp/AppComposition.swift`; add `Tests/FeedMineCompositionTests/SourceExclusionProductionTests.swift`, extend controller tests and `FeedMineApp/FeedMineAppTests/ContentFilterTests.swift`.
+**Status:** pacote integrado e verificado; T4 ainda aberta: build/teste iOS pendentes por capacidade. O parse não é essa prova.
+
+**Files:** Create `Sources/FeedMineRuntime/ProductionSourceExclusions.swift`; modify `Sources/FeedMineRuntime/InitialProductionSlice.swift`, `Sources/FeedMineRuntime/PendingMediaReconsideration.swift`, `Sources/FeedMineEditorial/CandidateProvider.swift` (shared projection), `Sources/FeedMineComposition/ReaderSourceExclusionPolicy.swift` (capture), `Sources/FeedMineRuntime/LocalProductionSlice.swift`, `Sources/FeedMineRuntime/RunwayController.swift`, `Sources/FeedMineComposition/FeedRunwayDriver.swift`, `Sources/FeedMineComposition/ColdFeedBootstrap.swift`, `FeedMineApp/FeedMineApp/AppComposition.swift`; add `Tests/FeedMineCompositionTests/SourceExclusionProductionTests.swift`, extend controller tests and `FeedMineApp/FeedMineAppTests/ContentFilterTests.swift`.
 
 **Interfaces:** Consumes T1–T3. Add `RunwayController.noteSourceExclusionsChanged(scope: RunwayScope) throws` and `FeedRunwayDriver.noteSourceExclusionsChanged() async`. Controller invalidates prior local intent/completion, resets episode/head traversal under the same scope, and arms the existing fresh-supply opportunity; no new drain/scheduler. Driver snapshots policy from the existing settings DB, resolves aliases for provider/media windows and carries the original effective snapshot into publication. Cold bootstrap uses the same snapshot and commit expectation.
 
-- [ ] RED: rule changes with prepared work held at a barrier: old first/append rejected, cursor does not advance, existing reader scope/Edition/anchor/segments stay equal. New opportunity can publish B. Old completion must not overwrite new traversal progress.
-- [ ] RED: cursor already passed A; remove rule, notify policy fact, existing lane can publish A with new ID only if material was never published. Assert no duplicates after two more opportunities.
+- [x] RED: rule changes with prepared work held at a barrier: old first/append rejected, cursor does not advance, existing reader scope/Edition/anchor/segments stay equal. New opportunity can publish B. Old completion must not overwrite new traversal progress.
+- [x] RED: cursor already passed A; remove rule, notify policy fact, existing lane can publish A with new ID only if material was never published. Assert no duplicates after two more opportunities.
 - [ ] RED: warm relaunch with rule restores published A unchanged but excludes new A; saved A still readable. Source-only edit never invokes session replacement. Cover empty source list as no-op.
-- [ ] Implement single snapshot per local opportunity and guard transport to first/append. Handle stale as reconsiderable local state, with no failure/retry timer invented. Do not silently skip a guard in media reoffer/head/cold paths.
+- [x] Implement single snapshot per local opportunity and guard transport to first/append. Handle stale as reconsiderable local state, with no failure/retry timer invented. Do not silently skip a guard in media reoffer/head/cold paths.
 - [ ] GREEN: package production/controller tests; compile and execute app ContentFilterTests when capacity permits. Record each separately; package cannot substitute for app test.
 - [ ] Commit runtime/composition wiring and tests.
 
