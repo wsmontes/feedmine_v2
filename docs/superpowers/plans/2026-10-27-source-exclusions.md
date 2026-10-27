@@ -29,7 +29,7 @@
 
 ## Workspace e estado
 
-Base de desenho: `382edf73`. Nenhuma tarefa de implementação abaixo concluída. Antes de executar,
+Base de desenho: `382edf73`. Task 1 implementada e verificada; tarefas 2–6 pendentes. Antes de executar,
 verificar worktree/branch e estado atual. Reusar a branch de trabalho isolada se adequada; não copiar
 build caches. Há pouco espaço; não abrir build iOS sem capacidade confirmada. Testes do pacote podem
 reusar `.build/index-build` enquanto existir e couberem.
@@ -40,10 +40,10 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 **Interfaces:** Produces `ReaderSourceExclusion(sourceID: SourceID, displayName: String)`, `ReaderSettings.contentSourceExclusions: [ReaderSourceExclusion]` default `[]`, `ReaderSourceExclusionSnapshot(settings: ReaderSettings)` with `sourceIDs: Set<SourceID>` and `.unrestricted`. Snapshot includes only effective IDs (empty if master off); display names do not affect equality. Existing settings writes/readbacks persist the value without schema changes.
 
-- [ ] RED: old JSON decode returns `[]`; roundtrip preserves rule/name; duplicate SourceID collapses; two IDs named BBC remain distinct; master off masks but retains rules. Include `XCTAssertEqual(snapshot.sourceIDs, [])` when off and `XCTAssertEqual(before, renamed)` for name-only changes.
-- [ ] Implement normalized identity-based rules and optional old-data decoding; do not change signatures of existing ContextKeys.
-- [ ] GREEN: `swift test --scratch-path .build/index-build --disable-index-store --jobs 2 --filter 'ReaderSourceExclusion|ReaderPreferencesStore|ReaderSettings'`: new cases + existing cases pass.
-- [ ] Commit domain/settings change with test result.
+- [x] RED: old JSON decode returns `[]`; roundtrip preserves rule/name; duplicate SourceID collapses; two IDs named BBC remain distinct; master off masks but retains rules. Include `XCTAssertEqual(snapshot.sourceIDs, [])` when off and `XCTAssertEqual(before, renamed)` for name-only changes.
+- [x] Implement normalized identity-based rules and optional old-data decoding; do not change signatures of existing ContextKeys.
+- [x] GREEN: `swift test --scratch-path .build/index-build --disable-index-store --jobs 2 --filter 'ReaderSourceExclusion|ReaderPreferencesStore|ReaderSettings'`: new cases + existing cases pass.
+- [x] Commit domain/settings change with test result.
 
 ### Task 2: One eligibility policy, correct surviving attribution
 
@@ -107,7 +107,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 ## Self-review and handoff
 
 Every design proof maps to T1–T6; domain/snapshot/coordinator names above are the interfaces later tasks consume.
-No implementation task is marked complete. Native execution follows the user's autonomous-work instruction;
+Task 1 is complete; tasks 2–6 remain open. Native execution follows the user's autonomous-work instruction;
 implementation should not dispatch per-task implementers. One final independent review remains required.
 
 Current gating resource: app validation cannot be declared done at 711 MiB free; remeasure before starting.

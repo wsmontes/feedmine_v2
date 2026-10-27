@@ -196,3 +196,28 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertEqual(try store.load()?.activeContextKey, ContextKey(request: .main))
     }
 }
+
+extension ReaderPreferencesStoreTests {
+    func testSourceExclusionsPersistWithoutChangingSelectionOrContext() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let store = ReaderPreferencesStore(database: try RuntimeDatabase(location: location))
+        _ = try store.initialize(sourceKeys: ["chosen-source"])
+        let before = try store.setContext(.source(SourceID()))
+        let rule = ReaderSourceExclusion(sourceID: SourceID(), displayName: "Removed catalog source")
+        var settings = before.settings
+        settings.contentSourceExclusions = [rule]
+        settings.contentFilterRules = ["casino"]
+        settings.contentFiltersEnabled = false
+        _ = try store.setSettings(settings)
+        let reopened = ReaderPreferencesStore(database: try RuntimeDatabase(location: location))
+        let restored = try XCTUnwrap(reopened.load())
+        XCTAssertEqual(restored.settings.contentSourceExclusions, [rule])
+        XCTAssertEqual(restored.settings.contentFilterRules, ["casino"])
+        XCTAssertFalse(restored.settings.contentFiltersEnabled)
+        XCTAssertEqual(restored.activeContextKey, before.activeContextKey)
+        XCTAssertEqual(restored.sourceKeys, before.sourceKeys)
+        XCTAssertEqual(restored.selectionVersion, before.selectionVersion)
+    }
+}

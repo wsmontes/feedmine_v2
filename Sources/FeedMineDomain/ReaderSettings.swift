@@ -45,6 +45,10 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
     /// The V1 templates the reader turned on, by template key. V1 kept them as filters of their own with their
     /// keywords resolved per locale; V2 stores the key and resolves the same keywords from V1's own catalogue.
     public var contentFilterTemplates: [String]
+    /// Explicit global source rules, distinct from source selection and editorial topic preferences.
+    public var contentSourceExclusions: [ReaderSourceExclusion] {
+        didSet { contentSourceExclusions = ReaderSourceExclusion.normalize(contentSourceExclusions) }
+    }
     /// What the reader told discovery: languages and places to start from, and the interests they declared by
     /// answering invitations **inside the feed** (F02). It is the reader's own answers, persisted as behaviour —
     /// never part of a context's identity, so a new answer cannot move them out of what they are reading.
@@ -71,6 +75,7 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
         followsClockTypography: Bool = true, fontStyle: String = "system", typeScale: String = "medium",
         nightMode: Bool = false, prefetchesImages: Bool = true, contentFiltersEnabled: Bool = true,
         contentFilterRules: [String] = [], contentFilterTemplates: [String] = [],
+        contentSourceExclusions: [ReaderSourceExclusion] = [],
         discoveryProfile: FeedRecipeDefinition = .neutral(), editorialTipsHidden: Bool = false,
         filterAutoExpires: Bool = true, hasSeenOnboarding: Bool = false,
         schemaVersion: Int = ReaderSettings.currentSchemaVersion, carriedLegacyKeys: [String: String] = [:]) {
@@ -87,6 +92,7 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
         self.contentFilterTemplates = Array(Set(contentFilterTemplates.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty })).sorted()
+        self.contentSourceExclusions = ReaderSourceExclusion.normalize(contentSourceExclusions)
         self.discoveryProfile = discoveryProfile
         self.editorialTipsHidden = editorialTipsHidden
         self.filterAutoExpires = filterAutoExpires
@@ -116,6 +122,8 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
                 ?? standard.contentFilterRules,
             contentFilterTemplates: try container.decodeIfPresent([String].self, forKey: .contentFilterTemplates)
                 ?? standard.contentFilterTemplates,
+            contentSourceExclusions: try container.decodeIfPresent([ReaderSourceExclusion].self,
+                forKey: .contentSourceExclusions) ?? standard.contentSourceExclusions,
             discoveryProfile: try container.decodeIfPresent(FeedRecipeDefinition.self, forKey: .discoveryProfile)
                 ?? standard.discoveryProfile,
             editorialTipsHidden: try container.decodeIfPresent(Bool.self, forKey: .editorialTipsHidden)
