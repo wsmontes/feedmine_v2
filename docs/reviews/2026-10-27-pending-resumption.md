@@ -110,3 +110,20 @@ requisito: `2026-10-27-acceptance-pending-audit.md`.
 
 Disco ao encerrar esta auditoria: **723 MiB**, ainda abaixo da guarda do ensaio. Nenhuma limpeza,
 instalação, execução de app ou distribuição.
+
+## Próximo incremento F13: desenho e plano concretos
+
+Desenho: `docs/superpowers/specs/2026-10-27-source-exclusions-design.md`.
+Plano nativo em seis tarefas: `docs/superpowers/plans/2026-10-27-source-exclusions.md`.
+Builder check independente do desenho: nenhuma dúvida impeditiva. Auto-revisão do plano cobriu
+interfaces, comandos, atribuição multissource, CAS de política no commit e reconsideração sem
+reescrever histórico. Nenhuma tarefa de implementação iniciada nesta etapa.
+
+Escolhas do executor: identidade SourceID + nome de apresentação; máscara pelo switch mestre;
+retirar apenas memberships excluídas no escopo correto; snapshot efetivo comparado dentro de
+create/append; preservar Edition/âncora; reutilizar lanes existentes para reexaminar supply na reversão.
+Não usar revoke nem toggle de seleção como regra de exclusão.
+
+Caveat identificado no host: palavras globais ainda entram em `applied(ContextKey)` e o switch pode
+substituir associação. O plano exige medir esse caso e manter F13 aberto se o histórico não se
+preservar; entregar a nova regra de fonte não certifica todo UX13. Espaço no fim: 707 MiB.
