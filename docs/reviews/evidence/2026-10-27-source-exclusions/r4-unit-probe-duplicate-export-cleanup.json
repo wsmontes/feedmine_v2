@@ -1,0 +1,56 @@
+[
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-ui-pt-failure",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-pt-tests.xcresult",
+    "bytes": 348258,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-pt-ax-proof",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-pt-ax-tests.xcresult",
+    "bytes": 320926,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-en-large-failure",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-en-large-tests.xcresult",
+    "bytes": 24621835,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-en-dismiss-failure",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-en-large-dismiss-tests.xcresult",
+    "bytes": 25605763,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-en-large-proof",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-en-large-capacity-tests.xcresult",
+    "bytes": 299302,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-recovery-route-failure",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-recovery-route-tests.xcresult",
+    "bytes": 15694869,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-recovery-admitted-red",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-recovery-admitted-stability-tests.xcresult",
+    "bytes": 28117136,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-recovery-pt-green",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-chrome-recovery-pt-tests.xcresult",
+    "bytes": 744330,
+    "reason": "duplicate export; original completed result retained"
+  },
+  {
+    "temporary_export": "/private/tmp/feedmine-f13-recovery-en-green",
+    "authoritative_result": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-chrome-recovery-en-large-tests.xcresult",
+    "bytes": 890711,
+    "reason": "duplicate export; original completed result retained"
+  }
+]

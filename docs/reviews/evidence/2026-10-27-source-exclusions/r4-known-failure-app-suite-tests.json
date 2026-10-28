@@ -1,0 +1,40 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineR4UnitProbe_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-only-testing:FeedMineAppTests/ContentFilterTests",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-known-failure-app-suite-tests.xcresult",
+    "-collect-test-diagnostics",
+    "never"
+  ],
+  "compiled_build_report": "r4-global-word-known-failure-build.json",
+  "compiled_build_report_sha256": "12f733c04628c72f20c476cdc17b8c92adf0ee7223ae5f01d5f8ff6ba46de5ac",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/FeedMineUITests-Runner": "7e36729d4fbf984e023e98952e7a2b878c735240c41c14f1f8a6b1544b20d233",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests": "7c06247f132c57766183cba2015c26b37b917c74ee5475b094d63cfc6fbd6542",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "eb4746a017b2fcceb6ea6d6a1031417ad496b7655ba906c11cc6176bff81ff6e",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests": "379ea8472abe3f8127550e99d9e20e7c473a9ec02c2dab270237830217d0e904"
+  },
+  "xctestrun_sha256": "f9a79718e4eb928ee97e568dfcfc42135d2ee38ca6d99de71783b6aa3dedd628",
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "free_before": 794460160,
+  "minimum_observed_free": 749051904,
+  "free_after": 764456960,
+  "reserved_free_floor": 734003200,
+  "elapsed_seconds": 28.06,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-known-failure-app-suite-tests.xcresult",
+  "scope": "actual iOS simulator app unit tests, existing Debug build without symbols; not benchmark or UI journey"
+}

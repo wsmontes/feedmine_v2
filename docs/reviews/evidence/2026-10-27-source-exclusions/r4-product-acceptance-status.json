@@ -1,0 +1,13 @@
+{
+  "contract": "F13/R4",
+  "status": "FAIL",
+  "production_changed": false,
+  "raw_matrix_summary": "r4-global-word-reversal-matrix-red-tests-summary.json",
+  "tracking_summary": "r4-history-prefix-app-suite-tests-summary.json",
+  "tracking_passed_tests": 9,
+  "tracking_expected_failure_cases": 1,
+  "known_assertion_issues": 8,
+  "unexpected_failed_tests": 0,
+  "black_box_UX13": "NOT_RUN",
+  "compiled_patch_sha256": "b9e27a65f0bb51f4bae7f12f3a537e8ba2457475c0ecea85e671bc1d8a02cd2e"
+}

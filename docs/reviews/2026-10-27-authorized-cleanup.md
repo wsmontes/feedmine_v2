@@ -54,3 +54,13 @@ bytes usa gunzip; modos/mtimes originais constam dos manifestos se necessários.
 A sondagem de dois resultados falhos completos não produziu economia útil: os tar.gz temporários
 foram retirados e as pastas originais mantidas (`t6-failed-results-archive.json`). Resultados completos
 aprovados, produtos, bancos, simuladores e sessões de outros chats permaneceram intactos.
+
+
+## 2026-10-28 — medição R4
+
+Cópias de exports em /private/tmp foram liberadas após comprovar presença dos xcresults completos
+originais (`r4-unit-probe-duplicate-export-cleanup.json`). SDK ModuleCache regenerável foi removido
+após builds terminais. O resultado próprio incompleto da coleta R4, já sem Info.plist, foi arquivado
+sem perda: todos os hashes conferidos e comando de restauração em `r4-interrupted-result-archive.json`.
+Resultados oficiais posteriores concluíram sem sysdiagnose volumoso, mantendo status/asserções/fatos.
+Bancos históricos, simuladores, produtos e resultados completos não foram removidos.

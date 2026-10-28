@@ -160,3 +160,13 @@ Motivo medido: retirar o footer na cauda recuou o offset máximo e moveu a últi
 O custo da escolha é um toque extra no menu para quem tem histórico; não há novo espaço no chrome
 nem mudança de filtros/contexto, captura, scheduler ou PD-4. A prova deve comparar a mesma janela
 e carta em cinco observações após retornar do editor; não alega histórico integral nem supply A/B.
+
+
+## Evidência posterior de palavras — 2026-10-28
+
+A lacuna R4 foi confirmada por integração do fechamento do host: incluir/reativar a regra global muda
+a identidade aplicada e deixa apresentação/posição ativa ausentes; desligar/remover restaura o reader
+anterior. A intenção lógica não mudou. CardRecords/segmentos/salvo/checkpoint histórico continuam
+preservados. Não é apagamento de dados. Oito sintomas conhecidos seguem em expectativas de falha
+estritas, sem correção do produto nem PASS UX13. Ver `docs/reviews/2026-10-28-f13-word-history-r4.md`.
+A exigência de distinguir origem global/contextual e preservar chaves históricas permanece integral.

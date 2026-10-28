@@ -348,3 +348,16 @@ Relatório: [recuperação real e geometria](2026-10-28-f13-recovery-route.md).
 Capacidade exigiu um lote Swift por módulo e compactação sem perda de logs/resultados incompletos;
 manifestos registram hashes e restauração. Produtos, bancos, simuladores e resultados completos intactos.
 F13 segue aberta: causalidade da supply, A/B/shared/contexto, R4 e gates de benchmark existentes.
+
+
+## 2026-10-28 — R4 de palavras medida
+
+O fechamento do host foi incluído na prova, após detectar que persistência isolada não ativa a política.
+Matriz add/off/on/remove contra baseline original: add/on perdem continuidade apresentada (oito
+asserções RED), off/remove restauram. Histórico de 48 CardRecords, segmentos, salvo e checkpoint por
+contexto permanecem. Checkpoint ativo nil não foi confundido com apagamento do checkpoint antigo.
+
+Teste final acompanha a falha conhecida com expectativas estritas individuais; proteção de dados e
+continuidade off/remove permanecem normais. Nenhuma produção mudou; R4 continua FAIL. Relatório:
+[palavras globais e continuidade](2026-10-28-f13-word-history-r4.md). As jornadas black-box, a política
+futura e a migração de origens ainda precisam de trabalho; não houve relaxamento de critério de produto.

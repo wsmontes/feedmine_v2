@@ -187,3 +187,16 @@ Nova prioridade: supply inédita A/B e canonical compartilhado/contexto, recuper
 as fontes elegíveis estão efetivamente excluídas, R4 de palavras. Não repetir a prova de controles
 ou de cauda sem nova mudança/falha. B03/B06 e guarda de 3 GiB de benchmark permanecem inalterados.
 Resultados incompletos/logs arquivados sem perda têm manifestos de restauração; não apagar dados.
+
+
+### R4 de palavras — evidência nova, produto ainda sem fix
+
+Ver `2026-10-28-f13-word-history-r4.md`. Integração real do fechamento do host: add/master-on
+interrompem apresentação/Edition/prefixo/âncora/posição ativa sem mudar a intenção lógica; off/remove
+restauram baseline. Oito asserções RED; 48 CardRecords, segmentos, salvo e checkpoint histórico por
+contexto preservados. Regressão mantida com expectativas individuais estritas; não é UX13 PASS.
+
+Não repetir a medição sem nova mudança/falha. Próximo trabalho: desenho de política global de palavras
+separada dos critérios contextuais e compatibilidade dos históricos já dobrados, sem inferir origem
+nem retirar termos de Editions antigas. Fonte A/B/shared/contexto e recuperação causal ainda pendentes.
+O scheme unitário temporário está arquivado como XML; o principal não foi alterado. Produtos intactos.

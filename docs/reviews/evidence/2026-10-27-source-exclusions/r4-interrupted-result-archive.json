@@ -1,0 +1,1802 @@
+{
+  "source": ".build/f13-ios-tests/r4-global-word-host-apply-red-tests.xcresult",
+  "archive": ".build/f13-ios-tests/r4-global-word-host-apply-red-tests.xcresult.tar.gz",
+  "archive_sha256": "c3be69d9ff3c47de90155ab45d191bb6dde6e1eeb4de0721548c4f2bcd4ea1e4",
+  "source_bytes": 352641834,
+  "archive_bytes": 57332003,
+  "saved_bytes": 295309831,
+  "files": {
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/iPhone 17 Pro Max_220FD546-698A-4DFE-A9E6-DD40135DED72/testmanagerd.log": {
+      "bytes": 4134,
+      "sha256": "b5ea6cf7fb448c43eb34dd6a2c94d6e229a076edea0cd190fba86eb4c8c82ede"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/FeedMineAppTests-9D04E588-4FB4-461E-8EAC-A160E46A66BB-Configuration-Test Scheme Action-Iteration-1/scheduling.log": {
+      "bytes": 661,
+      "sha256": "213dab5b982ddc46006260cb74a4bdab746da9541cea0b9e26032807510d7ab6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/FeedMineAppTests-9D04E588-4FB4-461E-8EAC-A160E46A66BB-Configuration-Test Scheme Action-Iteration-1/FeedMineAppTests-9F57AA7A-B1C9-42A0-9D4C-24C2D56EDB2E/StandardOutputAndStandardError.txt": {
+      "bytes": 9573,
+      "sha256": "499b8de5f5c9d60d1729ee3b41f1c2b67dacb25bbead175da7336b30d958d887"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/FeedMineAppTests-9D04E588-4FB4-461E-8EAC-A160E46A66BB-Configuration-Test Scheme Action-Iteration-1/FeedMineAppTests-9F57AA7A-B1C9-42A0-9D4C-24C2D56EDB2E/Session-FeedMineAppTests-2026-10-28_132519-8bzE8W.log": {
+      "bytes": 72844,
+      "sha256": "27c2d5de4d395336468c1a69f4b6262494f47c212da26bd5f3d4057074ff62ff"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/simdiskimaged.log": {
+      "bytes": 5724,
+      "sha256": "199b8c179a899a0901959ddf5e4ced452f09e894f2edb032a8e92668accdcca2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/xcode_version.log": {
+      "bytes": 5106,
+      "sha256": "e8bf9e57329079b6bd9aaa46be84f8406402579e42986aae90c5c241c7e7b446"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/simctl_runtime_match_list.log": {
+      "bytes": 1507,
+      "sha256": "e0dae6f00694924a6858e92b4c207b1196f09fbc784f16c438e5b33c1d4b04ed"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/diagnose.log": {
+      "bytes": 1469,
+      "sha256": "ac4f538ec363319bba25e6b66b6b30db36334597d0fc31684cc5a1502490205c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log": {
+      "bytes": 194095077,
+      "sha256": "b54b05bcbc031587b0b5c61b4a63f9681884f5a88167ab6507826d6fae92af8e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/Simulator.log": {
+      "bytes": 69519,
+      "sha256": "ba3807de347f177ce45509c823cc6dd5835012703f16c75a59999fa52702ac81"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/device_set.plist": {
+      "bytes": 1807,
+      "sha256": "bfb6a9094ce1735dcf223477cb4c6306f9398910c3704f6a1ffab4bd0ea6e333"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/simctl_runtime_list.log": {
+      "bytes": 666,
+      "sha256": "4ea8c23b6976e367f1c6ab5145a7baf4545ba299c0d0ec1dd5f0bf937f5273ce"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/host_version.log": {
+      "bytes": 403,
+      "sha256": "c4137151c92ddb07a7b0a6d34801756514692a897014ad3ff20ab8d35c6f131e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/simctl_list.log": {
+      "bytes": 23059,
+      "sha256": "98db60915200f75ea21e738b519f629ddba3e287ed899e7c1a3d0db4fcc1a9de"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/simulator_version.log": {
+      "bytes": 120,
+      "sha256": "fccf91156492b4bc9eb551eaefde00400f1fb9aadf9729c9f28599277e3dba7e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/dyld_cache_logs/25F84/com.apple.CoreSimulator.SimRuntime.iOS-26-5.23F77/update_dyld_sim_shared_cache-stderr.txt": {
+      "bytes": 319627,
+      "sha256": "5aa797edd73adb17683e2a953577fa9a94150c9223b975ae3f9fdc857d68aff6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/dyld_cache_logs/25F84/com.apple.CoreSimulator.SimRuntime.iOS-26-5.23F77/update_dyld_sim_shared_cache-stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/lsaw.csstoredump": {
+      "bytes": 11906380,
+      "sha256": "8adb9134be07246e2f5a0dffaeb4d8f17b2441cfa0c725ca5fb347f09f535635"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/SharedWebCredentialsState.txt": {
+      "bytes": 68374,
+      "sha256": "03a706970542e5a1308ab243077aa450c53130802b965da8e64519a4272ba6a8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/device.plist": {
+      "bytes": 709,
+      "sha256": "1e0787488e19703284f41ace40e2aacdd30e997dff9ea6439fa78b5bcfa97c38"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/launchd_state.log": {
+      "bytes": 16898393,
+      "sha256": "3786a3a57754f02e0d075f8eb8c002f7f602546d54165b851e40079e71484f7c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/launchd_bootstrap.plist": {
+      "bytes": 14048,
+      "sha256": "348c845cde76e175bf6a347ccdea62e3460e95627a11df4e6e6caa284398f2d7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/hostLaunchd_state.log": {
+      "bytes": 2359,
+      "sha256": "3ebedc2464199a4420874f275a5163cf2565d9882b7b6d59621b23efd119f0e3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/darwinupList.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/io_enumerate.log": {
+      "bytes": 5679,
+      "sha256": "b37bf3c85b442b3c589eca00a897857ae7195e95bee226a29c559d09b234cc9b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/system.log.0.gz": {
+      "bytes": 748,
+      "sha256": "b3e847d51f33c0520435609d8134d0821d0808d94dbc4823ce9e7ad03f0b6ba5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/system.log": {
+      "bytes": 7722,
+      "sha256": "bda07f6644b3b17f46c861e7117cc9f546d224d7983f5b9b93bb0cec368bc9bd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/2026.10.27.G80.asl": {
+      "bytes": 2890,
+      "sha256": "422908c28688dcffc36282533cc18299e941ec9697e96090e070570fb73f0c9e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/2026.10.26.G80.asl": {
+      "bytes": 20704,
+      "sha256": "2c51eb3b8032c0bcfb48d7bea0e6ac3e1ac3cd5fc4a509237925f92674f2466c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/2026.10.28.G80.asl": {
+      "bytes": 12444,
+      "sha256": "0c2ef690abddb79550aa4364f3105a7a0e566f6ebb5bf4ef08794076a7accfd8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/StoreData": {
+      "bytes": 12,
+      "sha256": "f52db31332534833414abd5e870f78c810b8ebbe5b134bbf599506beecfd1b93"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/BB.2027.10.31.G80.asl": {
+      "bytes": 480,
+      "sha256": "f84baa13d575d3fe93c2e7f065d50f5c02a31971e683ab29c304e97041658e8d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261027T000520-07": {
+      "bytes": 7792,
+      "sha256": "716148636a64da8d0a2d731e8aee57a3403cf0d1569f7af68233f93bf541547c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261026T095526-07": {
+      "bytes": 7347,
+      "sha256": "5362ae3f2c465beae0a5620255f5ba9a5f5f50362cd55ff29bb03e050831cedd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261026T090918-07": {
+      "bytes": 7341,
+      "sha256": "0001334013e05f9df1280be2c032cd780bd1ff0679d7de7e0bff469e0bf1fafa"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261026T092312-07": {
+      "bytes": 7347,
+      "sha256": "b3d003b0cd5c714068f24a843664fec3526ce6475a3f387d66db05c61329e0a5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261026T110242-07": {
+      "bytes": 7347,
+      "sha256": "8af365336962ffbac2319e76dfb54672536f0272958ac52aee40029ad86d6907"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261027T003422-07": {
+      "bytes": 7561,
+      "sha256": "e1f712057bfb8daec55fa84558991d92ec05cfd387965270fd77ff1e538dfde8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/asl/Logs/aslmanager.20261026T094244-07": {
+      "bytes": 7347,
+      "sha256": "02d288307dd16eed5ea8a9d984cbd84062c86f12cf062b78e911dd14c8b9293d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/com.apple.itunesstored/itunesstored.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/AppConduit/AppConduit.log.0": {
+      "bytes": 18867,
+      "sha256": "a9749df39495566abed6a073fc81a8e3e45cbffbafa932dfa543ef05b85daf79"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/MobileInstallation/mobile_installation.log.0": {
+      "bytes": 56226,
+      "sha256": "25b4fc43c82ada494a93312530c20d2b4944f4c4f96cae31afc601fa03cd07cc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/MobileInstallation/mobile_installation.log.1": {
+      "bytes": 262386,
+      "sha256": "4c5f508de86ddc3c58384f57695ba35f8cab743684000505a097299017a16c6a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/com.apple.assetsd/PhotosSearch.aapbz": {
+      "bytes": 12,
+      "sha256": "0113a56c76303060f0fad716ce25cbfa2bee7753f54083a27e5286d8650caf32"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/logs/com.apple.assetsd/PhotosUpgrade.aapbz": {
+      "bytes": 17495,
+      "sha256": "3c894723a533bdec1a92550a3d572c99a93681c86e50e1f3a3dd7e25e29f6886"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/logdata.LiveData.tracev3": {
+      "bytes": 2791632,
+      "sha256": "6f938a5f460801512ddd71459870ec28f7dbcaf518e5846eb7a6071cc4d6cd11"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Info.plist": {
+      "bytes": 2594,
+      "sha256": "c2eb91ef85bec9511d98cd2afb5bbc42244216f920eb9301b6ea7cdbaa7a89ec"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/61/BBAB764A3034AEA1EE3E2FC44E17B0": {
+      "bytes": 21029,
+      "sha256": "bbda2d1b8fbb1896e4722f9a2faf41401346a0cbdd60de83144e4f4504505f06"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/61/CF072A427E34658B3F6E8414664790": {
+      "bytes": 391792,
+      "sha256": "b76dd5c06aad8d9e2f24d15bf22f708525b25eda83e20189a5bcf7253266e7fc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0D/99606300203E619D9A3DA43DC2319B": {
+      "bytes": 186,
+      "sha256": "423e4f5a88877dd48ccdd49c3aec36a47ef368f9fb50062932032105283e6314"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/95/597F23AD2236FAB112BBA6B0325573": {
+      "bytes": 479,
+      "sha256": "41c5f2380ee0e2285e59d82350a9feb0fd749ceedb3294fb33c2ffbbc52547fd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/59/21B50DDC92314A84364141C50C1B32": {
+      "bytes": 282,
+      "sha256": "f8574e43d3815ca2b6bbe7c01725f0922baade6a8558d32931f9365c821009f2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/92/FEF7BE157839F3B72E8D30F67F22F6": {
+      "bytes": 263,
+      "sha256": "59c7ac3b4de29f43554bb4e7b454f929c98e38f586266e620628cc52c8ce4f8a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/92/F88872496F3098ABB36A2644739396": {
+      "bytes": 760267,
+      "sha256": "ec28cff29b76f07aad71e1d18eb59626a73e84f3d44c90b44bc0df1493318d38"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0C/CE14E173313403806DA5C070799752": {
+      "bytes": 1082,
+      "sha256": "9f4ee66540daf7cbce496d508d68873c8c008e2fbecbff80ea9cdb31c4a3a904"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/66/CFA52C3B6430FD9F341B807701D8B6": {
+      "bytes": 252,
+      "sha256": "944a4800f7acd88e8878b5b922c2fb252c940a6153c479b941ca22ce3fcd4818"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Signpost/0000000000000040.tracev3": {
+      "bytes": 77208,
+      "sha256": "a54a1edbf953c54b21f6a7c1641f81753531f3dd910447bb3e7b20d0c7a4b87b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3E/88EEE0D5B63AF38F8AB15A94C68B46": {
+      "bytes": 64037,
+      "sha256": "63262e2ef1c3f2ea8598b00e1c600def4e696fd24cb35d358c31f8f7f8a39871"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/50/9F81B9C4A83CE5A2349D3D1B341131": {
+      "bytes": 34217,
+      "sha256": "11bc6580241411182ab086db606d31713d5f29bf6641a47a77835e07c60e3d86"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/50/080D76C2D03643B762559587FA6ED0": {
+      "bytes": 2568,
+      "sha256": "b027442401701d7f3b8081783683dae74eda08cdb12c3fd65cd119ffb4da93b6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/68/71E28FE2593E61877854407E96B3A3": {
+      "bytes": 1697,
+      "sha256": "bbe56de8a1f573ca93fc49b5102c4bcfc5c97bde44431af6b63b042fab58eae9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/68/2C657322E039E5ACF14B0D23BD25B4": {
+      "bytes": 3520,
+      "sha256": "ded1b758766f7f33a04b1a8e7f73862eecba0274950a4270ce98601d2d3dad63"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/68/8AB8A1CFA0318E9B712BEB5D10AF73": {
+      "bytes": 40116,
+      "sha256": "f1f06e3bfc4268a06905e6467ef454f2ff2bab5cf5e48bce4a80e7474548b67c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/57/977F6743043013B68B36DF12FF79EB": {
+      "bytes": 67280,
+      "sha256": "e58ae89e917c823b4f9d9818e1d913af2b0311be370356f5ce1ac11110e87a20"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/57/C6BC0C64813FD98B6450552A283ACE": {
+      "bytes": 11874,
+      "sha256": "308b9b5ad7555b119851b9d2cc9197a54c38d0e87e89ef98ecabe8d589bbd5ff"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/57/B10238CAD23470865BD64E8A673AE6": {
+      "bytes": 11480,
+      "sha256": "30ec0d48ab498229494e8a452b81800261ae2a730f0fcc5c6f6286d400ce2284"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/57/39DA2E17EE37049F805C237F615B36": {
+      "bytes": 3283,
+      "sha256": "439ce96d94039dab3dad5e9cf611b8b7786a3ace611dc592d6d10040c4c7baa5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/6F/7C54756B053EC2964B0BBFA8A00AB9": {
+      "bytes": 12356,
+      "sha256": "af570dbd9c62708dc7e35fe9a848e64596c1b99754204f8d8cc237a9373abe17"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/6F/71A9E7A5C83825A74A3042D88E6709": {
+      "bytes": 12617,
+      "sha256": "cf00e420a8323f73b78ecf4796714fa8d76d31d561570a269ad90f5fd4d3e792"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/6F/838E0CA3DC3F89909BDE424AB2F98E": {
+      "bytes": 47761,
+      "sha256": "aea94c9dd46f1ff1c5d2f7d11e69f3c80c7d214d544f98220e74b09b3e8f4b0b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/03/765646E9283756BBF88EC355F779B9": {
+      "bytes": 234,
+      "sha256": "75e919b32e8a5a416ec61bdc3a496c4a7a065e73852f1b4fa5ae71508a3c415c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9B/CF2219E393387097A63168F340DA55": {
+      "bytes": 310,
+      "sha256": "c117b4e1fae254f7c1e83ad13f9717531d5cc3956b7d6401b6012c0deed86949"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9B/1C6A3F5B903885A46B9192C47C7DB5": {
+      "bytes": 1034,
+      "sha256": "10447fcba094faaa215f350a6215c7f752e49dd261f8a92f7d175d8e0cd0d53e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9E/9202237A8532B8ABC9878AFF025960": {
+      "bytes": 19462,
+      "sha256": "a9754dbbe5e9ae30f5afe360ffad44063d02e71afd04a509fd54c3fdce96fb19"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9E/FE41665A9B36C8A6BBD90511546EE2": {
+      "bytes": 58120,
+      "sha256": "9e854b4f9871da9836ed863dcc3783c461befa8bb24bdf38a1220ef665996aa4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9E/8EC00489C83F1CAD1291C31D07A8DE": {
+      "bytes": 345,
+      "sha256": "a096aa2fc3c1c1e7b3fc38eb27ef6dab2473267545854e8336d40cf983b38f6b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9E/A05757AF523E72AAB7CCDB6CFDFDF5": {
+      "bytes": 31407,
+      "sha256": "e1790855fe056b1433d59de04a0f037cb4727b36812d06d4fbc69995d5c54669"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/32/FAA1665C06371F85D39EE969A74C37": {
+      "bytes": 363,
+      "sha256": "44430744a2605c774d8ee9e854f7ec282f1e61113fc7a819ceb62ae1394a34e9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/69/D6D4510B3C3E1399B21B5575FCB02A": {
+      "bytes": 8759,
+      "sha256": "a57e8ca58b2190d9d9934faeeb639017ed12eebb1855d42ef5515beba291f557"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/69/5846CD763E368E9AA3E24598B45761": {
+      "bytes": 195667,
+      "sha256": "2dc607ab7d6790ac8881d06272cc7afae404abbd446ea1ecdd634ca49248d37f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/56/63CB6123D031AF9967A074E0455D97": {
+      "bytes": 7773,
+      "sha256": "63c82acc535b83d1f9fa77be920440d26a2059034a7baef25216acc52d109757"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/56/CBE9056A1837FF8596DB1840DCF6D7": {
+      "bytes": 1870,
+      "sha256": "5d80e2f05f065e0386863d3b0526bc9b5915b8b6689cf52f875de23612f5b8c0"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/51/BA18B606D836C6BAE90538DA33E715": {
+      "bytes": 575510,
+      "sha256": "77ec70d04ae1fb7c2ee4525182ebbe8eb760fbf892f0c2827da77122b46a3c3b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/51/4F784D13C3334C98A28BCF5BDE658C": {
+      "bytes": 4670,
+      "sha256": "9bc6d31e9a01d37fcd7f9f7332a6250344d0e63f2535fad230be159eace0ab47"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3D/2153DD417E36968E81AC513096CA18": {
+      "bytes": 5566,
+      "sha256": "a4de22064a58a56170b91f6d59a1f45893a761c76fc6a869b0cf737a0c1b6a1e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3D/8203277FA339AF9F5F28E1638CDAA6": {
+      "bytes": 1688,
+      "sha256": "21a88dd1fa89daa400f634ac08906930cd83b746149f7cdcc3f8b14368dc1593"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3D/1D57D8BCDB35758F558C5FA36E527F": {
+      "bytes": 8904,
+      "sha256": "767b068f0e31d3c31a66828926cfc5f8dca1d48642451fefda36865e6be3f663"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3D/BCAC3D3ABE38939EBFBDD9C51A6478": {
+      "bytes": 462,
+      "sha256": "4fe2839e2991100f5d472329e427936f02ec8c343f458454897a6589dd422b56"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/67/C657D6D0A533969715DCFDBEAE6449": {
+      "bytes": 1679,
+      "sha256": "5d0550ba417221a2aae0797256fefa08898e26ad6f9be980950ab40c8d621575"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/67/2A8EBBB9F73FAD969B60C56A8EC68D": {
+      "bytes": 8606,
+      "sha256": "44364901b74535f98d12e74b6690d5c52162f0b551baa63692a0f96b94640f75"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/67/44EEC353643A43BEA793EE8EEED4F0": {
+      "bytes": 4656,
+      "sha256": "799c734c04f7f60d5af6007e774d07b9330c36d975a9716e9f95eb5adbd7dcae"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/67/99BEC6513A302D8FD68E900997822D": {
+      "bytes": 4195,
+      "sha256": "71c6bfc5bae0386353e7be578fccbe6ea928e3e3cc5ff9817ad0a5c5295c1d3a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/67/283433444835F1BB0416BFD5D1236F": {
+      "bytes": 953,
+      "sha256": "11e3d904c6f204326a75af5f41afb81a8f0bf9d6cb491225bf19e1c8d7f11361"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/93/18E27918A03908ACE1CFA0F152716B": {
+      "bytes": 290,
+      "sha256": "0b06854cca8bbc16a90ced1c5baa164e12a0dc250068ac1b8bb2112eb3489b66"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/93/91CE57627E3512A65F7A4B60F3BE47": {
+      "bytes": 326,
+      "sha256": "c547bb2b8ce502c9ddfcfc39be87b57dc0ef8eac735ec68156598a6a1b47e1fb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/93/3CA20823DA30E1B0945851B41D420C": {
+      "bytes": 187,
+      "sha256": "b4381514512b88b54caa3d57b3ff977a97c0392861d08b78a3f8c6655b159355"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/93/EA45092F8430A48197398668415623": {
+      "bytes": 35912,
+      "sha256": "456ff5ab4eb2e79c1d30192e5c52a7f060bfe1f6290fa884f2bd7e6d644200e7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/94/F7B3BD556834129B89201E1B22EAC6": {
+      "bytes": 117580,
+      "sha256": "64e87bcd7c5b3b415b2c14ed307d016b1d32c04c127d5766149b68442b346cd8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0E/C94EFD3B43372A8E59C0EB59BA9866": {
+      "bytes": 145141,
+      "sha256": "284f6f22dfcf2ef1cbf95df76f876f068bee4545a2a8f8bb25dc0c2ddd82078c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0E/D38FA85BC43D06810EE24B6675C4F4": {
+      "bytes": 194,
+      "sha256": "002b07acf90e56f7a39509973028cc931aed8921b8b720c66c2fd349297d4eaf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/34/D8D45F07ED3A07B2AAD0FC4E0E5663": {
+      "bytes": 327,
+      "sha256": "8d19bff8ca58b0c18779d6dbc4f4ce11823728cc96009aba873a30fc88be0f44"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5F/7FD15B3EC135CA9B69CCAD5425B2DF": {
+      "bytes": 138006,
+      "sha256": "20b34e427ff1273e8a0d5dffb4da5b2c9b8df46e45431469f64f7bed5b5f0e51"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/33/89D5C401013666BC08E8EF3AFB8A80": {
+      "bytes": 569,
+      "sha256": "ee595e4e4ab5e52a6d2f7260b7b409d62cd9d794ae1664c8ec6befd3d861deb5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/33/E23F986DC135CCADEA70BCE700C40A": {
+      "bytes": 26357,
+      "sha256": "a933845e63386419302399425b656ae849f954f0e1d332310518269bb83a8833"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/33/B4269DCA423CBE91A5DF3255F19C53": {
+      "bytes": 440,
+      "sha256": "86d338cde2ada0e66b3b057e74adcd927ae196c67af36cefaf6817c5952a7ca7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/05/1360626F34339E8460543D3E67C2EA": {
+      "bytes": 22385,
+      "sha256": "c246b3604be0fc78e889a9f878cfb0aa859fbcd77a4c3bfd1025f9aad2ac6167"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/05/892BFCACCA32B8A5ADA05B9A9BB621": {
+      "bytes": 39532,
+      "sha256": "d70c67dd6ff67d36ab69531b830d22938e6470f0cb644e3ec308492614405c11"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/05/CFFB11E6D63D488E3BDFED448A2A44": {
+      "bytes": 28421,
+      "sha256": "bc97c5fd3bac6102d819ebc63dede2859cb9e416d74ccda06a0ce8c73bf7c77e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9D/3E78A17F2A3A04B922F54059395919": {
+      "bytes": 1112,
+      "sha256": "bf5b8e09c007a59088e9cc30d3d4f02b08d0c20806f3928f427f82c2a67469dd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9D/03565C80EE37EFB5938F02CC9F2224": {
+      "bytes": 245,
+      "sha256": "5b6677141032beb460e0c992c51ab3dd627c0368aecb71630306ee10603a7463"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9D/4C374679A131E8877D5E6BC4C7160D": {
+      "bytes": 8047,
+      "sha256": "7c4e8ec867d71b49bf5e21c144e232d93d6e1124049d5218a8c5edba77e88303"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9C/DA70DDACEC3F30AEA9E8BEDF863A0F": {
+      "bytes": 343,
+      "sha256": "9bd70c03e30e5b990af006ad13fbb48ca2bce1f1121a378bdc754ac97c162e7a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9C/38EF80C9B538B9815A48943C8BE8AE": {
+      "bytes": 16140,
+      "sha256": "a46fc13c379508379d8b68bc4f0c220d740c0960d602ad37f958a00bb019b2fe"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9C/09742DF445361497D79AA630A5CD7A": {
+      "bytes": 66784,
+      "sha256": "512da35f2e473c1b7dc194397df6d60dae322872b2cf332ae6b54e3558d86b86"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/02/6E11C7E0A737E98374979495B4C6C8": {
+      "bytes": 3271,
+      "sha256": "99047938f1ceb73ed3dcd099139cfb600e3d5c1ab2e4d11d28eb8fd7ad44eb3e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/02/D1085D192C3F96A53F1064F97AF5D3": {
+      "bytes": 20675,
+      "sha256": "5a8a9bb4ae1a0c082f9a5a213b4f5d69314b367ecb9c6cc1c7aa4a07936e01db"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A4/5D50868D023BCE81CADC166EF8E58C": {
+      "bytes": 20099,
+      "sha256": "e487fe80e96676ccdc0fc2c144f25076608908e4146b7e29a80bdc4fbbc87d02"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A4/219AC8118D3F76BD0884C2D5DA4072": {
+      "bytes": 208,
+      "sha256": "2ba2b1ef0e75dcfb806062c37a7bd0ee240019a6d4dfad32af3d0f79727b4de1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A3/1CC5B8A56C3A09A87229A001BF6133": {
+      "bytes": 435,
+      "sha256": "631e2614e2caff2669d9d54101e5b1e08652461e7d409ed0abc09602e8e709da"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A3/BD74385FF23118B2E7650CD9BAE045": {
+      "bytes": 100415,
+      "sha256": "caa5bc94ea6c888e4521105fc212a1fca9948f830a7a8e2eb6881a79088f618b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B2/09002527E4312991FAFA07DA8B138D": {
+      "bytes": 10045,
+      "sha256": "fb310d726205d39d28f199efeb7696ff625ae41683a523b4b4e0a5fb77be87b6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B2/AF25FC2EBC37268D8511ACA76914D2": {
+      "bytes": 5575,
+      "sha256": "f1a554d1bdbf6434827b5482759515f92c22c566f2b74dc98805ceaa4938b9c3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D9/EE178E0E1B3C9DA22862E544735FB6": {
+      "bytes": 12440,
+      "sha256": "62fcfd48171112b9290b42a05c9fa6fc049e5df90ca6c0b1cbc86f3e7f417c2f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D9/2C2DDDED213871ACC5776E21B04416": {
+      "bytes": 329,
+      "sha256": "1417065b3d21cb6d8e3bb1c03254698e0a88a1beabfc9eb882b45ca92e7b5639"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D9/8D9C2559753F3494127DF579F56593": {
+      "bytes": 92575,
+      "sha256": "2d3ed7caf7e35b8ae57db099be64e6e4545903fd9e1d095641d51502c6ad16e3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/AC/FF5F55BE443F5B8EE8B49AC1A51FDF": {
+      "bytes": 1893,
+      "sha256": "32d8434a78bcb571b6579d46f8cb92031c5ba401d331e60941537fa4aa602255"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BB/8A5F17B5C63C71A4CBBE82423AB232": {
+      "bytes": 561,
+      "sha256": "357a7bf5cd2288280279c2b2acae65b5523c734589e1375aa794d8278d88bc16"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D7/559BA1B54531BC932680927AD03C1A": {
+      "bytes": 657,
+      "sha256": "f10403567af5069be31e71a9b5d749eca0a2c6e91e272159f05fd0f83bca6650"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D7/3A80E5B68F3D0EB7335C3E3EA24C47": {
+      "bytes": 1766,
+      "sha256": "e40ab479911b43f85dd7cbe378a60499ec07aa650ff90d6949ba1f77ec767081"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D7/35ABCE54933791B951B3DF8D42E6D4": {
+      "bytes": 2150,
+      "sha256": "7298f7b2e44bbf4ab0606a2cb54cfc133c23f48e2770bc185f2cd6dd76d0ddad"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D7/FEA0FA3E9733BFBBCDFD15FDB3FBD6": {
+      "bytes": 4404,
+      "sha256": "bd8a599e6ae9d31e95718c33cb6e5c0359919d8bd124f323196c8a1aa5be5f0a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D0/9F9AF6EB1E3B4F99B83FDF5C0E45B3": {
+      "bytes": 43225,
+      "sha256": "fc2ff7b2ab324c6d4821b66470ff843b95a865d9fc2468fb71ded222e8478011"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BE/116A0ACE3032C5A4BEA24DB61BEE42": {
+      "bytes": 332,
+      "sha256": "379c033dad6ed2699ab5b3ffa527815048dcccc170ca7c37c2350077632fab62"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BE/0B7E22EFF83B4FB3A3E5F348112A1A": {
+      "bytes": 1975,
+      "sha256": "cf5d51455cab94d043807c6262af649de07e07cd121579c32da9e0959a4d35c1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BE/E3C6D5ADAF3C398EF3F51BFE5D74B9": {
+      "bytes": 736413,
+      "sha256": "53a9054ef4938673d1f37f5356a6d707d584cb21028aabf2ff412804ee42d46a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BE/F5D9CC199335A282C7B663475A334F": {
+      "bytes": 87039,
+      "sha256": "6d86365267c953d26dd3a7b612276c87f91561c5c785ce8709ab7411176ead3b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BE/7DD595EBE93AF1AA40E15AAD01F34B": {
+      "bytes": 478,
+      "sha256": "8618a15842de9ea445c8d67c6c0f6d57e079c1b28ebb0de37dbd03b38564f766"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B3/389A01095730AAB87C7A9E2BB388E7": {
+      "bytes": 32568,
+      "sha256": "633f01a6dfe03be48b95c86002aedbd4c035108736349dfd387f63ec02de09a1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DF/01FD8FB37C31F89ADDD39AE074A27F": {
+      "bytes": 420,
+      "sha256": "1339efd88b38b1be057deaf431a87b6fbfddb0165745a58e4a8595535353579e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DA/7AD918472A38D79B8DDF6B1675204D": {
+      "bytes": 1089,
+      "sha256": "b6edc1772cbbdfddbdc52f2f973b453f428d5495294f7cb720aaf80c341840ee"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B4/188E832F6F355CB02935C83EC655F5": {
+      "bytes": 276,
+      "sha256": "1597f6a44ba8e16d1e33de99938c45e8657a27c385f59e307b98139b392d20c0"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B4/C2340D9C083252AC9E85EC200171F3": {
+      "bytes": 199330,
+      "sha256": "96a7c981ff999930fb91b4096c184172af489fde4b4f738a3ec94b205b24e75d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B4/E779CC90DF3B9D804A59624F65A423": {
+      "bytes": 1523,
+      "sha256": "d3291ecc3655ac70ddf6ce46054c4c5c335096747501a6df7efac733a65ba7cd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A2/8FAC868DD13C63A7CFBC6BF90C25DF": {
+      "bytes": 21730,
+      "sha256": "9362c1f4cd60cca28862cfd6aacb79ce384fad41cdf70ad5f690f86352115b4b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A2/D2F56115A531258252549658E94F41": {
+      "bytes": 38245,
+      "sha256": "f1690c4f6f5355ebd5611e3baa10026693e05f3627e74ff5f7e26b659517b99b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A2/6744118F4F3D4796EF48502EC139F7": {
+      "bytes": 12071,
+      "sha256": "5b1385b49c5440ac012c4f9c6dc9a7094c0f58f05f4bcc9ac44b5b350d54738f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A5/27BFD6495E38128B43CA85B5D08D94": {
+      "bytes": 1928,
+      "sha256": "129b04aa2debe1b2c2689ad16874ca54244429cf2bcc32c13169939aeab97b2d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BD/AA5D8B8B5E386B8231689ECFF9A736": {
+      "bytes": 3589,
+      "sha256": "55dfa0858e92ecc97b3111310aeadcd81933a183a6e58ef0c48ec127d33a1647"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BD/EC77C04F5E36988E5EBEBB7FD8A7DC": {
+      "bytes": 113531,
+      "sha256": "08af2f9c45e0548507bf38b97c46772e1f640347f134698f845b9d94d0066a7c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BD/00918C917A3C109B3BD8AD16B5628C": {
+      "bytes": 136916,
+      "sha256": "e85698827a3445ecb53721f05d90e2cc0a71ec53e9dacf3f8c8cb7722211ad5a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D1/F09ED4A3363E13B9DC91D4301BF1A1": {
+      "bytes": 10982,
+      "sha256": "2bfa1d0d77a563a8fe37a4117d291cc5c0a878fb33564619b0ebd31423dba06d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BC/61FB12E87331568EA14E6E871F392D": {
+      "bytes": 10764,
+      "sha256": "114613c1f3d2f796900b26c22409a55c31d91a40802def1b5271cef45bd75859"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BC/E5A6C66D4A39719AAFA2F11F217BA6": {
+      "bytes": 85695,
+      "sha256": "70cc9145a803ccff7d014877748d1f4fdb19cb7696104c90e9ede1478d6122c7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/AE/1BF3677FAE3DB3A89A985B490F12F3": {
+      "bytes": 35611,
+      "sha256": "b8497d4a832257bd0b50912c9b526163bb1b6fe2ecbf99108bbb328febb93d3a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D8/F4B6FE6EB0354F9CD7D8AF2FA5713F": {
+      "bytes": 7334,
+      "sha256": "3f34efac2360d35c855091f3e20e41589c43bbb91e1c90531271344d278eca53"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E5/B6C32F8E9331F380C9B778D595A7D2": {
+      "bytes": 79069,
+      "sha256": "876175cf301686cb5018275647b71f16366c8e314acbf24e553d6d97a7a9d476"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E2/8A564D1D6037869A8C086CAD538BC8": {
+      "bytes": 280,
+      "sha256": "620d3160ee1ae61404b331fb566637e6337432d3b3f2d255892cd403d50deacf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E2/BB854D6EEE3085AC04A9EA2F0D9770": {
+      "bytes": 50192,
+      "sha256": "c86b04e97f0ba0f790c5b8b57b0efa903a7ed13152386d45e6827ca91c7b3006"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F4/5690D23DB839E8B18C446132961048": {
+      "bytes": 417,
+      "sha256": "11bc03d18a929c1ff219177d3f465379ab45484c0f24d0914e57dcbb7a065aa5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F3/ED5F77EA343A9890365D2FBD0E11BF": {
+      "bytes": 17844,
+      "sha256": "5036a2537e4c918fc14cb0b0b9faba742c2fb2994f8233f57e234ad87f1793d4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/EB/BAB7D908743702B414893EB12BD55B": {
+      "bytes": 224,
+      "sha256": "ce6a5e6a9b75156ef884e803d685ab62c5bd595942a272eb94505e1785195f92"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C7/49AB57F11431799A8BBCCA158C536C": {
+      "bytes": 1332,
+      "sha256": "b5ffd5b74088cf9d4fd598928312f64ddb58b2c115c9915fe72e458c9102e28a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/EE/48EC88512D3980B4A97E6BA8FB2E7E": {
+      "bytes": 363,
+      "sha256": "4296bed77444ed144d4c277a5fceacf05b5c57ef66e57b0c0163fd355d73f125"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C9/FF1124166C3FF2BD2A482918F5466D": {
+      "bytes": 20125,
+      "sha256": "0a44c792950b52417d5571dc7b53b87ca9378aea665813285b24310efa629aa3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C9/F245A85FE83EEA9B5D0A34F22D255B": {
+      "bytes": 1967,
+      "sha256": "cf0442fdd7f866d4fe67e84a8534a21260731a433e11ffa2b94bff7ac54eda1c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C9/43F7B015AF3EF09E8A8B1EE2207DFE": {
+      "bytes": 1804,
+      "sha256": "c44b9757cf2488a1a67e1d1d8978df3d995c203d3b7719bd4401055a0cdb9510"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FC/52768E43C73CDA9F50B6D3C57584BE": {
+      "bytes": 5079,
+      "sha256": "bd7064e6864e80196754932e9bd0c362bd718348c402b5d6713ba4612dc93e44"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FD/37AEBF82703304AC73C9653DE8D9F3": {
+      "bytes": 252,
+      "sha256": "dbb069d5cb6f6f9a0e2a0ef92b7671339b688fd11951baadc476aba2f48bea5f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FD/D9DDD562B232C9B72C25567073F943": {
+      "bytes": 6432,
+      "sha256": "95dead0952d1586a5fcf92622b6ac35ef9816a0a0da064607bb81f00c65a547a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F2/4B7B1E4A3737878EA589187626CBCC": {
+      "bytes": 3938,
+      "sha256": "b3260faea46d07a33906bac70893102c93f9065ede172d670f4e6d9167d84034"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F2/6087A623693CA7B554FA502FE5D3E7": {
+      "bytes": 16400,
+      "sha256": "146e692b0956015a1a4626f81818e265db429d2f6203a3e50f9272b161ea2c53"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F5/85AAAF0A89390CB3B8807265197391": {
+      "bytes": 231,
+      "sha256": "2da32fce82e18a163269e5c6ef5e932745b4f41f9c496745242a0525d70aaace"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E3/21E0F5436E350A82C59C6F99BB78AF": {
+      "bytes": 1867,
+      "sha256": "0cf04d0783f1d911eb646d3f1a92c7fd710b9bd5729a0331228b36b2d4c18832"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E3/87831EBC063F2A9B2AEB916494EE30": {
+      "bytes": 38846,
+      "sha256": "3026e246a979ca033d24ab2d0b8c3d1c3695649acddf30d08f4b75d0f7d2b497"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CF/13864B8D063B3796E1DB9457A087F2": {
+      "bytes": 45181,
+      "sha256": "7bc09707ca1cfc6f2cfe073ca0d687dc48468bd8f1a6ac644abc6ae248fba9f3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CF/238D6053D336EC9475C2CB37ABCE15": {
+      "bytes": 521,
+      "sha256": "5dcbd9885363cec8ee33020afce9afef0dbb4d85dbdec783d421aa2f62c5416b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CF/2A1EF4D7DD37E68439E4FFC78178C8": {
+      "bytes": 6360,
+      "sha256": "ffd27fb59e2d837917361807840969922b33d10613a23ab9f4932f3b1a4a68cb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CF/2D2C4408463AFF8416E96555AB23A0": {
+      "bytes": 71727,
+      "sha256": "a88427a73df9f230b1986fbd540b5b11dfeb6d271e76c34f48752802d0a50adf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CF/FB4DC66756300F884C340850895BC2": {
+      "bytes": 311855,
+      "sha256": "a84972469ef5c357e9f141fb9c92a0c492284e39701c381f0bb371b4b8c385ce"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CA/1599600E07333A800FACB510E7F355": {
+      "bytes": 954,
+      "sha256": "b943cf9c75a5826934e7f8dffd08e4161ee2afe724717e10410cfb2e5a17c0e8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E4/4B83A1D82C328CB1FA9181E2397119": {
+      "bytes": 8971,
+      "sha256": "8be526170d7f56e93aebc9d69e7515cf350184ef9245dfe35ea98602cf6c0e99"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FE/F278D3A8CB35FDA5F531898F9EF7B8": {
+      "bytes": 18298,
+      "sha256": "1c9567b5cf657609aff2ea477517a2d0eeb90d5fd2445f539ad6985007b23d12"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C8/D343865A8D3D68BB86BE41E86ED0D2": {
+      "bytes": 69665,
+      "sha256": "f8ec0db4c62c88e43f9947e6301e9364d363732449555b1c42e14df3f9a40da2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FB/3DD913AF42305CB8EE7E98CC66D894": {
+      "bytes": 59610,
+      "sha256": "c09c2bdeb7ffc8856e844f611bac92937fa287622cc85100931ae6487779e055"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/ED/E995107B0934E499BB0B6E75F01DF9": {
+      "bytes": 3652,
+      "sha256": "a4e903f5ad048bb7c166ae12f2a16ab5e750c11a93f6a0fa497c99ce23967837"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/ED/F1442098E43F4C8278D2DDCFC62A03": {
+      "bytes": 786,
+      "sha256": "f2b67285d3760148cfcacf560408ee8a45da0e749c078110782494e4f432fec4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C1/48FC09820D36D19A3F9116F1314289": {
+      "bytes": 571,
+      "sha256": "34d97f0e3a1e00fc5cf2cd25c24e72cf51f2e33ec3c726788439c059172df29f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C1/D52BE98A0A386BA2C6B2F495DDB650": {
+      "bytes": 2999,
+      "sha256": "a9fcc5ec8e5516a99c8860b324d26160a61eae2df365626771c3827d09e23afc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/EC/FE8F7011193D199613B92442FF63D0": {
+      "bytes": 408506,
+      "sha256": "f2304e23a366f894957a06e432bdea6aa635cc6a85ff0e7e5c1540283a0a4291"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4E/76B0D236363A5BA70DD48AD5C5FE96": {
+      "bytes": 392,
+      "sha256": "c91a49c3f38f11ec6bf37683f73465f826779c933bb92ec1361c313e444af45a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/18/137FEF65E8366080FBFF2501DE6128": {
+      "bytes": 413,
+      "sha256": "0ca692a3322090a99ae9bdf53fac7a6dbd4b4d4e0b26c3b3558b713ef97c789c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/27/32AE9E1CB03468A58DC87B25D0FD70": {
+      "bytes": 3026,
+      "sha256": "f1cf6b4b92366a017b7646baa7921e3c5a855d0a762d8093145f2be6af50a67e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/27/563AFEE9CF315FA3FF32C514D3AD1F": {
+      "bytes": 626,
+      "sha256": "b6acd12ad0f06a6447e31ef473b61e232e2cf19ba6c87d1977c441bfbda96b1b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4B/F18F0B56403467B39A1C9C95C9D27A": {
+      "bytes": 2195,
+      "sha256": "4c4b9eb6d042a0920920a8edec86e3605a26cf0e75640930efd79f39f09b3c8e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4B/FFA2FAE39D3EE986892D73FC4D1660": {
+      "bytes": 48544,
+      "sha256": "2aac1c2533c5f5294d336f1c71302cb13c1e172617e26debe6d5e77168622cfb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4B/81617EFC9F351C8790815DC5B23FD8": {
+      "bytes": 3683,
+      "sha256": "eadcc02f7aa69b2b9ef284bbd7ca8f470c9bc0fef000e8ec8a7740620e4dd509"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4B/B39E92182332D8A6765C13990D1256": {
+      "bytes": 60727,
+      "sha256": "028ce5a436447874fbaaf872d67801be1a26ceb6f4800793ae6d28ec460d7dfc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/11/912918302131939794EFDF7DE819ED": {
+      "bytes": 227,
+      "sha256": "ef1da580c6db2f23b1c5c75f6624c352c99d9ce053771fece771aecdac49a30a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/29/E28406DE73344BB57C112477A1AB21": {
+      "bytes": 428,
+      "sha256": "4ab45d26204da9ad985e7db75cc7a4d98079ea1b0c506177147e4a181e69dabf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/29/F708BD27473E8F828DB0CCEFA0C62E": {
+      "bytes": 2338,
+      "sha256": "45df6acac92fcef541710f1282f2a6cbf93e604ae16f228c5bcba2ebcee0329a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/16/2367B1AC183B1DBD1776FAE5A9EB26": {
+      "bytes": 222817,
+      "sha256": "6ecdd722f72debcba0d1b7e752d5b4b39545cc7fa2adde05ade3b10c695031d6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/42/BE4BDF53D53869956395497F69C7CD": {
+      "bytes": 660,
+      "sha256": "d331b4da0c1bbb6055cf3f1f430f471f1eeb20b71059406891e3547eb9499ac5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/42/73D1661A5436CDBBD35A5EFE372215": {
+      "bytes": 707,
+      "sha256": "a80cd60be83eb7f9cca9810be81047570f9915e384e39da8e9bf93a0425b2124"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/42/0F10271BC33C588665B4AD5CFD227D": {
+      "bytes": 32543,
+      "sha256": "cebdc4a14d561d022a78155e9be67b3b9826860b95c96b90ff410344fd92bac5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/89/2765407F1C3E7B94341CED564C16E9": {
+      "bytes": 83140,
+      "sha256": "87ffaeac752bb2e0338d25b0e935eca25403310ee78f92d427621b21b6563c9f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/45/98BB18846E3FD3BF180B7DE4B94259": {
+      "bytes": 12899,
+      "sha256": "f710804fa73e46fb8d439d77edac61cdafb07ceaa4d38689409630aca963ed47"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1F/4807FA37F537E4BDEABA2813D56A23": {
+      "bytes": 524,
+      "sha256": "fe153e78045f660cab954c1f8774a7a1519bed85a0900932a025782510379426"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1F/8C95B918643E34A9DFB98291FCD183": {
+      "bytes": 2394,
+      "sha256": "8e459db92fe1f969992157ed53ec1349010e1124458c274e6d58c108e9b973b1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1F/634AC886A83FB5891F279D30107E0B": {
+      "bytes": 574,
+      "sha256": "6f3703b3ff556e781fc748cc72ed9521a60e97a8236d2661cd4089a900ad6f54"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/73/497F2911783F61A139C58D037F5A6F": {
+      "bytes": 184,
+      "sha256": "f67f039f295532cb14d3acecc4281769453a15aaadc1bc0ad19dfaeadba80bba"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/73/E46FDFCE9237FCB9BBCECB50435D0C": {
+      "bytes": 1043,
+      "sha256": "8b3c313f7bce16224c5aa43e90fdd8df1aca93d4579de3711a6cf7575e897256"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/87/AC4F92DBBE3B84968EBC3FE8B019E7": {
+      "bytes": 2567,
+      "sha256": "30916ba47f97f2d9af97e731c1a157fa75d9504e9a248ca260a1e4580149973a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/80/F9DC21979F3E45972050B859B4A32A": {
+      "bytes": 112181,
+      "sha256": "73f814bba2ff563d4b945dc50f326f7a47b3b4f12e48f8440502280f90ab0fa0"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/80/4D4F04A5273D7D8EEA1B3211C95621": {
+      "bytes": 2734,
+      "sha256": "943de2f30c07b17747035d0f4c156a5eddd18c09b18e202a20fd6c0155c8dff7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/80/2BC492F11630809BC03A65EDAF66D2": {
+      "bytes": 199,
+      "sha256": "a3fe09d017dcc6625b400f0924176e255f1edee211ecf380648afab2e28497da"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/74/36FEDEFD87340DB945F4FFDEC2DB5B": {
+      "bytes": 6552,
+      "sha256": "2c5dae82d73b143dd2ac127d8c634052b59eaed8d85f703cc3c3f1f430c06c94"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1A/3DB277FE2F37A08FD0B854D2AADA0C": {
+      "bytes": 55066,
+      "sha256": "3347ece24df91ad7fc8cd0a0b2469b1154bd3dcbdaf806f15e6c5ff0a420a3eb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1A/4BCA4930CC367A9D7FF4E1998F8C59": {
+      "bytes": 6514,
+      "sha256": "b6df62f89281b6c8792f9867bdfa8f4051e069dbd9711e0f5433754fca665e9c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/17/7644B374AD35EDA19786382EB3C212": {
+      "bytes": 22515,
+      "sha256": "3a3e00108524ad6678ba2934d53ae3a6264ab495dd85f21a19d310e06b51334b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/17/F31820BD9C373588FE7101F9C7A3C1": {
+      "bytes": 706,
+      "sha256": "2ee36f3734a12c5e49be074df9847679069a865c06ea8d8b6b50889dac2bf9e8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/17/5A6426FDFB3E9EABFC4F9EA0572DF5": {
+      "bytes": 6109,
+      "sha256": "f1908d2e68031516c31803346be7e80215aef3b6e8f0fca86255309e358bb18a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/17/7291E08AA53854BCA570BE88BA3C08": {
+      "bytes": 12049,
+      "sha256": "2e34b9919008d17468c1c998bf88f9406bfaf3fafade7a88c92009e776f2d7da"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/7B/F7CB583A8B3A7892AC488657B26E03": {
+      "bytes": 9114,
+      "sha256": "44fdbb1a54538cdd60eec4fd60378b28402b76eaaadc39c0b1393bf2b19e5a18"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/8F/19826A3DE83D9FA8C9F50EA1C6FFF9": {
+      "bytes": 195,
+      "sha256": "6a2ba6c3d21e5787f3f7400ad9d32d15ca1735038e9ed0b6bff2fa609b21653c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/10/A209A7420B372D8427EF07F3AB4B1F": {
+      "bytes": 345,
+      "sha256": "e4efd1cc307828e380ba74d0cbca37ac27bebb7beeea82900cb2563cdad5a0aa"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/10/4F051D00B1310D96B622AF87DFF15C": {
+      "bytes": 28348,
+      "sha256": "a811fed2f25ad3028738c365cc75a0e65351df54928b2651c377607b4b75b78d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/19/63D84D3ED3329F88D5B7F1C3090F9C": {
+      "bytes": 3691,
+      "sha256": "cbe7e3064e7e91cf3a0780a5ae1f6505bd33c52cd973c07417b8a02c1cd1c7bf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4C/47D966365D32F6A3EA9BEEA3BDA666": {
+      "bytes": 2797,
+      "sha256": "2f55e697c04890283244510a465ff81ea9d63fcf4a006054e0204b57567b1743"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/26/656064138537FD8C24BD71B7261842": {
+      "bytes": 11480,
+      "sha256": "44688b53290eb807e749ec15a036a76e855b55fc89b61fca989aa4529db3c3bc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/26/DFABC6DF253F059B136C39D5844FD0": {
+      "bytes": 8342,
+      "sha256": "1a23af4e740a3dde2703193214ae1c5deed71fb989963dad848cc5fe0047d4e7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/26/AC840081CB360E8538F3B1BB439416": {
+      "bytes": 877171,
+      "sha256": "c830ca3400d6ecc54d22d678178132c73fe8d2fbbe0e4ad6553131456e9016f5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/21/03363F9C383FBC808C52A90106C09B": {
+      "bytes": 69840,
+      "sha256": "68a021899ef4dd050a0a74d6e6254e088d9af75f5a740e869533f9c71611c159"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/75/BC457BB8B23137AAFE7CE32777D935": {
+      "bytes": 509,
+      "sha256": "cbfc8f82bbe893d1e0eb05a93f730883e3853b1a260bed1ed5204d3e3918762c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/75/3B4523BD7138118EC34959E98BDB39": {
+      "bytes": 22861,
+      "sha256": "7b671dd7ad84666b10a10237fe96ce37e63eb4675ce95464513adeb4f9249852"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/81/27B4BD7572354E95B757A917B2108A": {
+      "bytes": 795,
+      "sha256": "f8f0af7a67a0bf48ebe1501f57d2c78e2e51ff37f82d3371448c21fe28a8d6fb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/81/4742A602DC3D7AAA9B23DEEA1B0988": {
+      "bytes": 27758,
+      "sha256": "22edfe74d59147a980fae5df58745e5d780767567c2355bd4ada06a88f8f9a05"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/86/418F5B2AEF39ADAD1DC6A531E5B75F": {
+      "bytes": 25421,
+      "sha256": "2a9e87cfbaf23a4ffa60e190bda36314b3ed6ed46aa9a1c3485e9a90109fa926"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/86/3BA802B6093EA7948E651F1193D02E": {
+      "bytes": 58237,
+      "sha256": "a66533340e53d0bcd5abceeea60dff17a79bf64b92ad9d1fa6b8b1b1d04f6b84"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/44/4B44032482338DBF56B30BA35CA030": {
+      "bytes": 6182,
+      "sha256": "c999e30b2cf001278988582f5e2d3c2b22da0ef8186952d16e6f2df7112ba040"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/2F/AB3951BB373276B5C267AC807D20AB": {
+      "bytes": 10213,
+      "sha256": "c0afd2b8bcabed1cb93b84f8fe1bcf86d1e0a9380f326c23d829944f0b4785e7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/43/3B21BCC11F323B9E3420EB3C068AC4": {
+      "bytes": 1803,
+      "sha256": "229253f442ead176b5533bf06c5c6f487ef4755a0c9d345da6657f9d8b296f4a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/43/9AF5871BE230649B359E4E380934EE": {
+      "bytes": 6748,
+      "sha256": "1b109d21b8253c3dabfad3cca84c2620a42df66ee7d2378840179aa4e5ad84f9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/88/F6DC13C1AC3C70963BF4EB35976F57": {
+      "bytes": 3216,
+      "sha256": "a183243695ba9c41019017816f35a1324682416ec89f1977c0b188e2a979c710"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9F/8B0BEBD2B13593A1B88A88F30D91D8": {
+      "bytes": 7045,
+      "sha256": "6c4c9f8cc9fa2967c89bcf4c10def7dc0f32588096ac7610f3bd68b4f302c277"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9F/6E3AA7547D3A7095B3AA2D5489EAA9": {
+      "bytes": 10774,
+      "sha256": "1f9562c197aaa9e913de560985af09587ab2927a547490a7a78b2a70607f23ba"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/6B/BF0718E6263018BBFECD0EAA982621": {
+      "bytes": 328,
+      "sha256": "3b9262474f0dbd842412571f197b148e031c03a30a2533c68c674d8e57cd7416"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/6B/81F5E2E0303FDBA22476B6AC2DE994": {
+      "bytes": 14226,
+      "sha256": "cfe588bd56e38c20e08cd8a6272d30dfd4d9015bdd8aa97b4113752ce7dc21fe"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Special/0000000000000063.tracev3": {
+      "bytes": 373280,
+      "sha256": "9d2fb03d2d78e24020d9a68e455ac9606d0c6e260218a8d93e307700f308936e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Special/0000000000000062.tracev3": {
+      "bytes": 2083088,
+      "sha256": "edd12e0c080fbc624dffb50b0c2f21795143b985cba172ed2c50ef2a7b8dce8e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/38/DB360C59D93CA4945907CF652C054B": {
+      "bytes": 70632,
+      "sha256": "0d1c2f354569ace906c5b932f50ff78d4f9f626693f14fdc984f412ee8f0e16c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/00/D8778D56C838ECACB3E68B8AD367FF": {
+      "bytes": 473,
+      "sha256": "eb10c58659cecee9f99a6b147843487359636bbe1111ac379dbd904d39db6bac"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9A/6B5AFEE90E39F8B057B6B2B37AFAE0": {
+      "bytes": 2321,
+      "sha256": "52f2677f36efb67533a321968c18fe58093708a8ad83115276fa4dfd62eb9a38"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/9A/C6309EF1A730B19FF0A3CB16D5768D": {
+      "bytes": 294,
+      "sha256": "f662c62d5805675c3d9d30c4e6696780e5c976154c40fcd3dc5a46fe16c8f4eb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/36/EDA36AC98D3C39A1A61B809FEB617B": {
+      "bytes": 3717,
+      "sha256": "2ce1d57309a701866ddcc0bc980e37ff8f5be80c11b36b183201572486e0c1f6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/36/B8FA6817773D16A0C95DB54671490D": {
+      "bytes": 35140,
+      "sha256": "b895ad65666857f2f2fe2bec26f556470ee9b93780d104dc3f4592cbe00178c8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5C/DAB8F49E883B198A211057B6CADDAC": {
+      "bytes": 9185,
+      "sha256": "0700cc876890364bd0d9dee28d9db0419dfa2ac7b91912e549eb8e5a3e51bdbe"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/09/0A43BB265A3B189ED666F465953811": {
+      "bytes": 18603,
+      "sha256": "fc52d51e51a92520297644200541a7f03ad75997baa0b1577a3b19facf02efe1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/09/88E7F500403C1389B571CEA1592E7A": {
+      "bytes": 141002,
+      "sha256": "2b26947f143e0ddbfb5d2a8f389af7de9524fc6e5eb12cf1587281adeacce231"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5D/F60D9543F63E209BB5BD41DD3BD77A": {
+      "bytes": 5625,
+      "sha256": "f57bc4dffef69c9438dae9afea1efeb37974cdbaf1afb7b8fcec10080e4b96d5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/31/531130CEF537DAA0BB5C7FE5E75362": {
+      "bytes": 13835,
+      "sha256": "d56e09cdbbffe126622ed494d2bed137966a3526423c44ceded654ed08bf59d4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/91/7F52F39B6A3F0BB871887DB11F781B": {
+      "bytes": 1635,
+      "sha256": "d6de02c0df163c749e3df21c3515ae0772bb268711fc5567f808d438ce4ae65b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/62/D9FC793F713256A4794221C156C030": {
+      "bytes": 2945,
+      "sha256": "010dd20ed764331733b55af91f87322889bc32c4a7888ef880a17ee06cfb364b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/96/B32BC718D435B2862595AD474B270C": {
+      "bytes": 9503,
+      "sha256": "96502bf458dedcab5c2176ed4f64d1b4066e0fe63d94954936b6a595ae866382"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/96/3B49F40EC83BF3B78CF32634BAF728": {
+      "bytes": 10553,
+      "sha256": "c27d5a202a0c2fb2d09d432b80e8a19b5f8ea5e34af3ff28c2dd387203188b4c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3A/CF045690453A4993BEB22B19D20818": {
+      "bytes": 401,
+      "sha256": "46bb49b1c774c31b873efbccc56aa534942973a404d644a23b8fa2ce181b4591"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3A/77F21C85AA370BB6C38C3D37A33FA4": {
+      "bytes": 184,
+      "sha256": "44ddf4abee67387d0eb037301eb76d5f499dd11c6c24aea5cd0e7dd12ee4721f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3A/F148A6F9853F4A98871EED1E1CCF82": {
+      "bytes": 29243,
+      "sha256": "a825a08611d294719a66619cd8ac1a9a23da05f0d8ed1295189ae518c0a768a6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/54/D06C433F44380EBDCFB37D32AEDFC1": {
+      "bytes": 30045,
+      "sha256": "61203bd8d18dee9c585e3f53e76499df612f3057a3e28e03d262dab155e72580"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/53/5AE55008CD3946BC755DF9DBC772A1": {
+      "bytes": 15206,
+      "sha256": "a1fd5707ed491f789c57a46acb198450c184c4b183120acb75c50a673f72360d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/3F/E58D27ABB03F27ABD544A22935818A": {
+      "bytes": 215915,
+      "sha256": "6a561fcdea90f866786f18bd10053a4b8367bd3ba1d2caa8f07e2687af858904"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/30/9C2CC5876B3701A37D22AC0F21DCAF": {
+      "bytes": 20062,
+      "sha256": "31d1ec79b717f8fb92ccb7d7161397fd15bb42ac24ab6034a5da1c5a4219ced6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/30/9C2AA1170836DF84645CE8578B64A7": {
+      "bytes": 263,
+      "sha256": "101da9f1b9ee9f40efa019ceb7a7c2a2132d8acbb4a321728770cdd51b475e1c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5E/6ECE03F9A5320FA0D3D8570054630B": {
+      "bytes": 35170,
+      "sha256": "9ef57fc778b9105f955744a2ec51de31fa168c998422dafceeccd8f5276a4195"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5E/EE2947E8DE3EA6A0EE9F335518BA40": {
+      "bytes": 363,
+      "sha256": "6fb7fa6111a6239b20d6942cd067840162446fc30e4f2452c43b9b8ee67a78f1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5B/70E20A5CF43313A088B4904F8E25D6": {
+      "bytes": 19594,
+      "sha256": "11ba8398a92b7b1ab37a551425c9b7e9ab24d015324543c432e612dc68ac5564"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/5B/2AF72BB6F432268D8AB9C518D30361": {
+      "bytes": 7612,
+      "sha256": "8ff36dc7a1be22a604df4172db83ed18a3df2f72de5135bbb4e683507819b9e4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/37/C24D683789333A94FCE2AE352760DE": {
+      "bytes": 95744,
+      "sha256": "784e4493680b19ad77acdb86129289ee4bf5cbd408b2d8cdddd7922cda1a0d22"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/37/5986E2C234328E9C0FEDE92B15D4FA": {
+      "bytes": 93787,
+      "sha256": "eb51e03f6c753db7d2683ac0666d76fc5aec36c36109777a275b7846d7c125b5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/37/D00F966B6E3CF38A24ED5ABC5CEB98": {
+      "bytes": 3348,
+      "sha256": "15c46991ddab316f76c0f8755720d871f4569a0dc227009cc61c1ab7cda228a9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/37/337B390B3933559056A2065DA0C36C": {
+      "bytes": 1365,
+      "sha256": "f5a54e7d645985c3e023ed867729333dd80f45291b9a63eb1463c40a4623149e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/08/73F4EA0742306BACAF5FC32B33C6A8": {
+      "bytes": 9628,
+      "sha256": "f20e67febf1d3ef529bf3abb1d1608c277bf47188b8969c989fb0e4309fcd852"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/08/CC1170A2C8396CAF0D6D53B7D2AE0C": {
+      "bytes": 44405,
+      "sha256": "ea23076894658e3824e9fe8b41065c7a68b4d404b3eacf49c129afb29efe99b8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/08/D1807F42C23566864D66F94F37B2C9": {
+      "bytes": 2110,
+      "sha256": "55d20a4de71e32e22e9b843b548bdc2e0aab6dc9118812486c895cadff7eff1b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/6D/467D94A4223AA78157868218111748": {
+      "bytes": 36205,
+      "sha256": "488cb0395ab89e1c45ab8d926c2fab7202035a27539638f47a2fa899a5b2fe89"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/01/A6E67FCFCA3162B895C03694910B92": {
+      "bytes": 28904,
+      "sha256": "98b4620a2311253ba42924256d69b9ff28914e820d5eff93b271afb8978b35f2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/01/CB60B044103F898611A0A4FCE2C874": {
+      "bytes": 50888,
+      "sha256": "b93a5112ab8d8a4a08dcb238df894ad38bea124b45a03696f44d99fead6f1bcf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/06/0D4A8E0E9C3A1286A87DB306CB696A": {
+      "bytes": 955,
+      "sha256": "6ec48abda53144c8d3fa535a93fa36c5174909aa07da566ae2597da779a38900"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/06/500B8A706030F9A6F06CD5E7D30440": {
+      "bytes": 23118,
+      "sha256": "f74b32e17eb0f0febae4d30674b98a7e1664a391c0b5021f6d4b5b08e5c423a1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/55/67EFBB08FF3CA3BEF01C7B1D94C878": {
+      "bytes": 145262,
+      "sha256": "a2f9c9da41fb407251006139719d09929d991eabe677ece27c452c8f4c13cc13"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/55/BE877FCEA731A28CD9D5F7F103C7BD": {
+      "bytes": 5780,
+      "sha256": "e1b24c8109eda4ca0282a95d312b1739aefb8bb69325c7a207ae5343c33f6d95"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/63/3AAEE492F0309CA9E232F3C1C62222": {
+      "bytes": 189771,
+      "sha256": "677d5ee7249e88c1730581312a02b0adbcc0581f9a07459ebf7f8b66fd416e14"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/63/075D902B2C389CBB85F5542744C9BA": {
+      "bytes": 33321,
+      "sha256": "8e1c101e1a9b5ffb41df88482182246e0a5c9a863d94de510aa53ddfe186d88b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0F/230F5122EC3C2F83E1C23E5A679DAA": {
+      "bytes": 41563,
+      "sha256": "d82f9a24f77640165221a29933aec7a68221735a4fdcd0f34c209207ba090f6e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Extra/logd_helper.0.log": {
+      "bytes": 3925,
+      "sha256": "0bbfecc281f54231604795ae4753835dac740b51f77c666563d92e9d0674e995"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Extra/logd.0.log": {
+      "bytes": 483034,
+      "sha256": "173f78196fa47d436e0cade8372e939bf20f603fc432a901c18dd415c4e4b6eb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Extra/logd.1.log": {
+      "bytes": 1048611,
+      "sha256": "15edefacd365897928fbc5039d2783d4f9ba19fad18253a2c2e8693eee3109c5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Extra/logdata.statistics.0.jsonl": {
+      "bytes": 945673,
+      "sha256": "5a15a755593ce08ea60145c2bec52f2788b68816119636a85592d300195f1d6d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Extra/diagnosticd.0.log": {
+      "bytes": 12364,
+      "sha256": "4c97d46c12a04463fdb4960bf411afb8af95a1d0ab74656826e0ac98e1d422b7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Extra/logdata.statistics.0.txt": {
+      "bytes": 835871,
+      "sha256": "c15936fdac55aac66a88e049144c4c414eddc9f780e51b18d8fb7ee8dafd538e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0A/CD535CDB0C3462BE37D8A7A162DE86": {
+      "bytes": 236,
+      "sha256": "37190ade689e56f52f6926597ec501378c16ddd3d36e9727e349f838ed5647e9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0A/94B5284C1338C2914F888F5A4BA1A4": {
+      "bytes": 2390,
+      "sha256": "f59575b048808fd685aacf2965c48f24c0c9082805cbd5e8ee0c646920634c2c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/0A/B2ACEF0F5E3D46AB81C0B7A6A019EA": {
+      "bytes": 238,
+      "sha256": "32bf34863a09be7dbfc6e7d5390a6089be4ba53d97e4fcf76341ff1eeaa8de9b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/64/A736DFFC2B3E0D869F7C021C18DCC8": {
+      "bytes": 324435,
+      "sha256": "ce4816ac4f1247b642b4c3f9ce2e65f905f9f087d2420930fdd317abad179a55"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/64/C2FEF3660B3254836E6E3AAF1D5742": {
+      "bytes": 11502,
+      "sha256": "29f3e9d4fb3c323c7558b6d06995208a9bd3a2c8e6e57dda2b5af14161ead5a6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/64/C0291FDD08314A984BF7C999E59440": {
+      "bytes": 3160,
+      "sha256": "87679dfe7d005a32596990fba85c4368394c7f1d4b75c55e33679820287f30b9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/64/A0DE4494713F248D33CCF54D1B76B7": {
+      "bytes": 353,
+      "sha256": "aee770a32f6b792d5b8c19ae23029064f0ecdacbedbaa528ddaa347868f1e1b7"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/64/3EA67F00CC38D5A1872427E8E6F842": {
+      "bytes": 8400,
+      "sha256": "0e04702a0c606bc1ec3c4cd78df9267826713f75a0cfd47863f59b9cc00cca67"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BF/BF6E89FF653722A5F075424A4EF8DF": {
+      "bytes": 312177,
+      "sha256": "931c8c27a0f79b83019e58a6d11f3fce7ee6f83758fe65a3a76e12e8ac7365c4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BF/B48157B80F3B638D6541D35AA7EA27": {
+      "bytes": 93339,
+      "sha256": "54687dc37d33ea31a06f20759d557a4edf008fdd7b08f9d4332d1b283d6ef73d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D3/CAAA9A098634CDAA9D1485B3239D77": {
+      "bytes": 12608,
+      "sha256": "aae0b96f184ed509ed6934a6a9ad945d8e67838d9c1e1504cd6911a1e32d4d98"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D3/C3D16F25A530A0ACEF82B89CF2997C": {
+      "bytes": 323975,
+      "sha256": "3484dcd3e64c893804088fa9007c0f7244ebcbe9eadac7b5c0e7b5533918f4cd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D3/D9D0C3ECAD3E519F94A9AB611E1101": {
+      "bytes": 79501,
+      "sha256": "8c71652519c76fa5f22abfc9b41acb66d687fc01377b4f3d3e25c028f9ad12a4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BA/1660A4E54338EDBFA8F9CBE489C090": {
+      "bytes": 113146,
+      "sha256": "beaacd28a60c9cd28baa1ecd26dcd71585583400acb376fac5aa700abe72077e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BA/B2AA410B8A3EB68E940AC89680DAB1": {
+      "bytes": 5569,
+      "sha256": "dae1e595c15527b68db1ff3252774d7313c3f6f6478fb04aab8eae626162bf1e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/BA/DB1AB0DD3C351484BD23C61D3333C6": {
+      "bytes": 18529,
+      "sha256": "7b23cb08f4f8c0b40b4a53eba2ab368e8ffe522bcd4579c1e8bb1db03d462c06"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A0/B2D3CB53B73926824B8AD429720FE3": {
+      "bytes": 467107,
+      "sha256": "d9c0af11c75c4cca16846d81996a3e89b5a411954ff4d992919613263d80a9c2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A0/22D4A040F6388EBBC80A970DF85475": {
+      "bytes": 7177,
+      "sha256": "8d192fdde7843447ede1ed1392f65b61b653fe5981b7999d2873003047e11457"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A0/F1AEE0E3FF30E2B79D722B503B8FC8": {
+      "bytes": 11880,
+      "sha256": "fa46ed2a4810c47305d8a82c4033de859c3348a9906af94b50fefc54d566cca9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A7/F108FDBE9036428E8D2E6F24F16174": {
+      "bytes": 5367,
+      "sha256": "3fb44489a48da48cca035e9ea6c87378b24d131679f88a11c251a5a3a46ead51"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A7/BC1058127F3990A14ED2D483969287": {
+      "bytes": 706,
+      "sha256": "f7b8cdc275e4671cba117c8285834e66de42410bec129a849116b9215631c147"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A7/BEA54C75813850A73D107DAD2461F8": {
+      "bytes": 21124,
+      "sha256": "24f2cc2a72ad5a04deb63c65e2d973df9762bae699e38c24feaf066599951a53"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B8/20AC4F2CC63995A080EB7C58F15C86": {
+      "bytes": 3642,
+      "sha256": "4463543e157da61bcc7fa21ba0130e15dd732df14ed82f108ad7b8af7c08c2ea"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B1/C0C105807135868565FB21F7B38E8F": {
+      "bytes": 260,
+      "sha256": "70d99487a135a111d79f4ee33b7a0368643f59b8a6dc0e278efa429a79ea3089"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B1/0FA00CAE7A38BB988AAA7ECE325DDD": {
+      "bytes": 82984,
+      "sha256": "253fc5edec989d53fefd616169891b37d38d20fe232cb23f4056d85f6e335fd2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DD/AEE13AF99330FA8081D4C346AA3088": {
+      "bytes": 1153,
+      "sha256": "fa1c67517bf29b05b6220f1ce2695488d2dec49d57d3aea1a76ac8e60ce44fb2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DD/EB91AA74553561A393A30BB6797BAD": {
+      "bytes": 19874,
+      "sha256": "fcdc363dfd22fa98426f99f05d5f29261370c5ae6c8f4a3e2651be0635be369a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/timesync/0000000000000002.timesync": {
+      "bytes": 12000,
+      "sha256": "640009d163416be228452d1c88a8c74fd40109d59a907367553f1af79500ec41"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DC/26CB1DFE1D399E996E4F89D5B10C0D": {
+      "bytes": 3271216,
+      "sha256": "eef254563f034251d3a9f966abdfb66f54d515250da6882335b116e38906c4eb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DC/C2AFB33B203C238E144C8A94AF9BCE": {
+      "bytes": 2245,
+      "sha256": "e4fd78cedcd6687430e61a683962cb1458b2e0f7b0079872534e10c11a7f1bed"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B6/7FAEC2E8B73EDDB9A1AEA4EE4966B0": {
+      "bytes": 4247,
+      "sha256": "643b1a3deaa7929a94ad4850285211f3a580fd588569b75f702149bbed0d8efb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B6/E9FF44E9A936AF9924E7590F928D47": {
+      "bytes": 24704,
+      "sha256": "daff928f9d77907b634ba633084e1977ea11901d8afd03526fb48ec5cce6ce8b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B6/E6C506781E34B1A3518830AEBBA5F2": {
+      "bytes": 2054,
+      "sha256": "a6f7ecedc087b41c13ba40adebde01d70b820ce23089cfb3b37f41dcaf4132dc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D5/12D14706C63FCE97F9EFB7BA59F697": {
+      "bytes": 13790,
+      "sha256": "2afaa05b7421649783e83b7ca4e9f7b8ef00d4585449efb6438552236f0c1c5e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/D5/F25C6785213C83B552301AB07F3722": {
+      "bytes": 90111,
+      "sha256": "65a7af7a6de54ad55a137d5e4af084aa697f7709504ec6978927c9a3d7c3b5ba"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/AF/3DBC6C6F73394CB4E038365F9CD382": {
+      "bytes": 12448,
+      "sha256": "70dba7525ea498fb71c1c9322452f38a49befe9072abb89da305063ed789e617"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/AF/BBDF9DC19734B49D1DA058DF75CA85": {
+      "bytes": 2855,
+      "sha256": "41af5286cdc44dc4e82303050bb622c5850865d9727ea49b38a95471621f8a5e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DB/CF73482317360C81AC39CA842FA506": {
+      "bytes": 16661,
+      "sha256": "3467db8ee1540c9d560aa7e96bd76e5e5a48b72a77309e259b4a65ddd31f2147"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DB/C78304CF903323B2251F08F07F9058": {
+      "bytes": 14630,
+      "sha256": "d7a4ebf7254e4a634d3e3ca24c6502da4affe3076dd33e1b7956a150ab232105"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/DB/C7DCBE8BE03641AA16BAAEA1C2A926": {
+      "bytes": 189710,
+      "sha256": "91ecfa183db702ef072411d2593c4ae393947bb39cfb78f179e0f9bb37b54714"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A8/2401D09FC43DC0BC28A48251A44815": {
+      "bytes": 19349,
+      "sha256": "137146ba4e7d5ed991eb7372ebec11021ad36edf2d703b8924a767c29a93d6ee"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A8/7B4733E44E3314B541272CC95F9081": {
+      "bytes": 3331,
+      "sha256": "473775bb77a789bc88aba2f26d29b33c973744ea58237888f2437ed60bb40e48"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A6/38F024E76C3715AB9B11344FE2DF9D": {
+      "bytes": 4026,
+      "sha256": "7cffb67c0b435227d8783e9d8e46512318043fd08b470442cc6c7c04610cf9ef"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A6/AAB2CB688D36498455BC4F45CE468B": {
+      "bytes": 10662,
+      "sha256": "ddf272b9748f663ed0987f3e25b15a1075472104b9200e62a17a4c93850a5727"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/B9/5FDE6116A73CDB8007042721ABD377": {
+      "bytes": 1802,
+      "sha256": "ef51ab9433503f0bd24b06e697d95c0ae76a40c190cec47bccb131f94e5bd74d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A1/261B634D5137848A6A2338A79A45B4": {
+      "bytes": 6201,
+      "sha256": "fa848f4c2cdd1b71791ab1a0edc248ddbd45e9e1f8ce84b40c4ba29c5ea0f782"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/A1/59E2DF7F6F3830B81D94BE5C1A60C6": {
+      "bytes": 798976,
+      "sha256": "4e4a3768c84a760aa7c5722d78408c16cb834caaf86bf94c66c9119d297513a4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/EF/B26413F937398E82BC78DA05938629": {
+      "bytes": 385,
+      "sha256": "698b9297f5267e8da25cd17325c783f7c9ab53c01a6ec9d36310ea61119dd801"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/EF/D2464E080B32A4A2524C2FAD4C216A": {
+      "bytes": 4929,
+      "sha256": "fd5d1ba210dd4f623a20f666b5856705bfa7d40014ef3506759ddaf5201d3a47"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C3/07ACA39F683AD0A6A12BAA724C7E8C": {
+      "bytes": 5531,
+      "sha256": "354218696d392257fb0a8ea1ad0027dc4c50d05a89cf567d0bd8f0ca697e442d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/EA/DC8130E55A3555925FB72C151BC2CC": {
+      "bytes": 480341,
+      "sha256": "456b31506058644f862c397dd1125f8b60a09dd9fe15a678c116b5b45dc423c3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E1/3654F603A2391A84D4D31B738C49AD": {
+      "bytes": 13177,
+      "sha256": "622e3cdca69e88973148c318d636326960b4bc913e7d293c32462fa1ec4a377f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E1/3CE32BFB3C38958DDDCE9EBB91FE68": {
+      "bytes": 6610,
+      "sha256": "20ac00a2e3502539e6d1d26a5674c8acb480e09e50bfb22607bdaf200d90ef0b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CD/C9C1224A133BD89903C4798739B04B": {
+      "bytes": 29922,
+      "sha256": "dfcd33a2cf7f317ac0ac06c8bda1f2965c73411f2a32a173222e36d144a673af"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CC/C63818C61B374A9E0E97155D6B43C0": {
+      "bytes": 2368,
+      "sha256": "6329e91cd9090e34724f3768500d9c573b7b9d2c39564f03398c159930602cf5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F9/D0E24E58D037EDA262EC1C262497A3": {
+      "bytes": 9553,
+      "sha256": "2613515a58633617f64ecbc072d511583cb99e6886f3d89fdbb4d3a0d263d04a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F9/35C59A12BC388DA5BE326126BF6276": {
+      "bytes": 135925,
+      "sha256": "18d0aed1f7e8659e026c2d141018fa1eb803971f45047ae8b50756e96450261b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F0/9B941122223C318664F84D355C5F05": {
+      "bytes": 36334,
+      "sha256": "ec79d81ea6ab6e5cf1b88bf76470e626c1506f89c030de303afdcce0fb742c7e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F7/983197E1B837278A6A3141FE0E8C20": {
+      "bytes": 14452,
+      "sha256": "562ebe5ee878729b53dba54dc6378be391f95a2accd3ecc300ece945fc71ba0b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E8/C23378807735A5B3797DC6B6594E40": {
+      "bytes": 8556,
+      "sha256": "1630318b43de001dc6c2f22d00f973afedb3e5989335583482fb9b1ae89cc4ed"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FA/CE7EE5A796302AAE4F8FB832BA56F2": {
+      "bytes": 204340,
+      "sha256": "5c4e70ef22c93a9a1713992d3c8ee93706bbb5161fe5520306ce57e37297f536"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FF/7D96B62AD93BF79F5B6C45BD2ACB1D": {
+      "bytes": 1478,
+      "sha256": "2e0c108ab0c4121b836ed57704ef0c936e61d65f987c021cfd170e6f848a461f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FF/83D8EDE450374B8CC3E975E10E5D53": {
+      "bytes": 231,
+      "sha256": "890137a4dd7d401de9ff7e4b60c2567a4bb542a2dc355733f438819eb26f3912"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FF/475D32EBD338DCB3791D15759B518F": {
+      "bytes": 241248,
+      "sha256": "4957226672b51f2a63d71344b3fe51f792802f8ebe58bed09d5957fb299ef2ec"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FF/F07D60328A3FCFA7AACCE89FFCAE66": {
+      "bytes": 264,
+      "sha256": "d063ae149126248abbe40bf5b1e3d1fee7e838130198dd6ce5a1096e701a150e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/FF/581B25AA59351F9D452BC38B3DF8E4": {
+      "bytes": 22609,
+      "sha256": "fd95d32348db02b2044089191a2a342ed9abb310cc3e06f4a47af9cd8318217b"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C5/29CB9A7A183B6C84B6B7F9B558DF41": {
+      "bytes": 3431,
+      "sha256": "4f10538df25eebfbc230703311d82de47b0a09cbb379dfb0a97016abe0b7904a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C5/466F31E31530F4A1F4861DA2FAFB8F": {
+      "bytes": 6881,
+      "sha256": "caa0f4318201d363e513adc97d2d8caee05526baa4800cad53476fe47645eaef"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C5/F633A8D25C303EBB813A4CCF21A343": {
+      "bytes": 10255,
+      "sha256": "4b38b4547c5fd2ae2475f71baafedf817f0241662ef542a72b8ebd9acd9c2851"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C2/A9A24F8A673194BF1B57B77325355B": {
+      "bytes": 86999,
+      "sha256": "fdf2b6c54665b2f19992a540ad74e4bf5427e259fbf7ce30ae31b11e3a372980"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/C2/2EBBB27D2B3377B2106F707509F76E": {
+      "bytes": 1998,
+      "sha256": "ce7a9f21557b5ea9cc8fab8b80db46e2e5bbb72e365dfea0a0b106a58bc6aaa0"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F6/F34D8BD2C731F0804E0EDD491D4C89": {
+      "bytes": 14956,
+      "sha256": "671b288bcd5020d560619fcdc3d5d42501c9f507ca2ef78af60d57ee5b13d869"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E9/55F5DFDAE83594A53966F49871F759": {
+      "bytes": 669,
+      "sha256": "8ccc6dda81b0db8b2b55fc30e60b86d33ff1102156388f5c96785ecc62f9c6e3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E9/5FD9F09C633BCFA9C176D37F98D3CA": {
+      "bytes": 4959,
+      "sha256": "695120fce0732f377540e5e8fb91a20ca9a8bead1b6a6f4a222e6fe2b980aeb9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E9/36B19A895D38D09ACD2EC3F3EC7E53": {
+      "bytes": 136368,
+      "sha256": "d5445f701039f24828fbdcc6d87e7f9ba880df118b687a569b304b8828a6a633"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F1/AEA4F6697E3A239E0623A1204A2269": {
+      "bytes": 79401,
+      "sha256": "ab92523b0c0761d10f49b45f113d029d37ec287b9c0947f09c8805509094c192"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F1/792EF8DB8B3C4F957D0763236EC55C": {
+      "bytes": 285,
+      "sha256": "4fc552c0d7abc933eff7d8d58b08df904dafeeb0ee75c4431a2d16b403f0b441"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E7/E244E1831F327886FC384806A1271C": {
+      "bytes": 5041,
+      "sha256": "4d6855dade1350fcbfe255789351108600d7610fcb2a0b3fa9960ae817012934"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E7/78DE9DAB553729920AAA0C392137BB": {
+      "bytes": 21240,
+      "sha256": "c992c68eb6758a793911f096f4154938c279c429ef547212b4393c287be0d0f9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E7/60B3A52AAB3DE4AC232C618800B3BF": {
+      "bytes": 27976,
+      "sha256": "d8c7341d1cf1818f50938b42a0794b25de8093e45cc443087de010a309982287"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/E7/742B3C0D0C377ABAA518CEDBEC11A7": {
+      "bytes": 255,
+      "sha256": "a341801151a945d02775a4257d3c9b6b7cacf084f505b88aae24e82b4bfdba36"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CB/5ECD625B123B4C890BF57E97E9B745": {
+      "bytes": 425,
+      "sha256": "06b12c1b4d29e32361786f42c1a677aa4831393580f75ae07f4210d7ed3b4852"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CB/872F69B9C23FC5B5FEEEA13B10F962": {
+      "bytes": 694,
+      "sha256": "9627faa562062aab3a56115913dcf5e1fa4dc1c452f6fc4a951d06bb28b60fa0"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CB/DB9FF05A9F31CA8CDB6385533AEB8C": {
+      "bytes": 43489,
+      "sha256": "981bba9b0a34791948bc5f75e8615d2317a5190277adfbbe5bab9dad95e21bf9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F8/C50D41B9073051BB36D22738EA0FE1": {
+      "bytes": 39140,
+      "sha256": "0adfbee744c2739a1d95a404dd9bbee00d9aebd1f0c81dac7e37d6fddc26e832"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/F8/907EDDBA143261AA0471708467915A": {
+      "bytes": 247,
+      "sha256": "fdf33fc4b6f819fb374998afd0325a616f5bffdc8018b787ea4742fb8b38c263"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CE/77D2872C9A3A82B983C19ABF4B6D57": {
+      "bytes": 482019,
+      "sha256": "5b1c152da5b827107dea2a19a4befaaf8208623f028bd66e3a57ea79f9fdf3be"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/CE/AAD100D4DB3C9C833376907F0C369F": {
+      "bytes": 7741,
+      "sha256": "c9bc710e0714ff348348de9e3c6e5ba1cd418bb45c4e95286f576cc570a6e144"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/46/21BE3DEC4B319B91678BB0E578DEE2": {
+      "bytes": 127118,
+      "sha256": "7784599373a6e531090d1ab68b9d9a9d8d45cf6b9fb1c41f07cfbc69060eb472"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/2C/A0416C117A37AC9CB1771FB56D8EFE": {
+      "bytes": 76442,
+      "sha256": "f9bf4543fec53e071c16d0054cb2740b301810165f915414f17982c5c40b999d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/2C/0A3047555238C18CAC71FFAA67CB8A": {
+      "bytes": 1251,
+      "sha256": "6826df3b3f15ff6ae4751ba14f6d7899eea1d0241bfad9b3ce2e101b99169346"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/2D/FF8ED0D6443195B8837B1FC689C1A3": {
+      "bytes": 154403,
+      "sha256": "956ed80037bb44f49e2ec439256a20f8af4bda98090bfb15d5c15c11af981f6e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/41/2F86D540243EF2956B041D018DC30E": {
+      "bytes": 48600,
+      "sha256": "8d0127e0e031588da928a36db1e3f75409603e75381a4355c1f4a0edde847ddf"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1B/26E1F243B93A77B48C1A6CC449BD43": {
+      "bytes": 2212,
+      "sha256": "c381559fd0e612bd9e1e59207d0735ea231ced04c2590bf2e014d652a2d6c912"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/77/99A5BA96043917B6874C6C3E15F5B1": {
+      "bytes": 48501,
+      "sha256": "9274c235261f9e4b93026ae6564ff17447ced4d947e1c88ce21b811fe55bc94c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/77/C383EB90273B33A3AA642687FA8C7E": {
+      "bytes": 301,
+      "sha256": "eeace5883086f5660f54ac74c81b28d0ba16e5f3c24137c8ffa977d53274d929"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/77/15CA812DD2323384BF3C3B69ACC4AC": {
+      "bytes": 2722,
+      "sha256": "1e3c316532b91ed9dc557511629ea417562e04407d26966fdae9762a4f7d8e89"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/77/02F2AF6F0B3C84BAB1849736E796CE": {
+      "bytes": 215,
+      "sha256": "57f84a7726c84e1677d19383ec55534c0b01751d970bc113559904d1c8fadfea"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/77/436D88CD45317EB5465BA70F27BAC6": {
+      "bytes": 10261,
+      "sha256": "38335bf8a5965e91b43fcaa87ad5d25194dddea15bff3b3c16305cf2de47006d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/48/5606C9B2853F2EA98CD3E2F5E130C3": {
+      "bytes": 116950,
+      "sha256": "0ab80daadbef860090660fb0014828b6514a2b34a731c1f9a40360aecca560a3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/84/57830ED12E333A83370411F8BF7049": {
+      "bytes": 20265,
+      "sha256": "9334cb5c06d4cee36b7c5295593f9502b339d2430eaa2d7df6370bf4c80e14e6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/84/451B321E0A3AC797CE936623C6EBF7": {
+      "bytes": 20643,
+      "sha256": "f8de9b0e5e8d441942dd2a0df03cdf8fb80b5a1d243cb8d4800c7461796ed210"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/Persist/0000000000000066.tracev3": {
+      "bytes": 5025856,
+      "sha256": "a34af6e94c6943e14c3fad6cff8e3a7b50da7a6cc77470ce1cc54c2418430bad"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4A/B32D6801AD36D6B2FF8C1DE98C4AE0": {
+      "bytes": 30674,
+      "sha256": "58ae501d6d9cdea3edaece332c87cb8da5ccc4a30883f4ec3d3d3948c4c1823a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/24/5ED2CBA68237F7BBBAE6B14BDCE7B7": {
+      "bytes": 7335,
+      "sha256": "c6b6a925c1a44775f43f03cc7b8a8a80162859afad01989995edfad9d8a953c4"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/23/4B3786B91E37958226DB8D0C4754BB": {
+      "bytes": 362,
+      "sha256": "bb838b73e1c6bb7348736dc629744241203b55423c4d4673c24a361a567a349d"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/23/0492E01EF130B0B74B62E1749DD967": {
+      "bytes": 12305,
+      "sha256": "0d897614acc431915625de248a3a6ced1283e0e28ebe335f243cf8a609d4f790"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/23/63D93BFB653D27B06D040D6D13C962": {
+      "bytes": 51948,
+      "sha256": "f629966326f195a8a5850b4aedc87f8814ceaab1ccd683053bd5d31e61040a07"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/23/B9EA1DA86936E1805645CE5F661FED": {
+      "bytes": 484,
+      "sha256": "eb95bb7d51f87febe341020775a7df4b8e3a6e545918f60f82fa78a518610a51"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/23/739FD1C0D7373B8E26912724864F68": {
+      "bytes": 2300,
+      "sha256": "e367c95d82b44fd24149a4165207f56ee06a118c191b2775d9dad57f8ca478f9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4F/C4AFCB9F7337B084176A52FB73968B": {
+      "bytes": 372,
+      "sha256": "a0333f1feed9bb10bebffaae735f89875a30d354b37f846935246d502e69c242"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4F/F83599CFAB38C7A93771801C73B65D": {
+      "bytes": 971,
+      "sha256": "6a13a4b8c75079c1a8a30e5ffc37d5a0d34e7604ac208f9318fb71a0b33228e2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/4F/B0061A158D3C928E7D6CFC1B708F49": {
+      "bytes": 239204,
+      "sha256": "778da2a8cdb170b5155def875a6c14c37d212c00c0cfd685854cb4165725a186"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/12/BD204D1A763547914D2F0C767998F1": {
+      "bytes": 1058,
+      "sha256": "c00f54a58bf88f43d714cbe547dc992fafdc9bbe12ee7d79e40534ab354bea4f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/85/FE31624BE7345B9F3316DD9D6D9B1D": {
+      "bytes": 633,
+      "sha256": "7893faccc3dc9e6d3a19f40460f750a0789847bebebfd9213ef70d05a8f4d6cd"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/85/4BABD88C1F318CB145A4AD76305DD4": {
+      "bytes": 236,
+      "sha256": "9909e958bf8bd25e48a9452b5a21b2309fc0609c2de8d4614eff31989a44fcd9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/1D/74140736423A229BE9938CBB8ECE83": {
+      "bytes": 38160,
+      "sha256": "04a6898a1b5e3e52c413cc002635f1b1ae927e005a5b155c2bc6c478cab0dce2"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/71/B6B3E4FE23302A94111754E23C2CE9": {
+      "bytes": 51590,
+      "sha256": "ec5f9f116a3f969b4ca961a88ca34eba77391ca7e479406a5e1d4945ae84d216"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/71/785CB8E85139D183375EE97E59F8A7": {
+      "bytes": 488,
+      "sha256": "4701ba392b7a49b89feded358305c461f8de2be2e06ddeb1ccee2910014e6b1c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/82/660FBEC5EC3407B41CDAE427F104B6": {
+      "bytes": 163792,
+      "sha256": "e963397a9d6b58a9f862c51fa22502fb8e17c3f9b955377daa0a7e291ffb2e1e"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/49/20F2191BC63E6EA830144AE380B05C": {
+      "bytes": 210663,
+      "sha256": "82bba24ce955e9f275000c652776e8eba6de378e7e6dee18631db9be87b89e91"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/40/092F19A1893D25AB0B3121EBD6A0A0": {
+      "bytes": 303,
+      "sha256": "f8eef6864d3e0e4bd353d33feeba92e82dfa31a287b43a7c2babb5f9eb3e96da"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/40/016D0DDEDA35E98E94E07C05C82352": {
+      "bytes": 40131,
+      "sha256": "2386e8ed6a617d1ef90b617032cbfde5ce0c8cdc4c07a98428bb8a295fc27c46"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/2B/0D44F8C2813809843F6BF7B02922B2": {
+      "bytes": 648,
+      "sha256": "fe806a17301f9bf1ae288e27d90656e94070e25b13d8f9854bda8914716fa463"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/78/F0E12BC9A43EBF900A38B4265C040C": {
+      "bytes": 932,
+      "sha256": "3ad0a95b306dd9b1fced20deb11e63d723ce28afa6e66a9bd0fb7110534733cc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/8B/2821010AB03C61B7FE832B4BA9A978": {
+      "bytes": 19826,
+      "sha256": "1bc6a5f15c936f9aeb660c994eb3401d0e8ec4b5405e6994fba383b134243236"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/8B/C8FBA815093143A576CF826B8C017D": {
+      "bytes": 5170,
+      "sha256": "c3454c194fa85ca031cb94403bee43af912ea8bfc63dea5d6d473c0980cb653c"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/8B/B0A10F854136D98BD708D05D383BC6": {
+      "bytes": 412,
+      "sha256": "b0c2acbeaa4f0990c447db4168a2d8afce0a5e7a34e7eccc063846d525ec0bbc"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/13/EC9688DE9B31DB8DA74F8545160522": {
+      "bytes": 3041,
+      "sha256": "285570e373362ce6eba10d872266974c08e93f42520b9788622f3132f88fd1e9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/7F/3FC782B70739439E27508C24DAD322": {
+      "bytes": 316,
+      "sha256": "2798df6f4557f9b02f8f2c1cd6ca4cb46a9410476d6eb3a8e261c8c51c2298a9"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/220FD546-698A-4DFE-A9E6-DD40135DED72/system.logarchive/dsc/1A6EE8CF7C8B3A7A924580C8C3E83E01": {
+      "bytes": 94797151,
+      "sha256": "b2955f4cdece4c0028488465513280df5575fa9d9b3985608b7733c1747299f1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/SimRenderServer-2026-10-28-083316.ips": {
+      "bytes": 27511,
+      "sha256": "fdad29ccf9585d079ae656a6f980be2e78af72430d04ad6560bc548436fff2aa"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/xcodebuild-2026-10-26-114237.ips": {
+      "bytes": 96212,
+      "sha256": "53b631ff96739aae4afc779642ded777e80a0f00361c5f0dc13525a2b749c5a1"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/SafariViewService-2026-10-21-233805.ips": {
+      "bytes": 58024,
+      "sha256": "a7b5366a81a1153bc9d5f004d4b90944ed41a86aa8d472a33dfcd0e7ba099d80"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/UsageTrackingAgent-2026-10-25-212405.ips": {
+      "bytes": 17514,
+      "sha256": "a9059eb2ff2912682c34212ea51fe1fc34938b8c82b133986585e5a71eeda2be"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/UsageTrackingAgent-2026-10-26-093726.ips": {
+      "bytes": 20838,
+      "sha256": "e9de004dfdb45e0a0dcfb763f9911a866fe6b4b685049e921264a9dcb23f1e01"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/gamed-2026-10-26-025910.ips": {
+      "bytes": 22172,
+      "sha256": "1aa56aab7019fb66b1f6c5f2c470479f8e9e93a9267154baaff779b66645f0bb"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/UsageTrackingAgent-2026-10-26-091500.ips": {
+      "bytes": 16309,
+      "sha256": "3e96852a802a85ac50f2454502062569d7e77b0e4b629723f0ae19b68a9eccb6"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/SimLaunchHost.arm64-2026-10-21-193128.ips": {
+      "bytes": 11006,
+      "sha256": "6bfda2a2f50ca0c877df7a1c83b9c739a55e20e7b4926c2cf431d0e35d877f24"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/FeedMine-2026-10-26-114224.ips": {
+      "bytes": 34517,
+      "sha256": "85253d362e2d0822d5065b79ce56ede039c1140e7291a14266441faa37952aa5"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/FeedMine-2026-10-27-003913.ips": {
+      "bytes": 87304,
+      "sha256": "d02ed488b304c908cd0b9ec039824a5a996b120d2a62ddf0934161d7b96bb0f8"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/DiagnosticReports/FeedMine-2026-10-23-140149.ips": {
+      "bytes": 52613,
+      "sha256": "3c36e56da8e8f7091ee856465efc848cda21d83ffabc1dd793deb047b0bfd1ad"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Data/data.0~7UZnlHpndD7dTeusVNdD4kwLQbPsLl6z2fpKAidLHCQLvhvvWpUYQWiZ06B2SJ5-95BXuR981vC33zn-_mw63w==": {
+      "bytes": 962,
+      "sha256": "9faa50086905814680c8c8e092854f0737d11597277b2eb8cacb7e02c1dc9d5a"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Data/data.0~M_lHX_vi6Nm6uXngYRcIjFmschoKYZjUsBZxVWT9yfPB4eNgQVO0YAs9a5MFlQ8CeEOj4K40U7Fi4ByLZqPVFA==": {
+      "bytes": 2149,
+      "sha256": "1664e3a1b2400a43e6bc4da546d0ca33d03800ba11cc5ccc8f598d7934b73632"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Data/data.0~2UwzY9L0yd6NcqjhCnP6eCL7QsEPPmrxLQPSZQa0C1l-jz4RGAS_PNbRcKiGxAlayiXrpRQM07h4bLgowhhDgg==": {
+      "bytes": 886,
+      "sha256": "1331fb7bf6f14cee88b38230f86e510326a02586c268b5fd0eb7119da5e07af3"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Data/refs.0~2UwzY9L0yd6NcqjhCnP6eCL7QsEPPmrxLQPSZQa0C1l-jz4RGAS_PNbRcKiGxAlayiXrpRQM07h4bLgowhhDgg==": {
+      "bytes": 67,
+      "sha256": "4489c7f38ec86dc775b844cf18325617607e20464f8a770b77c9b9ccac423120"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Data/refs.0~M_lHX_vi6Nm6uXngYRcIjFmschoKYZjUsBZxVWT9yfPB4eNgQVO0YAs9a5MFlQ8CeEOj4K40U7Fi4ByLZqPVFA==": {
+      "bytes": 67,
+      "sha256": "568c424c6e758e12196f1daef018a01b20ddd2c443b1c37dc96370996e77146f"
+    },
+    "r4-global-word-host-apply-red-tests.xcresult/Data/refs.0~7UZnlHpndD7dTeusVNdD4kwLQbPsLl6z2fpKAidLHCQLvhvvWpUYQWiZ06B2SJ5-95BXuR981vC33zn-_mw63w==": {
+      "bytes": 1,
+      "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+    }
+  },
+  "verified_all_hashes": true,
+  "original_incomplete": true,
+  "original_archived": true,
+  "restore": "tar -xzf .build/f13-ios-tests/r4-global-word-host-apply-red-tests.xcresult.tar.gz -C .build/f13-ios-tests"
+}

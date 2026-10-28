@@ -114,7 +114,8 @@ Every design proof maps to T1–T6; domain/snapshot/coordinator names above are 
 Tasks 1–3 are complete; tasks 4–6 remain open. Native execution follows the user's autonomous-work instruction;
 implementation should not dispatch per-task implementers. One final independent review remains required.
 
-Current gates: actual iOS ContentFilterTests now pass (9/0, monitored symbol-less Debug build);
+Current gates: the existing 9 iOS ContentFilterTests pass; an added R4 case records 8 strict known
+issues (official 9 Passed / 1 ExpectedFailure), so word-history acceptance remains FAIL;
 empty-list no-op and cold recovery preserve the association. Idle/provisional recovery renders without
 a false search/end claim. Full package after AX grouping: 1777 tests, one skip, zero failures.
 T6 controls/process and recovery editor/tail geometry now pass in pt/en AX XXXL.
@@ -125,3 +126,10 @@ The existing F13 keyword/history caveat is explicit in the design, T6, and final
 not resolved by the source-only feature. This plan does not alter baseline criteria or authorize cleanup.
 
 2026-10-28 recovery checkpoint: actual tail RED de 117 pt -> chrome action GREEN delta zero across five observations in pt/en AX XXXL; package 1777/1skip/0 and app 9/0 on identified final build. See docs/reviews/2026-10-28-f13-recovery-route.md.
+
+
+2026-10-28 word-history finding: R4 integration FAIL. add/master-on lose presented reading and active
+position; off/remove recover original baseline. Old 48 records/segments/save/context checkpoint intact.
+Raw matrix: eight continuity assertions fail; strict individual expectations track them, never UX13 PASS.
+Next causal follow-up must separate global publication policy from context criteria and preserve legacy
+rule origins; no blind subtraction of globals from old Edition keys. See the word-history-r4 report.

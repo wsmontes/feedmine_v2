@@ -422,3 +422,116 @@ extension ContentFilterTests {
         await association.close()
     }
 }
+
+extension ContentFilterTests {
+    /// F13/R4: a global rule is not an explicit request to replace the reading context.
+    /// Compare the presented reader separately from the frozen records; preserved rows alone do not
+    /// prove that the reader can continue through the same published history.
+    func testGlobalWordRuleKeepsPublishedReaderAndFrozenHistory() async throws {
+        let directory = directory(), root = root(directory: directory)
+        await root.launch()
+        let original = try XCTUnwrap(root.association)
+        let logicalContext = root.currentContextKey
+        let before = try XCTUnwrap(original.store.state.presentation)
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        let publication = PublicationStore(database: db)
+        let segments = try publication.segments(editionID: before.editionID)
+        let records = try segments.flatMap(\.cardIDs).map { try XCTUnwrap(publication.card(id: $0)) }
+        XCTAssertFalse(records.isEmpty)
+        XCTAssertTrue(records.contains { $0.title?.lowercased().contains("published fixture") == true },
+            "the rule must match a card that was actually published")
+        let saved = try XCTUnwrap(records.first).id
+        try publication.toggleBookmark(cardID: saved, at: Date())
+        _ = try await original.session.checkpointCurrentPosition(at: Date())
+        let checkpoint = try XCTUnwrap(SessionStore(database: db).checkpoint())
+        let filters = try XCTUnwrap(root.makeContentFilterStore())
+        await filters.load()
+        func samePosition(_ value: SessionStore.CheckpointRecord?) -> Bool {
+            value?.editionID == checkpoint.editionID && value?.cardID == checkpoint.cardID
+                && value?.anchorPlacement == checkpoint.anchorPlacement
+                && value?.topDelta == checkpoint.topDelta && value?.cardHeight == checkpoint.cardHeight
+        }
+        for step in ["add", "master-off", "master-on", "remove"] {
+            switch step {
+            case "add": await filters.addRules("published fixture")
+            case "master-off": await filters.setEnabled(false)
+            case "master-on": await filters.setEnabled(true)
+            default: await filters.removeRule("published fixture")
+            }
+            XCTAssertNil(filters.errorMessage)
+            let stored = try settings(directory)
+            XCTAssertEqual(stored.contentFilterRules, step == "remove" ? [] : ["published fixture"])
+            XCTAssertEqual(stored.contentFiltersEnabled, step != "master-off")
+            // The host awaits this when the editor/settings closes. Persistence alone is not activation.
+            await root.reapplyReaderFilters()
+
+            let after = root.association?.store.state.presentation
+            let activeCheckpoint = try SessionStore(database: db).checkpoint()
+            let historicalCheckpoint = try SessionStore(database: db).checkpoint(for: original.contextKey)
+            let frozenRecords = try records.allSatisfy { try publication.card(id: $0.id) == $0 }
+            // Future publication may append; every segment that was already published stays identical.
+            let currentSegments = try publication.segments(editionID: before.editionID)
+            let frozenSegments = Array(currentSegments.prefix(segments.count)) == segments
+            let savedUnchanged = try publication.bookmarkedCardIDs() == Set([saved])
+            let prefix = after.map { Array($0.window.items.map(\.id).prefix(before.window.items.count)) }
+            let facts: [String: Any] = [
+                "step": step, "masterEnabled": stored.contentFiltersEnabled,
+                "storedRules": stored.contentFilterRules,
+                "sameLogicalUserContext": root.currentContextKey == logicalContext,
+                "sameAssociation": root.association === original,
+                "sameEdition": after?.editionID == before.editionID,
+                "samePresentedIDs": after?.window.items.map(\.id) == before.window.items.map(\.id),
+                "samePresentedPrefix": prefix == before.window.items.map(\.id),
+                "sameAnchor": after?.window.anchor == before.window.anchor,
+                "sameCheckpointIncludingTimestamp": activeCheckpoint == checkpoint,
+                "sameActiveCheckpointPosition": samePosition(activeCheckpoint),
+                "historicalCheckpointPositionPreserved": samePosition(historicalCheckpoint),
+                "frozenCardRecordsPreserved": frozenRecords,
+                "frozenSegmentsPreserved": frozenSegments,
+                "savedCardsPreserved": savedUnchanged,
+                "frozenCardCount": records.count,
+                "beforeIDs": before.window.items.map { $0.id.rawValue.uuidString },
+                "afterIDs": after?.window.items.map { $0.id.rawValue.uuidString } ?? [],
+                "beforeContext": String(describing: original.contextKey),
+                "afterContext": String(describing: root.association?.contextKey)
+            ]
+            let data = try JSONSerialization.data(withJSONObject: facts, options: [.prettyPrinted, .sortedKeys])
+            let evidence = String(decoding: data, as: UTF8.self)
+            let attachment = XCTAttachment(string: evidence)
+            attachment.name = "f13-r4-global-word-\(step).json"; attachment.lifetime = .keepAlways
+            add(attachment)
+            print("F13_R4_GLOBAL_WORD_JSON \(evidence)")
+            XCTAssertEqual(root.currentContextKey, logicalContext)
+            XCTAssertTrue(frozenSegments, "\(step): frozen segments")
+            XCTAssertTrue(frozenRecords, "\(step): every complete CardRecord")
+            XCTAssertTrue(savedUnchanged, "\(step): saved card")
+            XCTAssertTrue(samePosition(historicalCheckpoint), "\(step): historical context checkpoint")
+            func verifyContinuity(_ field: String, assertion: () -> Void) {
+                guard step == "add" || step == "master-on" else { assertion(); return }
+                let marker = "F13-R4-\(step)-\(field)"
+                let options = XCTExpectedFailure.Options()
+                options.isStrict = true
+                options.issueMatcher = { issue in
+                    issue.type == .assertionFailure && issue.compactDescription.contains(marker)
+                }
+                // Known product failure, not UX13 PASS. Each expectation matches one measured symptom.
+                // A fix makes the strict expectation fail until it is removed. Data checks above stay normal.
+                // Evidence and required follow-up: docs/reviews/2026-10-28-f13-word-history-r4.md.
+                XCTExpectFailure("F13/R4 open: \(marker)", options: options, failingBlock: assertion)
+            }
+            verifyContinuity("edition") {
+                XCTAssertEqual(after?.editionID, before.editionID, "F13-R4-\(step)-edition")
+            }
+            verifyContinuity("sequence") {
+                XCTAssertEqual(prefix, before.window.items.map(\.id), "F13-R4-\(step)-sequence")
+            }
+            verifyContinuity("anchor") {
+                XCTAssertEqual(after?.window.anchor, before.window.anchor, "F13-R4-\(step)-anchor")
+            }
+            verifyContinuity("position") {
+                XCTAssertTrue(samePosition(activeCheckpoint), "F13-R4-\(step)-position")
+            }
+        }
+        await root.association?.close()
+    }
+}
