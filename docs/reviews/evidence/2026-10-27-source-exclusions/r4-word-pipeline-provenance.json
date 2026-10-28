@@ -1,0 +1,36 @@
+{
+  "base": "c3c1f010",
+  "files_sha256": {
+    "Sources/FeedMinePublication/PublicationCoordinator.swift": "885da4a484cf9eadbba0c0b8a75be5ece385b395b49432dd55c88b3b4ae7abab",
+    "Sources/FeedMineRuntime/InitialProductionSlice.swift": "9629156395ca1d3e2675d4276c24eaf7578acb1486ac81dd37af31c2e279c537",
+    "Sources/FeedMineRuntime/LocalProductionSlice.swift": "412f2a97a5962cc5491d1fbf74491ac3063f2f16f85ffbde246b85ba2aee6749",
+    "Sources/FeedMineEditorial/CandidateProvider.swift": "5cecb0bfdcebc7372af69ebbfbf510a6a68e0c2c5ff42d6040e0b4a20f04027f",
+    "Sources/FeedMineRuntime/PendingMediaReconsideration.swift": "4b2031a5933ca8b9f0b8379fbac0ec695a12be02509c6a6dca4fd916155d89df",
+    "Tests/FeedMinePublicationTests/PublicationCoordinatorTests.swift": "d12838e46d149909b122c8f8e8aa79426ee53f3f2ecd3449f91fc1f09923c172",
+    "Tests/FeedMineCompositionTests/SourceExclusionProductionTests.swift": "9afa40060016adf51f78bf01d03e06e800d484e9f749e3e0a0d1fce12a8dd3b2"
+  },
+  "test_executable_sha256": "9718f32f286e1cc6e9343688021affc3139f53d3fb55df05649802d058bcd2ec",
+  "logs": {
+    "r4-word-pipeline-compatibility.log.gz": {
+      "uncompressed_sha256": "1b72281e0de99e87da314882fec876cd3e4941a8fa7545b8b8e06e1802f0100a",
+      "bytes": 28543
+    },
+    "r4-word-pipeline-final.log.gz": {
+      "uncompressed_sha256": "9498cdc2760d560a57304da81046becdff81aab3f879abd8e92fe56f61a036b6",
+      "bytes": 18327
+    },
+    "r4-word-pipeline-green.log.gz": {
+      "uncompressed_sha256": "0aa09dfa67038daa0614c95769472f5734688e28b5b1f6aaf64f94057be8de65",
+      "bytes": 111707
+    },
+    "r4-word-pipeline-red.log.gz": {
+      "uncompressed_sha256": "441027b96f7ae4dafacab2044d05a93cc6cd948f6b76a956c5c8a056bc49058c",
+      "bytes": 1748
+    }
+  },
+  "focused_tests": 38,
+  "affected_suite_tests": 91,
+  "failures": 0,
+  "native_capture_wired": false,
+  "R4_host_status": "FAIL"
+}

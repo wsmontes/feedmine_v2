@@ -1,0 +1,23 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--scratch-path",
+    ".build/index-build",
+    "--disable-index-store",
+    "--jobs",
+    "1",
+    "-Xswiftc",
+    "-gnone",
+    "--filter",
+    "PublicationCoordinatorTests|SourceExclusionProductionTests|ReaderContentFilterPolicyTests"
+  ],
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "minimum_observed_free": 408846336,
+  "free_before": 410525696,
+  "free_after": 409587712,
+  "reserved_free_floor": 314572800,
+  "elapsed_seconds": 7.058126833988354,
+  "scope": "filtered macOS Debug publication word/source guard and policy tests; not benchmark or R4 host acceptance"
+}

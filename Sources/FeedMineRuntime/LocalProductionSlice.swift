@@ -54,6 +54,7 @@ public enum LocalProductionSliceError: Error, Equatable, Sendable {
     case automaticExposurePolicyRequired
     case invalidExposureFacts
     case inconsistentPublicationOutcome
+    case staleWordExclusions
     case staleSourceExclusions
 }
 
@@ -92,6 +93,8 @@ public struct LocalProductionSlice: Sendable {
     public struct Request: Sendable {
         /// Captured once before preparation. Nil preserves callers outside the guarded app pipeline.
         public var sourceExclusions: ProductionSourceExclusions? = nil
+        /// Effective words for this opportunity, independent of the frozen context identity.
+        public var wordExclusions: ReaderWordExclusionSnapshot? = nil
         public let plan: FeedPlan
         public let policy: ResolvedSelectionPolicy
         public let editionID: FeedEditionID
@@ -134,13 +137,15 @@ public struct LocalProductionSlice: Sendable {
         let structural = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity,
             operation: request.operation, consult: "slice", trace: trace,
-            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [])
+            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [],
+            wordExclusions: request.wordExclusions?.exclusions)
         // What the one-way walk already passed and whose media became ready since. It is placed before the
         // structural candidates in the array, but the array is not the order: SelectionEngine orders by its total
         // comparator. The structural walk stays exactly where it was.
         let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
             editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer,
-            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [])
+            excludingSourceIDs: request.sourceExclusions?.sourceIDs ?? [],
+            wordExclusions: request.wordExclusions?.exclusions)
         let window = reconsidered.candidates.isEmpty ? structural : CandidateSupplyWindow(
             candidates: reconsidered.candidates + structural.candidates,
             examinedCount: structural.examinedCount, nextCursor: structural.nextCursor,
@@ -225,9 +230,10 @@ public struct LocalProductionSlice: Sendable {
             editionID: request.editionID, segmentID: request.segmentID, segmentSeed: request.segmentSeed,
             segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs,
             originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden,
-            operation: request.operation, expectedSourceExclusions: request.sourceExclusions?.snapshot)
+            operation: request.operation, expectedSourceExclusions: request.sourceExclusions?.snapshot, expectedWordExclusions: request.wordExclusions)
         let publicationOutcome: PublicationOutcome
         do { publicationOutcome = try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) }
+        catch PublicationStoreError.staleWordExclusions { throw LocalProductionSliceError.staleWordExclusions }
         catch PublicationStoreError.staleSourceExclusions { throw LocalProductionSliceError.staleSourceExclusions }
         switch publicationOutcome {
         case .published(let receipt):

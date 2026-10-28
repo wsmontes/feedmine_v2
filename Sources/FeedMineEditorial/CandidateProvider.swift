@@ -70,10 +70,11 @@ public struct CandidateProvider: Sendable {
 
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int,
         sourceScoped: Bool = false, operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",
-        trace: ReplenishmentTrace? = nil, excludingSourceIDs: Set<SourceID>) throws -> CandidateSupplyWindow {
+        trace: ReplenishmentTrace? = nil, excludingSourceIDs: Set<SourceID>,
+        wordExclusions: ReaderContentExclusions? = nil) throws -> CandidateSupplyWindow {
         try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil,
             sourceScoped: sourceScoped, operation: operation, consult: consult, trace: trace,
-            excludingSourceIDs: excludingSourceIDs)
+            excludingSourceIDs: excludingSourceIDs, wordExclusions: wordExclusions)
     }
 
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?,
@@ -89,7 +90,8 @@ public struct CandidateProvider: Sendable {
         examinedCapacity: Int, originIDs: [OriginRecordID]?, sourceScoped: Bool = false,
         operation: FeedReplenishmentOperationID? = nil,
         consult: String = "slice", trace: ReplenishmentTrace? = nil,
-        excludingSourceIDs: Set<SourceID>) throws -> CandidateSupplyWindow {
+        excludingSourceIDs: Set<SourceID>,
+        wordExclusions: ReaderContentExclusions? = nil) throws -> CandidateSupplyWindow {
         let sourceID: SourceID?
         switch plan.context.request {
         case .main: sourceID = nil
@@ -109,7 +111,10 @@ public struct CandidateProvider: Sendable {
         }
         // T6: the supply is where a filter is enforced (plan:147 — never on already-drawn cards). Only the
         // criteria this build can answer are consulted, and a missing fact never satisfies one.
-        let eligibility = ReaderFilterEligibility(filter: plan.context.key.filter)
+        // An explicit opportunity policy replaces only words; frozen historical criteria stay intact.
+        let filter = wordExclusions.map { plan.context.key.filter.replacing(exclusions: $0) }
+            ?? plan.context.key.filter
+        let eligibility = ReaderFilterEligibility(filter: filter)
         var candidates = window.records.map { record in
             let kind: CandidateTimestampKind
             switch record.sortDateBasis {

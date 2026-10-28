@@ -16,13 +16,14 @@ private struct ExclusionProductionFixture: Sendable {
     let policy: ResolvedSelectionPolicy
 
     init(_ test: XCTestCase, sequencingVersion: UInt64 = 1,
-        sequencing: ResolvedSelectionPolicy.SequencingBehavior = .recencyDescending) throws {
+        sequencing: ResolvedSelectionPolicy.SequencingBehavior = .recencyDescending,
+        filter: ReaderFilter = .unrestricted) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = directory
         test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         database = try RuntimeDatabase(location: .init(directory: directory))
         _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: ["a", "b"])
-        let context = FeedContext(request: .main), version = PolicyVersion(rawValue: 1)
+        let context = FeedContext(key: ContextKey(request: .main, filter: filter)), version = PolicyVersion(rawValue: 1)
         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
             catalogGeneration: .init(rawValue: 1), userSelectionVersion: version,
             eligibilityPolicyVersion: version, scoringPolicyVersion: version, sequencingPolicyVersion: .init(rawValue: sequencingVersion),
@@ -43,11 +44,11 @@ private struct ExclusionProductionFixture: Sendable {
     }
 
     @discardableResult
-    func admit(_ source: SourceID, number: Int) throws -> OriginRevision {
+    func admit(_ source: SourceID, number: Int, language: String = "en") throws -> OriginRevision {
         let origin = OriginRecordID(), time = Date(timeIntervalSince1970: Double(100 + number))
         let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin,
             externalVersionIdentity: nil, headline: "Story \(number)", summary: "Summary",
-            bodyText: nil, authoredAt: time, modifiedAt: nil, observedAt: time, language: "en",
+            bodyText: nil, authoredAt: time, modifiedAt: nil, observedAt: time, language: language,
             primaryLink: URL(string: "https://example.test/\(number)"), searchProjection: nil, providerID: nil)
         try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
             externalObjectIdentity: .init(connectorKind: .syndication, namespace: "source-exclusion",
@@ -305,5 +306,120 @@ extension SourceExclusionProductionTests {
             XCTAssertEqual(ids.count, 4)
             for card in old { XCTAssertEqual(try store.card(id: card.id), card) }
         }
+    }
+}
+
+private extension ExclusionProductionFixture {
+    func words(_ words: [String]) throws {
+        let prefs = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(prefs.load()).settings
+        settings.contentFilterRules = words
+        _ = try prefs.setSettings(settings)
+    }
+    func wordInitial() throws -> InitialProductionSlice.Request {
+        var request = try initial()
+        request.wordExclusions = try ReaderPreferencesStore(database: database).wordExclusionSnapshot(templates: [])
+        return request
+    }
+    func wordLocal(after: CandidateSupplyCursor? = nil) throws -> LocalProductionSlice.Request {
+        var request = try local(after: after)
+        request.wordExclusions = try ReaderPreferencesStore(database: database).wordExclusionSnapshot(templates: [])
+        return request
+    }
+}
+
+extension SourceExclusionProductionTests {
+    func testWordSnapshotGatesPreparationAndPublicationThenRemovalReoffersSupply() throws {
+        let f = try ExclusionProductionFixture(self)
+        let a = try f.admit(f.a, number: 1), b = try f.admit(f.b, number: 2)
+        try f.words(["story 1"])
+        let initial = InitialProductionSlice(database: f.database)
+        XCTAssertEqual(try initial.revisionsToPrepare(for: f.wordInitial()), [b.id])
+        guard case .published(_, let first) = try initial.run(f.wordInitial(), prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("only B should publish") }
+        let store = PublicationStore(database: f.database)
+        let frozen = try XCTUnwrap(store.card(id: first.cardIDs[0]))
+        XCTAssertEqual(frozen.originRecordID, b.originRecordID)
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
+        try f.words([])
+        guard case .published(_, let next) = try LocalProductionSlice(database: f.database)
+            .run(f.wordLocal(), prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("removing the word should reoffer A") }
+        XCTAssertEqual(try store.card(id: next.cardIDs[0])?.originRecordID, a.originRecordID)
+        XCTAssertEqual(try store.card(id: first.cardIDs[0]), frozen)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+    }
+
+    func testWordChangeDuringPreparationRejectsInitialAndAppendAtomically() throws {
+        for initial in [true, false] {
+            let f = try ExclusionProductionFixture(self)
+            _ = try f.admit(f.a, number: 1)
+            if !initial {
+                _ = try InitialProductionSlice(database: f.database).run(f.wordInitial(), prepare: ExclusionProductionFixture.prepared)
+                _ = try f.admit(f.b, number: 2)
+            }
+            let store = PublicationStore(database: f.database)
+            let before = initial ? [] : try store.segments(editionID: f.editionID)
+            let checkpoint = try SessionStore(database: f.database).checkpoint()
+            XCTAssertThrowsError(try {
+                if initial {
+                    _ = try InitialProductionSlice(database: f.database).run(f.wordInitial()) { selection in
+                        try f.words(["story"])
+                        return ExclusionProductionFixture.prepared(selection)
+                    }
+                } else {
+                    _ = try LocalProductionSlice(database: f.database).run(f.wordLocal()) { selection in
+                        try f.words(["story"])
+                        return ExclusionProductionFixture.prepared(selection)
+                    }
+                }
+            }()) {
+                if initial { XCTAssertEqual($0 as? InitialProductionSliceError, .staleWordExclusions) }
+                else { XCTAssertEqual($0 as? LocalProductionSliceError, .staleWordExclusions) }
+            }
+            if initial { XCTAssertNil(try store.edition(id: f.editionID)) }
+            else { XCTAssertEqual(try store.segments(editionID: f.editionID), before) }
+            XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        }
+    }
+
+    func testExplicitWordSnapshotOverridesFrozenWordsWithoutChangingContextIdentity() throws {
+        let f = try ExclusionProductionFixture(self,
+            filter: ReaderFilter(languages: ["en"], exclusions: .init(isEnabled: true, rules: ["story"])))
+        let a = try f.admit(f.a, number: 1)
+        _ = try f.admit(f.b, number: 2, language: "pt")
+        let initial = InitialProductionSlice(database: f.database)
+        XCTAssertTrue(try initial.revisionsToPrepare(for: f.initial()).isEmpty, "nil preserves frozen criteria")
+        var contextual = try f.wordInitial()
+        contextual.wordExclusions = try ReaderPreferencesStore(database: f.database)
+            .wordExclusionSnapshot(templates: [], context: f.plan.context.key.filter.exclusions)
+        XCTAssertTrue(try initial.revisionsToPrepare(for: contextual).isEmpty,
+            "an explicit snapshot retains true contextual words when supplied by the caller")
+        XCTAssertEqual(try initial.revisionsToPrepare(for: f.wordInitial()), [a.id])
+        guard case .published = try initial.run(f.wordInitial(), prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("effective word policy should admit A") }
+        XCTAssertEqual(try PublicationStore(database: f.database).edition(id: f.editionID)?.editorialRevision.contextKey, f.plan.context.key)
+    }
+
+    func testWordMaskedReadyMediaSkipWaitsAndPublishesAfterRemoval() throws {
+        let f = try ExclusionProductionFixture(self)
+        let a = try f.admit(f.a, number: 1), b = try f.admit(f.b, number: 2)
+        let readiness = MediaReadiness(), reoffer = PendingMediaReconsideration(database: f.database)
+        _ = readiness.record(b.id, nil, textDeclared: true)
+        guard case .published(let progress, _) = try InitialProductionSlice(database: f.database,
+            readiness: readiness, reoffer: reoffer).run(f.wordInitial(), prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("B publishes while A waits for media") }
+        XCTAssertEqual(reoffer.count, 1)
+        _ = readiness.record(a.id, nil, textDeclared: true)
+        try f.words(["story 1"])
+        let local = LocalProductionSlice(database: f.database, readiness: readiness, reoffer: reoffer)
+        guard case .advancedWithoutPublication = try local.run(f.wordLocal(after: progress.nextCursor),
+            prepare: ExclusionProductionFixture.prepared) else { return XCTFail("word must mask the ready skip") }
+        XCTAssertEqual(reoffer.count, 1, "a reversible word mask must retain the queued candidate")
+        try f.words([])
+        guard case .published(_, let receipt) = try local.run(f.wordLocal(after: progress.nextCursor),
+            prepare: ExclusionProductionFixture.prepared) else { return XCTFail("unmasked ready skip should publish") }
+        XCTAssertEqual(try PublicationStore(database: f.database).card(id: receipt.cardIDs[0])?.originRecordID, a.originRecordID)
+        XCTAssertEqual(reoffer.count, 0)
     }
 }

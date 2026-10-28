@@ -58,21 +58,23 @@ final class PublicationCoordinatorTests: XCTestCase {
     }
     private func create(_ candidates: [Candidate], drafts: [PublicationCardDraft]? = nil,
         ids: [PublicationCardID]? = nil, edition: Int = 900, segment: Int = 1000,
-        report: SelectionSupplyReport? = nil, expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil) throws -> Create {
+        report: SelectionSupplyReport? = nil, expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws -> Create {
         Create(selection: selection(candidates, report: report), drafts: try drafts ?? candidates.map { try draft($0) },
             editionID: FeedEditionID(rawValue: uuid(edition)), publicationSchemaVersion: PublicationSchemaVersion(rawValue: 17),
             selectionSeed: UInt64.max, editionCreatedAt: editionDate, segmentID: FeedSegmentID(rawValue: uuid(segment)),
             segmentSeed: 42, segmentCreatedAt: segmentDate,
             cardIDs: ids ?? candidates.indices.map { PublicationCardID(rawValue: uuid(2000 + $0)) },
-            expectedSourceExclusions: expectedSourceExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
     }
     private func append(_ candidates: [Candidate], target: FeedEditionID, segment: Int,
         ids: [PublicationCardID], drafts: [PublicationCardDraft]? = nil, revision: EditorialRevision? = nil,
-        expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil) throws -> Append {
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws -> Append {
         Append(selection: selection(candidates, revision: revision), drafts: try drafts ?? candidates.map { try draft($0) },
             editionID: target, segmentID: FeedSegmentID(rawValue: uuid(segment)), segmentSeed: 77,
             segmentCreatedAt: segmentDate.addingTimeInterval(1), cardIDs: ids,
-            expectedSourceExclusions: expectedSourceExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
     }
     private func frozen(_ draft: PublicationCardDraft, id: PublicationCardID) throws -> PublishedCard {
         try XCTUnwrap(PublishedCard(id: id, origin: draft.origin, contentEntityID: draft.contentEntityID,
@@ -383,6 +385,55 @@ extension PublicationCoordinatorTests {
             }
             XCTAssertThrowsError(try coordinator.append(next, expectingTailCardID: first.cardIDs[0])) {
                 XCTAssertEqual($0 as? PublicationStoreError, .staleSourceExclusions)
+            }
+            XCTAssertEqual(try PublicationStore(database: db).segments(editionID: first.editionID).count, 1)
+            XCTAssertNil(try PublicationStore(database: db).card(id: nextID))
+        }
+    }
+}
+
+extension PublicationCoordinatorTests {
+    func testWordExclusionExpectationReachesEveryWriter() throws {
+        for initial in [false, true] {
+            try withLocation { location in
+                let db = try RuntimeDatabase(location: location)
+                let prefs = ReaderPreferencesStore(database: db)
+                _ = try prefs.initialize(sourceKeys: ["a"])
+                let expected = try prefs.wordExclusionSnapshot(templates: [])
+                let request = try create([candidate(3)], expectedWordExclusions: expected)
+                var settings = try XCTUnwrap(prefs.load()).settings
+                settings.contentFilterRules = ["blocked"]
+                _ = try prefs.setSettings(settings)
+                let coordinator = PublicationCoordinator(database: db)
+                XCTAssertThrowsError(try {
+                    if initial {
+                        return try coordinator.createInitialEdition(.init(publication: request,
+                            anchorPlacement: .top, checkpointedAt: self.segmentDate))
+                    }
+                    return try coordinator.createEdition(request)
+                }()) { XCTAssertEqual($0 as? PublicationStoreError, .staleWordExclusions) }
+                XCTAssertNil(try PublicationStore(database: db).edition(id: request.editionID))
+                XCTAssertNil(try SessionStore(database: db).checkpoint())
+            }
+        }
+        try withLocation { location in
+            let db = try RuntimeDatabase(location: location)
+            let prefs = ReaderPreferencesStore(database: db)
+            _ = try prefs.initialize(sourceKeys: ["a"])
+            let coordinator = PublicationCoordinator(database: db)
+            let first = try create([candidate(3)])
+            _ = try coordinator.createEdition(first)
+            let nextID = PublicationCardID()
+            let next = try append([candidate(4)], target: first.editionID, segment: 1100, ids: [nextID],
+                expectedWordExclusions: prefs.wordExclusionSnapshot(templates: []))
+            var settings = try XCTUnwrap(prefs.load()).settings
+            settings.contentFilterRules = ["blocked"]
+            _ = try prefs.setSettings(settings)
+            XCTAssertThrowsError(try coordinator.append(next)) {
+                XCTAssertEqual($0 as? PublicationStoreError, .staleWordExclusions)
+            }
+            XCTAssertThrowsError(try coordinator.append(next, expectingTailCardID: first.cardIDs[0])) {
+                XCTAssertEqual($0 as? PublicationStoreError, .staleWordExclusions)
             }
             XCTAssertEqual(try PublicationStore(database: db).segments(editionID: first.editionID).count, 1)
             XCTAssertNil(try PublicationStore(database: db).card(id: nextID))

@@ -123,7 +123,8 @@ enum MediaSkippedSupply {
     /// selection.
     static func reconsider(provider: CandidateProvider, plan: FeedPlan, editionID: FeedEditionID,
         structural: CandidateSupplyWindow, readiness: MediaReadiness?,
-        reoffer: PendingMediaReconsideration?, excludingSourceIDs: Set<SourceID> = []) throws -> Reconsidered {
+        reoffer: PendingMediaReconsideration?, excludingSourceIDs: Set<SourceID> = [],
+        wordExclusions: ReaderContentExclusions? = nil) throws -> Reconsidered {
         guard let readiness, let reoffer else { return Reconsidered() }
         let queued = try reoffer.entries(for: editionID)
         guard !queued.isEmpty else { return Reconsidered() }
@@ -137,7 +138,8 @@ enum MediaSkippedSupply {
         reoffer.forget(decidedWithoutPresentation)
         let ready = queued.filter { presentations[$0.originRevisionID] != nil }
         guard !ready.isEmpty else { return Reconsidered() }
-        let resolution = try resolve(ready, provider: provider, plan: plan, excludingSourceIDs: excludingSourceIDs)
+        let resolution = try resolve(ready, provider: provider, plan: plan, excludingSourceIDs: excludingSourceIDs,
+            wordExclusions: wordExclusions)
         // Superseded, withdrawn or filtered out: these skips can never be published under the identity the queue
         // remembers, so they are stated as gone instead of being carried into every future opportunity.
         reoffer.forget(resolution.gone)
@@ -179,12 +181,15 @@ enum MediaSkippedSupply {
     }
 
     static func resolve(_ entries: [PendingMediaReconsideration.Entry], provider: CandidateProvider,
-        plan: FeedPlan, excludingSourceIDs: Set<SourceID> = []) throws -> Resolution {
+        plan: FeedPlan, excludingSourceIDs: Set<SourceID> = [],
+        wordExclusions: ReaderContentExclusions? = nil) throws -> Resolution {
         guard !entries.isEmpty else { return Resolution(ready: [], gone: []) }
         // The bounded exact lookup the skip resolution uses: the walk's cursor is not involved, so the skip is
         // resolved without moving — or rewinding — any structural position.
         let window = try provider.candidates(for: plan, after: nil, examinedCapacity: entries.count,
-            originIDs: entries.map(\.originRecordID))
+            originIDs: entries.map(\.originRecordID), excludingSourceIDs: [],
+            // Resolve existence with other criteria intact, then apply reversible words below.
+            wordExclusions: wordExclusions == nil ? nil : .disabled)
         let byOrigin = Dictionary(uniqueKeysWithValues: window.candidates.map { ($0.originRecordID, $0) })
         var ready: [(entry: PendingMediaReconsideration.Entry, candidate: Candidate)] = []
         var gone: [PendingMediaReconsideration.Entry] = []
@@ -197,6 +202,10 @@ enum MediaSkippedSupply {
             // A source rule is reversible within this Edition: keep the skip while it is masked.
             guard let permitted = CandidateProvider.excludingSources(excludingSourceIDs,
                 from: candidate, in: plan.context.request) else { continue }
+            if let wordExclusions,
+                wordExclusions.excludes(permitted.headline) || wordExclusions.excludes(permitted.summary) {
+                continue // A global word mask is reversible; keep this media skip queued.
+            }
             ready.append((entry, permitted))
         }
         return Resolution(ready: ready, gone: gone)
