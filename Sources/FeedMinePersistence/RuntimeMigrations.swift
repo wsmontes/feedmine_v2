@@ -692,6 +692,29 @@ public enum RuntimeMigrations {
                 WHERE media_deferred_edition_id IS NOT NULL
                 """)
         }
+        // Ownership is additive: historical context/Edition/checkpoint rows retain their frozen meaning.
+        migrator.registerMigration("reader-history-binding-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_history_bindings (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    logical_identity TEXT NOT NULL UNIQUE,
+                    logical_key_json BLOB NOT NULL,
+                    runtime_namespace TEXT NOT NULL UNIQUE,
+                    active_edition_id TEXT,
+                    FOREIGN KEY(id, active_edition_id)
+                        REFERENCES reader_history_editions(binding_id, edition_id)
+                        DEFERRABLE INITIALLY DEFERRED
+                );
+                CREATE TABLE reader_history_editions (
+                    edition_id TEXT PRIMARY KEY NOT NULL REFERENCES feed_editions(id),
+                    binding_id TEXT NOT NULL REFERENCES reader_history_bindings(id),
+                    publication_key_json BLOB NOT NULL,
+                    adoption_kind TEXT NOT NULL CHECK(adoption_kind IN ('exact_context', 'legacy_words')),
+                    adoption_policy_json BLOB,
+                    UNIQUE(binding_id, edition_id)
+                );
+                """)
+        }
         return migrator
     }
 

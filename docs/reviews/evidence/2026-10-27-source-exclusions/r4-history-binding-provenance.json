@@ -1,0 +1,33 @@
+{
+  "base": "23b74bb0",
+  "files_sha256": {
+    "Sources/FeedMinePersistence/RuntimeMigrations.swift": "50b5734ec1fd9e12ba8ae323c4dad9f1b1499e5a7520cd4dc85cf5e2c3bb903f",
+    "Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift": "976ed5be8c9089740e64c3ad38bdfde09049459e7abf04f354e03e55d79bf5fd",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift": "88e802253ab5a5a9a7ed4bb0a498e7973f54118503e98d78a08752c6f7e58c14"
+  },
+  "test_executable_sha256": "e84cfd1204f9aed6fb45f0b7e2fef340d85905c2bcedd3a43bf24bd8e5fd1844",
+  "logs": {
+    "r4-history-binding-compatibility.log.gz": {
+      "uncompressed_sha256": "e3a20fbfddbb3249c0c61b22eb49be22d4e0313b37d84ca888f6cd7860943647",
+      "bytes": 14207
+    },
+    "r4-history-binding-final.log.gz": {
+      "uncompressed_sha256": "029a5d7b4dd7f115b8bc9a924313dc32918e819c144c2726b66dd7852730ba07",
+      "bytes": 2926
+    },
+    "r4-history-binding-green.log.gz": {
+      "uncompressed_sha256": "2368c1691564fac99a722b9930151324011955b72bc40f2decea15f9619579ae",
+      "bytes": 827727
+    },
+    "r4-history-binding-red.log.gz": {
+      "uncompressed_sha256": "522f513da3f7c6c1a98c6707910f25166cd1cf2c9bc6c6432401f36a4cb3e70a",
+      "bytes": 15119
+    }
+  },
+  "focused_tests": 6,
+  "affected_suite_tests": 43,
+  "failures": 0,
+  "publication_attachment_wired": false,
+  "native_injection": false,
+  "R4_host_status": "FAIL"
+}
