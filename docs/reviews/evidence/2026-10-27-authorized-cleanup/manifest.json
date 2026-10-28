@@ -1,0 +1,154 @@
+{
+  "authorization": "User explicitly authorized freeing disk space; confirmed continue.",
+  "free_before": 907350016,
+  "removed": [
+    {
+      "path": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/FeedMineApp-dbntahfgrompnfccthjeggrcgzkt/Build/Intermediates.noindex",
+      "allocated_bytes_before": 512004096
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/FeedMineApp-dbntahfgrompnfccthjeggrcgzkt/Index.noindex",
+      "allocated_bytes_before": 55373824
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/ModuleCache.noindex",
+      "allocated_bytes_before": 456908800
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex",
+      "allocated_bytes_before": 3035136
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/index-build/arm64-apple-macosx/debug/ModuleCache",
+      "allocated_bytes_before": 420753408
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/index-build/arm64-apple-macosx/debug/index",
+      "allocated_bytes_before": 123518976
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/repositories",
+      "allocated_bytes_before": 248397824
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/index-build/repositories",
+      "allocated_bytes_before": 248422400
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/FeedMineApp-dbntahfgrompnfccthjeggrcgzkt/SourcePackages/repositories",
+      "allocated_bytes_before": 248422400
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Caches/org.swift.swiftpm/repositories",
+      "allocated_bytes_before": 248422400
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Caches/Homebrew/downloads",
+      "allocated_bytes_before": 197246976
+    }
+  ],
+  "preserved_evidence_sha256": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t1-green.log.gz": "f19e7305760f675e63da59a2c459651a356a026a63052bad02c72933cc6ca8be",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t1-red.log.gz": "89d91045622c2848664c00bc38571f5aa30f1472d4903349011580f1863c913d",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t1-t3-package.log.gz": "c285640b4d70162d7f7741bc26c974bda503e4c03098e05d946339f504de1355",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t2-green.log.gz": "76d1e4190b0c66a5eb9bbe888f63561bf1d4ab7f95d7d19d303b25f738326010",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t2-link-failure.log.gz": "af7aff835497a6b9b586025c38848facb534a8733bc2d49d6b12cc21b9b0bcd8",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t2-red.log.gz": "ffc1476892f1edccab898df7133c427ea25f2e94a5fa1a2e4c4926cfc0cf8119",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t3-coordinator-red.log.gz": "deaa835bf741e4bbd4d594410baa54d8ef531e7041b5f19cb6e7d01d18d8a01a",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t3-green.log.gz": "a927c42c8a287ad7ad76e5ca740506c6b94111af5b0d4ad34246445f30ea5617",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t3-red.log.gz": "a54a3f6d6a67be3e6a9f63058f5de9f0beb43fc64c01944bdfd4eba146d40c21",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t3-store-green.log.gz": "33bd50e063bc7a37c5040008d48aaa122f9afda85985eb157bd3091074a8c148",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-app-syntax-only.json": "36aa6619ccf2007f1d4b0144a93f30bab4a25c662cc765a92452f60017927070",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-boundary-failure.log.gz": "d8bd231d7eb6bb9c866f9d5079ce83fb89de5cf4ab3a0d8c7b43c38351978613",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-core-attempt.log.gz": "2b554d036bdb44627e4f5d21de54e49ec422919b7abec7aa0e6063f444cb6259",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-disk-and-compile-failure.log.gz": "03bab00e59c9d7b84c786aabd725c20beb3bb37de355e0dcccd9b34a81c8675d",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-final-focused.log.gz": "fcb1ef62d2f1433a8c48ccf1d60021f75fbfb04888a3da1be93eda7693a3c127",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-integration-green.log.gz": "8679f1f1605a0746a5771b48d3381c5fd51a27e6a9aaecf08875888070c1582b",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-no-rules-red.log.gz": "e95106c687d7dae05bfe9b5648455420440335f479e5761f2734e6b91832357c",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-package.log.gz": "a39a5261827c79d0e87088186cee7d914b37eb52682b400e47ba2b9b9c4b8940",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-real-paths-compile-failure.log.gz": "58ce0018125f414490277f074897f2550e97edd99583ec9f933fa6b5165b0d45",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-real-paths-green.log.gz": "02b9fe0e903e4f07bf1ce903a14fe76627aad65f0d8410e7560debb5553e0d29",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-real-paths-premise-failure.log.gz": "ed8bab52477bcdd8c14ea38dd8c0a47cb568ac44259f218444ab867f4fad344e",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-real-paths-unsettled-failure.log.gz": "cfb84ccf594b469f01d89d498493773a9fcfa99ee76eee4e6926181cdd181ff0",
+    "docs/reviews/evidence/2026-10-27-source-exclusions/t4-red.log.gz": "41de11e4b36acd21a2d42557dc740e22b379c89ef41812c396246c1ed5ab19ee"
+  },
+  "free_after": 2616209408,
+  "evidence_hashes_unchanged": true,
+  "repository_cache_restoration": {
+    "method": "APFS clone of preserved repositories; FeedKit missing newer objects restored from its origin without changing pinned checkouts",
+    "checkout_integrity": [
+      {
+        "checkout": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/checkouts/GRDB.swift",
+        "git_fsck_exit": 0
+      },
+      {
+        "checkout": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/checkouts/FeedKit",
+        "git_fsck_exit": 0
+      },
+      {
+        "checkout": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/index-build/checkouts/GRDB.swift",
+        "git_fsck_exit": 0
+      },
+      {
+        "checkout": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/index-build/checkouts/FeedKit",
+        "git_fsck_exit": 0
+      },
+      {
+        "checkout": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/FeedMineApp-dbntahfgrompnfccthjeggrcgzkt/SourcePackages/checkouts/GRDB.swift",
+        "git_fsck_exit": 0
+      },
+      {
+        "checkout": "/Users/wagnersilvamontes/Library/Developer/Xcode/DerivedData/FeedMineApp-dbntahfgrompnfccthjeggrcgzkt/SourcePackages/checkouts/FeedKit",
+        "git_fsck_exit": 0
+      }
+    ]
+  },
+  "free_after_repository_restore": 2329890816,
+  "closed_application_cache_cleanup": [
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/Code/Cache",
+      "allocated_bytes_before": 107044864
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/Code/Code Cache",
+      "allocated_bytes_before": 16384
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/Code/GPUCache",
+      "allocated_bytes_before": 5840896
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/Code/CachedData",
+      "allocated_bytes_before": 10293248
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/Code/DawnGraphiteCache",
+      "allocated_bytes_before": 561152
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/Code/DawnWebGPUCache",
+      "allocated_bytes_before": 561152
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/discord/Cache",
+      "allocated_bytes_before": 98684928
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/discord/Code Cache",
+      "allocated_bytes_before": 4632576
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Application Support/discord/GPUCache",
+      "allocated_bytes_before": 561152
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Caches/Google/Chrome/Default/Cache",
+      "allocated_bytes_before": 71507968
+    },
+    {
+      "path": "/Users/wagnersilvamontes/Library/Caches/Google/Chrome/Default/Code Cache",
+      "allocated_bytes_before": 45432832
+    }
+  ],
+  "free_after_closed_application_caches": 2676047872
+}

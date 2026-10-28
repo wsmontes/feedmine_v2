@@ -1,0 +1,31 @@
+# Limpeza autorizada de caches — 2026-10-27
+
+O usuário autorizou liberar espaço e confirmou a continuação. O manifesto ao lado registra os caminhos
+removidos, tamanhos alocados e espaço disponível. A medição inicial era 907.350.016 bytes livres;
+após a limpeza e a restauração dos repositórios, a segunda rodada chegou a 2.676.047.872 bytes
+(aproximadamente 2,49 GiB). Compilações posteriores regeneram parte dos caches.
+
+Removidos: intermediários e índice de um DerivedData antigo do FeedMine, caches globais de módulos/SDK
+do Xcode, módulo/índice do scratch Swift, downloads do Homebrew e caches de VS Code, Discord e Chrome
+sem processos ativos. Nenhum produto de teste, banco, simulador, xcresult, log ou backup foi removido.
+A instalação em andamento do atualizador do Codex foi preservada.
+
+## Correção durante a limpeza
+
+A seleção inicial incluiu quatro diretórios de repositórios bare SwiftPM. Isso foi um erro: os checkouts
+preservados dependiam deles por `objects/info/alternates`. Os quatro foram restaurados por clones APFS
+de cópias locais preservadas. O cache antigo do FeedKit não possuía todos os objetos mais recentes;
+um fetch público do origin repôs os objetos, sem alterar a revisão de nenhum checkout.
+`git fsck --no-dangling` passou nos seis checkouts dependentes. Portanto, os repositórios listados na
+primeira remoção do manifesto foram **restaurados**, e não representam espaço recuperado final.
+
+Os SHA-256 dos 23 arquivos de evidência F13 foram preservados. Os seis hashes do avaliador congelado
+continuam válidos. `capacity-ready.json` permanece intocado.
+
+## Limitação restante
+
+A limpeza não atingiu a margem de 3 GiB prevista para iniciar a validação iOS. Esse gate permanece
+NOT_RUN; parse do app e testes macOS do pacote não o substituem. T5 pode avançar no pacote, mas T4/T6
+não devem ser declaradas concluídas por essa limpeza.
+
+Manifesto: `docs/reviews/evidence/2026-10-27-authorized-cleanup/manifest.json`.
