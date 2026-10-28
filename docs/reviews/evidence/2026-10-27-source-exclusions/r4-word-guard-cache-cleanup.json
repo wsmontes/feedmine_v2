@@ -1,0 +1,7 @@
+{
+  "path": ".build/index-build/arm64-apple-macosx/debug/ModuleCache",
+  "logical_bytes": 249789834,
+  "reason": "regenerable compiler module cache after terminal builds/tests",
+  "process_check": "escalated pgrep found no swift-test, FeedMinePackageTests or swift-frontend process",
+  "preserved": "products, all results, historical databases and compiler object files"
+}

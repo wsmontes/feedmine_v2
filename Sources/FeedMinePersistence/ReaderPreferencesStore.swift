@@ -36,10 +36,22 @@ public struct ReaderPreferencesStore: Sendable {
 
     /// Shared by the caller's snapshot and the publication writer's existing transaction.
     static func sourceExclusionSnapshot(in db: Database) throws -> ReaderSourceExclusionSnapshot {
+        ReaderSourceExclusionSnapshot(settings: try publicationSettings(in: db))
+    }
+
+    public func wordExclusionSnapshot(templates: [ReaderWordTemplateRules],
+        context: ReaderContentExclusions = .disabled) throws -> ReaderWordExclusionSnapshot {
+        try database.read { db in
+            try ReaderWordExclusionSnapshot(settings: Self.publicationSettings(in: db),
+                templates: templates, context: context)
+        }
+    }
+
+    /// Strict settings decoding shared by both policy guards and their capture paths.
+    static func publicationSettings(in db: Database) throws -> ReaderSettings {
         let payload = try Data.fetchOne(db,
             sql: "SELECT settings_json FROM reader_preferences WHERE singleton_id = 1")
-        let settings = try payload.map { try JSONDecoder().decode(ReaderSettings.self, from: $0) } ?? .standard
-        return ReaderSourceExclusionSnapshot(settings: settings)
+        return try payload.map { try JSONDecoder().decode(ReaderSettings.self, from: $0) } ?? .standard
     }
     public func initialize(sourceKeys: [String]) throws -> Record {
         try Self.validate(sourceKeys)

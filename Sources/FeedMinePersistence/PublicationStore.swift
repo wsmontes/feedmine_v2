@@ -26,6 +26,7 @@ public enum PublicationStoreError: Error, Equatable, Sendable {
     case corruption(String)
     case invalidCapacity
     case staleHistoryExpectation
+    case staleWordExclusions
     case staleSourceExclusions
     case duplicateOriginInEdition
 }

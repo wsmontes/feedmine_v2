@@ -1,0 +1,48 @@
+{
+  "base": "cdb06e63",
+  "files_sha256": {
+    "Sources/FeedMineDomain/ReaderWordExclusionSnapshot.swift": "5753f458e69f81654e6fdc9f9017b6261585ed46b5ae6844966a5fea2aeadcc7",
+    "Sources/FeedMineComposition/ReaderContentFilterPolicy.swift": "d8d305b7ebaad83425621781a404f7e152ba97c15f5e5d8f21ecffb937f318b1",
+    "Sources/FeedMinePersistence/ReaderPreferencesStore.swift": "7cad30ec5048035c8207b28b8e70839a4339c4f684dc41b401441cea73b2bc47",
+    "Sources/FeedMinePersistence/PublicationStore.swift": "293fba95e2158fb4d518d8adf7c8c46abed4f1cd89d155ca5a8610066f42f6a5",
+    "Sources/FeedMinePersistence/PublicationStore+Writing.swift": "398b7923377aa6a2ae46de8294bd7ea2bda24f4159da14dd1bf3cf6bae3f558e",
+    "Tests/FeedMinePersistenceTests/PublicationWordExclusionTests.swift": "dacd0357ff3f021b7dbaeb4be25ebda9747ad83776633a92b449445001635b32"
+  },
+  "test_executable_sha256": "7b9cda85cb2993e30b9d8261c8437623b9bd82498a6e189145a8733a9bff67e7",
+  "logs": {
+    "r4-word-guard-compatibility.log.gz": {
+      "uncompressed_sha256": "ab4d4480a94379e2cfc5792b537216519413d376c6dd281f99700c7ef8e3e5c2",
+      "bytes": 20598
+    },
+    "r4-word-guard-final-compatibility.log.gz": {
+      "uncompressed_sha256": "0559de303155f61ecaff0d3a20cf58810679f9a74fba279bed9778de5fce3cbe",
+      "bytes": 20504
+    },
+    "r4-word-guard-final.log.gz": {
+      "uncompressed_sha256": "381108fd7a10a152e7019ba551b918d98b78c351899c85f93dd63f37a5debf9d",
+      "bytes": 8209
+    },
+    "r4-word-guard-focused-compatibility.log.gz": {
+      "uncompressed_sha256": "1b1f4361378918af8a1346e49121d37c2b55155c6526899863c8ae1aae9112d4",
+      "bytes": 20504
+    },
+    "r4-word-guard-green.log.gz": {
+      "uncompressed_sha256": "a835a4bf0e4138b88a634d8b34968ae78b23060a10342d2abcbe47a1bc47bbe2",
+      "bytes": 917367
+    },
+    "r4-word-guard-red.log.gz": {
+      "uncompressed_sha256": "2b010aa8b06f6bd3f2444e75cb1f17e5f83cf126255fe3a9b9fc2d042dea5e7f",
+      "bytes": 16221
+    },
+    "r4-word-guard-template-isolated.log.gz": {
+      "uncompressed_sha256": "411f835ee41df17a60ade45c2726b27eaba694d6388598df81a7b994218cf87a",
+      "bytes": 8209
+    }
+  },
+  "final_focused_tests": 23,
+  "final_affected_api_tests": 66,
+  "failures": 0,
+  "R4_native_host_status": "FAIL",
+  "native_pipeline_wiring_changed": false,
+  "whole_persistence_suite": "NOT_PROVEN; broad attempt interrupted for disk reserve"
+}

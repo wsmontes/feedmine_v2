@@ -15,9 +15,11 @@ extension PublicationStore {
     }
 
     public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord],
-        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
         try database.write { db in
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
+            try Self.requireWordExclusions(expectedWordExclusions, in: db)
             try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
         }
     }
@@ -30,9 +32,11 @@ extension PublicationStore {
 
     public func createInitialEdition(_ edition: EditionRecord, firstSegment: SegmentRecord,
         cards: [CardRecord], initialCheckpoint: SessionStore.CheckpointRecord,
-        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
         try database.write { db in
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
+            try Self.requireWordExclusions(expectedWordExclusions, in: db)
             guard firstSegment.editionID == edition.id, firstSegment.ordinal == 0,
                 initialCheckpoint.editionID == edition.id,
                 firstSegment.cardIDs.contains(initialCheckpoint.cardID) else {
@@ -66,9 +70,10 @@ extension PublicationStore {
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
-        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
         try appendSegment(segment, cards: cards, expectedTail: nil, recurrence: .forbidden,
-            expectedSourceExclusions: expectedSourceExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
@@ -79,15 +84,23 @@ extension PublicationStore {
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
         expectingTailCardID: PublicationCardID, recurrence: OriginRecurrenceRecord = .forbidden,
-        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
         try appendSegment(segment, cards: cards, expectedTail: expectingTailCardID, recurrence: recurrence,
-            expectedSourceExclusions: expectedSourceExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
     }
 
     private static func requireSourceExclusions(_ expected: ReaderSourceExclusionSnapshot?, in db: Database) throws {
         guard let expected else { return }
         guard try ReaderPreferencesStore.sourceExclusionSnapshot(in: db) == expected else {
             throw PublicationStoreError.staleSourceExclusions
+        }
+    }
+
+    private static func requireWordExclusions(_ expected: ReaderWordExclusionSnapshot?, in db: Database) throws {
+        guard let expected else { return }
+        guard try expected.matches(settings: ReaderPreferencesStore.publicationSettings(in: db)) else {
+            throw PublicationStoreError.staleWordExclusions
         }
     }
 
@@ -128,9 +141,11 @@ extension PublicationStore {
 
     private func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
         expectedTail: PublicationCardID?, recurrence: OriginRecurrenceRecord,
-        expectedSourceExclusions: ReaderSourceExclusionSnapshot?) throws {
+        expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
         try database.write { db in
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
+            try Self.requireWordExclusions(expectedWordExclusions, in: db)
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
                 arguments: [PersistenceValueCoding.uuid(segment.editionID.rawValue)]) else { throw PublicationStoreError.missingEdition }
             let edition = try Self.decodeEdition(row)

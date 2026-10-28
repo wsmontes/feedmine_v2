@@ -1,0 +1,15 @@
+{
+  "original": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests.dSYM",
+  "archive": ".build/f13-preserved-products/r4-prior-package-symbols.dSYM.tar.gz",
+  "archive_sha256": "bffdfe1b851a47793b2e514d20b32980581b329252791c5bae69e12dde294174",
+  "file_hashes": {
+    "Contents/Info.plist": "862e21ec081ebd3f5f3c1444aec686ad2a46cd170954425d41b487f771d2eb5b",
+    "Contents/Resources/Relocations/aarch64/FeedMinePackageTests.yml": "a1c838fd8b8d8324b3d9613325f3abf9262f98e55c990aad7b08f8c3ab0b775f",
+    "Contents/Resources/DWARF/FeedMinePackageTests": "75afad2658d4be0e6e715c32ac4f0961aa7e6ac10c641656842344ea96088e0f"
+  },
+  "original_logical_bytes": 99131290,
+  "archive_bytes": 18388047,
+  "verified_all_file_bytes": true,
+  "restore_command": "tar -xzf .build/f13-preserved-products/r4-prior-package-symbols.dSYM.tar.gz -C .build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS",
+  "scope": "prior package debug symbols preserved losslessly; executable retained"
+}
