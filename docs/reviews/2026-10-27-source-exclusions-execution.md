@@ -310,3 +310,25 @@ em t4-ios-budgeted-build.json/log. Antes de concluir, execução de ContentFilte
 Build iOS e execução agora disponíveis com configuração de menor footprint: 8 testes app aprovados,
 mais 5 testes focados de integração. Diagnóstico PD-4, limites de escopo, hashes e próximos gates em
 `docs/reviews/2026-10-28-f13-ios-validation.md`. F13 não concluída; recuperação em idle é a próxima correção.
+
+
+## 2026-10-28 — recuperação idle/provisional e controles reais
+
+Incremento sobre ef485ed7. O diagnóstico anterior de work=idle gerou RED real; FeedScreen agora
+oferece recuperação em idle/unavailable/deferred/endOfContent, sem inventar descoberta em andamento
+ou fim definitivo. O histórico mantém sua sequência. RED provisional seguido por 25 testes de
+renderização aprovados; suíte completa após a correção AX: 1777 testes, um skip, zero falhas.
+
+App iOS9/0: lista vazia não substitui associação/Edition/âncora; remoção em cold sem apresentação
+recupera supply na mesma associação. Jornada XCUI portuguesa1/0: cancelar, confirmar, switch off,
+terminate/launch e remover regra conservam a carta atual. Encontrou-se colisão dos identificadores
+AX da linha e do botão; `.accessibilityElement(children: .contain)` conserva o botão filho.
+
+A revisão independente do conjunto não confirmou defeito crítico/importante; exigiu manter abertas
+as provas de viewport de cauda, recuperação por gesto, A/B/shared/contexto, R4 e os gates existentes.
+Texto ampliado inglês tem diagnóstico de popover nativo e tentativas interrompidas pela reserva;
+resultado final deve ser lido no relatório posterior, sem generalizar a aprovação pt.
+
+Relatório e limites: [recuperação e controles](2026-10-28-f13-recovery-and-controls.md).
+Logs/patches de tentativas terminais em gzip verificado; manifestos JSON preservam comando, hashes,
+revisão base e capacidade. Não houve mudança de PD-4 nem publicação de release.

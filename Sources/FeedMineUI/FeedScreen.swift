@@ -268,12 +268,24 @@ public struct FeedScreen: View {
         }
     }
 
-    private var loadingSurface: some View {
-        VStack(spacing: 12) {
-            FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
-                sourceContextName: sourceContextName)
-            if store.work == .endOfContent { sourceExclusionRecovery }
+    @ViewBuilder private var loadingSurface: some View {
+        if store.work == .idle, onManageSourceExclusions != nil {
+            // Idle is not evidence of a search or definitive exhaustion. State only the active rules.
+            sourceExclusionRecovery.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 12) {
+                FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
+                    onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
+                    sourceContextName: sourceContextName)
+                if offersSourceRecovery { sourceExclusionRecovery }
+            }
+        }
+    }
+
+    private var offersSourceRecovery: Bool {
+        switch store.work {
+        case .idle, .unavailable, .deferred, .endOfContent: true
+        default: false
         }
     }
 
@@ -307,6 +319,8 @@ public struct FeedScreen: View {
                     FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
                         explicit: true)
                 })
+        }
+        if offersSourceRecovery {
             sourceExclusionRecovery
         }
     }

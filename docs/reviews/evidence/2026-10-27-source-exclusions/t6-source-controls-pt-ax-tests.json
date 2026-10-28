@@ -1,0 +1,38 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testImportedRuleCancelConfirmRelaunchAndRemoveInPortuguese",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-pt-ax-tests.xcresult"
+  ],
+  "compiled_build_report": "t6-ui-source-row-ax-build.json",
+  "compiled_build_report_sha256": "42e6b387318f386062f0be00b0f0ec0e09dc5e26ad9d764fedabf89255ad5c8c",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/FeedMineUITests-Runner": "7e36729d4fbf984e023e98952e7a2b878c735240c41c14f1f8a6b1544b20d233",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests": "43385124d883998fa2a4466ab16a18391e33fb55206e9b816be84301a4dafdac",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "bdbfcee31baa696eb0126d1565317fe38f05f3335b45b15fc9821492cf6d46d0",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests": "a678536e59a11a4d0b1dd5888e1f4d653232691ee813f222dd23e660f27ababe"
+  },
+  "xctestrun_sha256": "61e99f9bb44881488954ecdd45b1ed80612aed456a61cb7f2abe2302df884031",
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "free_before": 1477410816,
+  "minimum_observed_free": 914468864,
+  "free_after": 1369489408,
+  "reserved_free_floor": 734003200,
+  "elapsed_seconds": 128.42,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t6-source-controls-pt-ax-tests.xcresult",
+  "scope": "actual XCUI controls/process-persistence journey; not full F13 publication acceptance or benchmark"
+}

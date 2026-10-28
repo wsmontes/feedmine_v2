@@ -1,5 +1,9 @@
 # F13 — validação iOS e continuidade local — 2026-10-28
 
+Atualização posterior: [recuperação e controles](2026-10-28-f13-recovery-and-controls.md) registra
+9 testes app, no-op de lista vazia, recuperação idle/provisional, suíte completa 1777/1skip/0
+e a jornada de controles/processo em português. A seção abaixo preserva o checkpoint deste build.
+
 F13 continua aberta. O bloqueio de capacidade para **estes testes unitários do app** foi contornado com
 um build Debug sem símbolos, sem índices, um job e checkouts existentes. Não é build de release,
 não é benchmark e não reduz a guarda de 3 GiB do ensaio padrão. Um monitor reservou 700 MiB livres
@@ -49,8 +53,8 @@ verificado, sem contá-los como GREEN. O ensaio inicial aprovado tinha 7 testes;
 
 - Jornada XCUI por gesto, confirmação/cancelamento, pt/en, Dynamic Type, AX, item compartilhado A/B,
   troca de contexto e término/reabertura de processo. Ainda não existe prova equivalente a UX13 completo.
-- Teste explícito da notificação de lista vazia como no-op.
-- **Recuperação em idle:** o diagnóstico iOS atingiu `work=idle` sem nova publicação, enquanto o
+- Lista vazia como no-op: concluída no incremento posterior (9 testes app).
+- **Diagnóstico histórico, corrigido no incremento posterior:** o diagnóstico iOS atingiu `work=idle` sem nova publicação, enquanto o
   componente de recuperação atual só aparece com `.endOfContent`. Alvos de aquisição continuam
   autorizados apesar das exclusões. Acrescentar caso de renderização/fluxo que cubra ausência de
   supply com regras ativas em idle, sem declarar falsamente que houve falha de rede ou fim definitivo.

@@ -337,6 +337,7 @@ final class FeedScreenRenderingTests: XCTestCase {
         let screen = FeedScreen(store: store, onManageSourceExclusions: {})
         try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
         let admitted = try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs
+        try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
         XCTAssertFalse(try renderedText(screen, height: 1500).contains { $0.contains("Rever fontes excluídas") })
         try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))
         let text = try renderedText(screen, height: 1500)
@@ -354,6 +355,43 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertTrue(text.contains { $0.contains("Rever fontes excluídas") }, text.description)
         XCTAssertTrue(store.renderedItems.isEmpty)
         XCTAssertNil(store.state.presentation)
+    }
+
+    func testIdleSourceRestrictionsOfferRecoveryWithoutInventingSearchOrFinalExhaustion() throws {
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        let text = try renderedText(FeedScreen(store: store, onManageSourceExclusions: {}), height: 1200)
+        XCTAssertTrue(text.contains { $0.contains("Rever fontes excluídas") }, text.description)
+        XCTAssertFalse(text.contains { $0.contains("Descobrindo histórias") || $0.contains("fim das histórias") || $0.contains("conectar") }, text.description)
+        XCTAssertTrue(store.renderedItems.isEmpty)
+        XCTAssertNil(store.state.presentation)
+    }
+
+    func testIdleRecoveryFollowsHistoryWithoutChangingThePublishedSequence() async throws {
+        let f = try fixture(), first = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        let screen = FeedScreen(store: store, onManageSourceExclusions: {})
+        try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
+        let admitted = try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs
+        let text = try renderedText(screen, height: 1500)
+        let last = try XCTUnwrap(text.firstIndex(of: "Amber headline"))
+        let recovery = try XCTUnwrap(text.firstIndex { $0.contains("Rever fontes excluídas") })
+        XCTAssertGreaterThan(recovery, last)
+        XCTAssertEqual(text.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
+        XCTAssertEqual(try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs, admitted)
+        XCTAssertFalse(text.contains { $0.contains("fim das histórias") }, text.description)
+        try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
+        XCTAssertFalse(try renderedText(screen, height: 1500).contains { $0.contains("Rever fontes excluídas") })
+    }
+
+    func testProvisionalAbsenceWithSourceRulesAlsoOffersRecovery() throws {
+        for work: FeedPresentationState.Work in [.unavailable, .deferred] {
+            let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+            try store.install(FeedPresentationHandoff.report(work, into: store.state))
+            let text = try renderedText(FeedScreen(store: store, onManageSourceExclusions: {}), height: 1500)
+            XCTAssertTrue(text.contains { $0.contains("Rever fontes excluídas") }, text.description)
+            XCTAssertFalse(text.contains { $0.contains("Descobrindo histórias") || $0.contains("fim das histórias") || $0.contains("conectar") }, text.description)
+            XCTAssertFalse(try renderedText(FeedScreen(store: store), height: 1500).contains { $0.contains("Rever fontes excluídas") })
+        }
     }
 
     func testImportedSourceRemainsVisibleWhenTheCatalogueIsUnavailable() async throws {

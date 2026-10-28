@@ -1,0 +1,1 @@
+language=pt-BR large=false rule=content-filter-remove-source-6FA399D6-50F7-86EE-ADC5-4FE66BE548C6 cancelled-absent=true confirmed=true master-off-retained=true process-relaunch-retained=true removed=true anchor=3F4CD66E-E64A-4243-9F57-77270983DBA8

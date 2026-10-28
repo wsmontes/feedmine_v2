@@ -219,6 +219,7 @@ public struct ReaderContentFilterView: View {
                         .accessibilityIdentifier("content-filter-remove-source-\(rule.sourceID.rawValue.uuidString)")
                         .accessibilityLabel(Text(verbatim: String(localized: "Remover exclusão") + ": " + rule.displayName))
                     }
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("content-filter-source-\(rule.sourceID.rawValue.uuidString)")
                 }
             } header: {

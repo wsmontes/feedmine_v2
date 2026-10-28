@@ -165,3 +165,15 @@ Bloqueio de espaço reiterado em três retomadas, com ENOSPC real nesta. Agora *
 Build Debug sem símbolos/índice e monitor de reserva de 700 MiB permitiram executar ContentFilterTests:
 8 testes, 0 falhas, no simulador iOS 26.5. Guarda de benchmark permanece 3 GiB. Relatório atual:
 `docs/reviews/2026-10-28-f13-ios-validation.md`. Próximo: recuperação em idle e T6 UI/processo/revisão.
+
+
+### Atualização 2026-10-28 — F13 recuperação e controles
+
+Ver `2026-10-28-f13-recovery-and-controls.md`. Recuperação idle/unavailable/deferred e grupo AX
+corrigidos; pacote1777/1skip/0; app9/0; jornadas controles/processo pt e en AX XXXL aprovadas
+(pt confirmado novamente no mesmo runner final, 1/0; inglês AX XXXL 1/0). Revisão independente sem P1/P2 confirmado. Espaço liberado só de intermediários
+regeneráveis próprios, sem banco, simulador ou produtos. B03/B06 inalterados.
+
+Próximo trabalho de aceitação: botão real de recuperação e viewport de cauda; publicação inédita
+A/B com fonte excluída, shared canonical, save/history e contexto A→B→A; medir R4 de palavras sem
+relaxar contrato de histórico. Não tratar o checkpoint de controles como F13 integral concluída.

@@ -188,6 +188,16 @@ extension ContentFilterTests {
         let before = try XCTUnwrap(association.store.state.presentation)
         let ids = before.window.items.map(\.id)
         XCTAssertFalse(ids.isEmpty, "the continuity proof starts with published history")
+        let emptyFilters = try XCTUnwrap(root.makeContentFilterStore())
+        await emptyFilters.load()
+        XCTAssertTrue(emptyFilters.sourceExclusions.isEmpty)
+        let emptyChange = await emptyFilters.removeSourceExclusion(SourceID())
+        XCTAssertFalse(emptyChange)
+        await root.noteSourceExclusionsChanged()
+        XCTAssertTrue(root.association === association)
+        XCTAssertEqual(association.store.state.presentation?.editionID, before.editionID)
+        XCTAssertEqual(association.store.state.presentation?.window.anchor, before.window.anchor)
+        XCTAssertTrue(try settings(directory).contentSourceExclusions.isEmpty)
         let rule = ReaderSourceExclusion(sourceID: TrustedFeed.development[0].sourceID, displayName: "Fixture source")
         let preferences = ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
         let selectedBefore = try preferences.load()
@@ -382,5 +392,33 @@ extension ContentFilterTests {
             print("F13 diagnostic local trace\n" + lines.suffix(40).joined(separator: "\n"))
         }
         XCTFail("the existing local-supply opportunity did not publish the expected allowed revision")
+    }
+}
+
+extension ContentFilterTests {
+    func testRemovingAColdSourceRulePublishesWithoutReplacingTheAssociation() async throws {
+        let directory = directory(), root = root(directory: directory)
+        try setSettings(directory) { settings in
+            settings.contentSourceExclusions = TrustedFeed.development.map {
+                ReaderSourceExclusion(sourceID: $0.sourceID, displayName: $0.displayName)
+            }
+        }
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNil(association.store.state.presentation)
+        XCTAssertEqual(association.store.work, .unavailable)
+        let preferences = ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+        let before = try preferences.load()
+        let filters = try XCTUnwrap(root.makeContentFilterStore())
+        await filters.load()
+        let removed = await filters.removeSourceExclusion(TrustedFeed.development[1].sourceID)
+        XCTAssertTrue(removed)
+        let recovered = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertFalse(recovered.window.items.isEmpty)
+        XCTAssertTrue(root.association === association)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, before?.sourceKeys)
+        XCTAssertEqual(try preferences.load()?.selectionVersion, before?.selectionVersion)
+        XCTAssertEqual(try settings(directory).contentSourceExclusions.map(\.sourceID), [TrustedFeed.development[0].sourceID])
+        await association.close()
     }
 }

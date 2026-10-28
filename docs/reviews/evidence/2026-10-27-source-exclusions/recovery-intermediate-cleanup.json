@@ -1,0 +1,132 @@
+[
+  {
+    "path": ".build/f13-ios-tests/ModuleCache.noindex",
+    "bytes": 200723264,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/f13-ios-tests/Build/Intermediates.noindex",
+    "bytes": 192559439,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineMedia.build",
+    "bytes": 1317840,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedKit.build",
+    "bytes": 17802416,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/XMLKit.build",
+    "bytes": 2382025,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineMediaTests.build",
+    "bytes": 1375729,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineSyndicationTests.build",
+    "bytes": 5859670,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePersistence.build",
+    "bytes": 6891099,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineEditorial.build",
+    "bytes": 2306875,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineRuntime.build",
+    "bytes": 6708854,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineUI.build",
+    "bytes": 25272381,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/GRDB.build",
+    "bytes": 32124234,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePublication.build",
+    "bytes": 2431666,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineAcquisitionTests.build",
+    "bytes": 3995836,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineEditorialTests.build",
+    "bytes": 4810480,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineAcquisition.build",
+    "bytes": 2319805,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePublicationTests.build",
+    "bytes": 3849165,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineCompositionTests.build",
+    "bytes": 28532108,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/ArchitectureSmokeTests.build",
+    "bytes": 11392552,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineSyndication.build",
+    "bytes": 2821054,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineRuntimeTests.build",
+    "bytes": 17394909,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.build",
+    "bytes": 82157,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineDomain.build",
+    "bytes": 6713491,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePersistenceTests.build",
+    "bytes": 12518763,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineComposition.build",
+    "bytes": 10964663,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineDomainTests.build",
+    "bytes": 3754273,
+    "kind": "inactive regenerable compiler intermediate; products/results preserved"
+  }
+]
