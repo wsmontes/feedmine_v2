@@ -21,12 +21,15 @@ public struct ReaderContentFilterAdapter: ReaderContentFilterBackend {
     private let database: RuntimeDatabase
     private let templates: [ReaderContentFilterTemplate]
     private let bundle: Bundle
+    private let onSourceExclusionsChanged: @Sendable () async -> Void
 
     public init(database: RuntimeDatabase, templates: [ReaderContentFilterTemplate]? = nil,
-        bundle: Bundle = .main) {
+        bundle: Bundle = .main,
+        onSourceExclusionsChanged: @escaping @Sendable () async -> Void = {}) {
         self.database = database
         self.templates = templates ?? ReaderContentFilterCatalog.bundled(bundle)
         self.bundle = bundle
+        self.onSourceExclusionsChanged = onSourceExclusionsChanged
     }
 
     public func state() async throws -> ReaderContentFilterState {
@@ -37,11 +40,15 @@ public struct ReaderContentFilterAdapter: ReaderContentFilterBackend {
             templates: templates.map { template in
                 ReaderContentFilterTemplateRow(id: template.key, name: template.name(),
                     ruleCount: template.rules().count)
-            })
+            }, sourceExclusions: settings.contentSourceExclusions)
     }
 
     public func setEnabled(_ enabled: Bool) async throws {
+        let before = ReaderSourceExclusionSnapshot(settings: try settings())
         try update { $0.contentFiltersEnabled = enabled }
+        if ReaderSourceExclusionSnapshot(settings: try settings()) != before {
+            await onSourceExclusionsChanged()
+        }
     }
 
     public func setRules(_ words: [String]) async throws {
@@ -50,6 +57,14 @@ public struct ReaderContentFilterAdapter: ReaderContentFilterBackend {
 
     public func setTemplates(_ keys: [String]) async throws {
         try update { $0.contentFilterTemplates = keys }
+    }
+
+    public func setSourceExclusions(_ rules: [ReaderSourceExclusion]) async throws {
+        let before = ReaderSourceExclusionSnapshot(settings: try settings())
+        try update { $0.contentSourceExclusions = rules }
+        if ReaderSourceExclusionSnapshot(settings: try settings()) != before {
+            await onSourceExclusionsChanged()
+        }
     }
 
     private func settings() throws -> ReaderSettings {

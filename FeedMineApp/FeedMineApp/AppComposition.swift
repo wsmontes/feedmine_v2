@@ -1795,7 +1795,9 @@ final class AppComposition {
     func makeContentFilterStore() -> ReaderContentFilterStore? {
         libraryDatabase().map { database in
             ReaderContentFilterStore(backend: ReaderContentFilterAdapter(database: database,
-                templates: contentFilterTemplates))
+                templates: contentFilterTemplates, onSourceExclusionsChanged: { [weak self] in
+                    await self?.noteSourceExclusionsChanged()
+                }))
         }
     }
 

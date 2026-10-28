@@ -1,0 +1,5 @@
+{
+  "command": "xcrun swiftc -frontend -parse FeedMineApp/FeedMineApp/AppComposition.swift FeedMineApp/FeedMineAppTests/ContentFilterTests.swift",
+  "exit": 0,
+  "scope": "syntax only; no iOS typecheck, link or execution"
+}

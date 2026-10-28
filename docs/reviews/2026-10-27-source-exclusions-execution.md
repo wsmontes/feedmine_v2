@@ -172,3 +172,27 @@ O próximo gate necessário é compilar/executar `FeedMineAppTests/ContentFilter
 source-only num build iOS identificado; depois prosseguir T5/T6. Não substituir esse gate por mais
 testes de pacote nem marcar T4 concluída. É necessário deixar pelo menos 3 GiB livres no volume de
 trabalho para retomar essa validação com a margem registrada do projeto.
+
+## Continuação após limpeza autorizada — incremento parcial T5
+
+Auditoria: `docs/reviews/2026-10-27-authorized-cleanup.md`. A limpeza chegou a 2,49 GiB livres,
+antes da regeneração de caches. Não atingiu o guard de 3 GiB para build iOS. T4 continua aberta.
+
+O backend de filtros agora projeta/grava `sourceExclusions` no campo existente, preservando seleção,
+palavras e modelos. Compara a política efetiva e aguarda o callback de composição antes de retornar;
+remover uma regra mascarada não inventa oportunidade de supply. O master switch conserva as regras.
+O store oferece inclusão/remoção por SourceID e restaura a lista persistida quando uma gravação falha.
+A seção de fontes excluídas mostra nomes congelados e remoção explícita, com copy pt/en e AX por identidade.
+A fábrica do app fornece a notificação source-only existente; não invoca substituição de sessão.
+
+TDD: backend RED por API ausente, GREEN 1/1; store RED por API ausente, GREEN focado 8/8 incluindo
+política e produção. Logs `t5-*.log.gz` e parse syntax-only do app estão no diretório de evidência F13.
+O parse não demonstra typecheck/link/execução iOS.
+
+**Ainda pendentes de T5:** ação confirmada na superfície da fonte (catálogo e importadas), recuperação
+na ausência de nova supply, validação app e acessibilidade em tela. Nenhum checkbox de conclusão de T5
+foi marcado. T6 e as ressalvas de histórico de palavras/B03/B06 continuam abertas.
+
+Verificação final deste incremento: suíte completa do pacote **1767 testes, 1 skip, 0 falhas**,
+99,452 s; parse do app exit 0 (apenas sintaxe); seis hashes do avaliador OK; diff sem erros.
+Espaço após a regeneração de caches: cerca de 2,3 GiB, ainda abaixo do guard iOS.

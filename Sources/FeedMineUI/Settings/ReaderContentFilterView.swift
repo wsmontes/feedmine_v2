@@ -47,6 +47,7 @@ public protocol ReaderContentFilterBackend: Sendable {
     /// words it added, and leaves what the reader typed where they left it.
     func setRules(_ words: [String]) async throws
     func setTemplates(_ keys: [String]) async throws
+    func setSourceExclusions(_ rules: [ReaderSourceExclusion]) async throws
 }
 
 /// What the surface draws and edits, as one value.
@@ -55,11 +56,13 @@ public struct ReaderContentFilterState: Hashable, Sendable {
     public let rules: [String]
     public let enabledTemplates: [String]
     public let templates: [ReaderContentFilterTemplateRow]
+    public let sourceExclusions: [ReaderSourceExclusion]
 
     public init(isEnabled: Bool, rules: [String], enabledTemplates: [String],
-        templates: [ReaderContentFilterTemplateRow]) {
+        templates: [ReaderContentFilterTemplateRow], sourceExclusions: [ReaderSourceExclusion] = []) {
         self.isEnabled = isEnabled; self.rules = rules
         self.enabledTemplates = enabledTemplates; self.templates = templates
+        self.sourceExclusions = sourceExclusions
     }
 }
 
@@ -68,6 +71,7 @@ public struct ReaderContentFilterState: Hashable, Sendable {
 public final class ReaderContentFilterStore {
     public private(set) var isEnabled = false
     public private(set) var rules: [String] = []
+    public private(set) var sourceExclusions: [ReaderSourceExclusion] = []
     public private(set) var enabledTemplates: Set<String> = []
     public private(set) var templates: [ReaderContentFilterTemplateRow] = []
     public private(set) var errorMessage: String?
@@ -86,6 +90,7 @@ public final class ReaderContentFilterStore {
             let state = try await backend.state()
             isEnabled = state.isEnabled
             rules = state.rules
+            sourceExclusions = state.sourceExclusions
             enabledTemplates = Set(state.enabledTemplates)
             templates = state.templates
             errorMessage = nil
@@ -123,6 +128,31 @@ public final class ReaderContentFilterStore {
     @discardableResult
     public func removeRule(_ id: String) async -> Bool {
         await setRules(rules.filter { $0 != id })
+    }
+
+    @discardableResult
+    public func addSourceExclusion(_ rule: ReaderSourceExclusion) async -> Bool {
+        await setSourceExclusions(sourceExclusions.filter { $0.sourceID != rule.sourceID } + [rule])
+    }
+
+    @discardableResult
+    public func removeSourceExclusion(_ id: SourceID) async -> Bool {
+        await setSourceExclusions(sourceExclusions.filter { $0.sourceID != id })
+    }
+
+    private func setSourceExclusions(_ rules: [ReaderSourceExclusion]) async -> Bool {
+        guard rules != sourceExclusions else { return false }
+        let previous = sourceExclusions
+        sourceExclusions = rules
+        do {
+            try await backend.setSourceExclusions(rules)
+            await load()
+            return errorMessage == nil
+        } catch {
+            sourceExclusions = previous
+            await refresh(after: String(localized: "Não foi possível salvar o filtro de conteúdo."))
+            return false
+        }
     }
 
     private func setRules(_ words: [String]) async -> Bool {
@@ -171,6 +201,31 @@ public struct ReaderContentFilterView: View {
                     : String(localized: "Desligado: as regras ficam guardadas e nada é escondido."))
                     .font(.caption)
                     .accessibilityIdentifier("content-filter-state")
+            }
+
+            Section {
+                if store.sourceExclusions.isEmpty {
+                    Text(verbatim: String(localized: "Nenhuma fonte excluída."))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("content-filter-sources-empty")
+                }
+                ForEach(store.sourceExclusions, id: \.sourceID) { rule in
+                    HStack {
+                        Text(verbatim: rule.displayName)
+                        Spacer()
+                        Button(String(localized: "Remover exclusão")) {
+                            Task { await store.removeSourceExclusion(rule.sourceID) }
+                        }
+                        .accessibilityIdentifier("content-filter-remove-source-\(rule.sourceID.rawValue.uuidString)")
+                        .accessibilityLabel(Text(verbatim: String(localized: "Remover exclusão") + ": " + rule.displayName))
+                    }
+                    .accessibilityIdentifier("content-filter-source-\(rule.sourceID.rawValue.uuidString)")
+                }
+            } header: {
+                Text(verbatim: String(localized: "Fontes excluídas"))
+            } footer: {
+                Text(verbatim: String(localized: "Impede novas publicações destas fontes. Histórias já publicadas e salvas permanecem."))
+                    .font(.caption)
             }
 
             Section {

@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "pt-BR",
   "strings": {
+    "Nenhuma fonte excluída.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No excluded sources."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma fonte excluída."
+          }
+        }
+      }
+    },
+    "Remover exclusão": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove exclusion"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover exclusão"
+          }
+        }
+      }
+    },
+    "Fontes excluídas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluded sources"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fontes excluídas"
+          }
+        }
+      }
+    },
+    "Impede novas publicações destas fontes. Histórias já publicadas e salvas permanecem.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prevents new publications from these sources. Published and saved stories remain."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impede novas publicações destas fontes. Histórias já publicadas e salvas permanecem."
+          }
+        }
+      }
+    },
     "": {},
     "%@ (%lld)": {
       "localizations": {
