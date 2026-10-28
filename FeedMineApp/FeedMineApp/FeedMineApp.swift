@@ -609,7 +609,11 @@ struct FeedMineApp: App {
                                     onOpenNode: { sourcesPath.append(.node($0)) },
                                     onOpenCountries: { sourcesPath.append(.countries) },
                                     onImport: { popSurface(); showsFileImporter = true },
-                                    onClose: { popSurface() })
+                                    onClose: { popSurface() },
+                                    importedSources: composition.importedSourceRows,
+                                    onExcludeImportedSource: { row in
+                                        try await composition.excludeImportedSource(forKey: row.id, displayName: row.title)
+                                    })
                                     .navigationDestination(for: SourceRoute.self) { route in
                                         switch route {
                                         case .countries:

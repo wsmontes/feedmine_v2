@@ -61,8 +61,6 @@ public struct NodeSourcesView: View {
     /// back to reach it made a reopened surface start over instead of returning to the same node.
     private let onClose: (() -> Void)?
     private let onExcludeSource: ((NodeSourceRow) async throws -> Void)?
-    @State private var pendingExclusion: NodeSourceRow?
-    @State private var exclusionFailed = false
 
     public init(store: SourceManagementStore, node: CatalogNodeSummary,
         appearance: ReaderAppearance = .standard, onOpenNode: @escaping (CatalogNodeSummary) -> Void,
@@ -158,28 +156,6 @@ public struct NodeSourcesView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .confirmationDialog(String(localized: "Não publicar mais desta fonte"), isPresented: Binding(
-                get: { pendingExclusion != nil }, set: { if !$0 { pendingExclusion = nil } }),
-                titleVisibility: .visible) {
-                if let row = pendingExclusion, let onExcludeSource {
-                    Button(String(localized: "Não publicar mais desta fonte")) {
-                        pendingExclusion = nil
-                        Task {
-                            do { try await onExcludeSource(row) }
-                            catch { exclusionFailed = true }
-                        }
-                    }
-                    .accessibilityIdentifier("source-exclusion-confirm")
-                }
-                Button(String(localized: "Cancelar"), role: .cancel) { pendingExclusion = nil }
-            } message: {
-                Text(verbatim: String(localized: "Impede novas publicações desta fonte. Histórias já publicadas e salvas permanecem. Reverta em Filtros de conteúdo."))
-            }
-            .alert(String(localized: "Não foi possível salvar"), isPresented: $exclusionFailed) {
-                Button(String(localized: "OK"), role: .cancel) {}
-            } message: {
-                Text(verbatim: String(localized: "Não foi possível salvar o filtro de conteúdo."))
-            }
             .task { await store.open(node) }
     }
 
@@ -234,24 +210,57 @@ public struct NodeSourcesView: View {
                             guard let source = store.sources.first(where: { $0.id == row.id }) else { return }
                             Task { await store.toggle(source) }
                         })
-                        .contextMenu {
-                            if onExcludeSource != nil {
-                                Button(String(localized: "Não publicar mais desta fonte"), systemImage: "eye.slash") {
-                                    pendingExclusion = row
-                                }
-                                .accessibilityIdentifier("source-exclusion-action-\(row.id)")
-                            }
-                        }
-                        .accessibilityActions {
-                            if onExcludeSource != nil {
-                                Button(String(localized: "Não publicar mais desta fonte")) { pendingExclusion = row }
-                            }
-                        }
+                        .modifier(SourceExclusionMenu(row: row, onExclude: onExcludeSource))
                 }
             } header: {
                 NodeSectionHeader(section: section)
             }
         }
+    }
+}
+
+/// One confirmation and error path for both catalogue and reader-imported source rows.
+struct SourceExclusionMenu: ViewModifier {
+    let row: NodeSourceRow
+    let onExclude: ((NodeSourceRow) async throws -> Void)?
+    @State private var showsConfirmation = false
+    @State private var failed = false
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                if onExclude != nil {
+                    Button(String(localized: "Não publicar mais desta fonte"), systemImage: "eye.slash") {
+                        showsConfirmation = true
+                    }
+                    .accessibilityIdentifier("source-exclusion-action-\(row.id)")
+                }
+            }
+            .accessibilityActions {
+                if onExclude != nil {
+                    Button(String(localized: "Não publicar mais desta fonte")) { showsConfirmation = true }
+                }
+            }
+            .confirmationDialog(String(localized: "Não publicar mais desta fonte"),
+                isPresented: $showsConfirmation, titleVisibility: .visible) {
+                if let onExclude {
+                    Button(String(localized: "Não publicar mais desta fonte")) {
+                        Task {
+                            do { try await onExclude(row) }
+                            catch { failed = true }
+                        }
+                    }
+                    .accessibilityIdentifier("source-exclusion-confirm")
+                }
+                Button(String(localized: "Cancelar"), role: .cancel) {}
+            } message: {
+                Text(verbatim: String(localized: "Impede novas publicações desta fonte. Histórias já publicadas e salvas permanecem. Reverta em Filtros de conteúdo."))
+            }
+            .alert(String(localized: "Não foi possível salvar"), isPresented: $failed) {
+                Button(String(localized: "OK"), role: .cancel) {}
+            } message: {
+                Text(verbatim: String(localized: "Não foi possível salvar o filtro de conteúdo."))
+            }
     }
 }
 

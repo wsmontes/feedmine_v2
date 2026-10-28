@@ -1,0 +1,21 @@
+{
+  "source_report": "xctest-2026-10-27-213031.ips",
+  "exception": "EXC_BAD_ACCESS",
+  "signal": "SIGSEGV",
+  "frames": [
+    "objc_release",
+    "-[_NSWindowTransformAnimation dealloc]",
+    "_call_dispose_helpers_excp",
+    "_Block_release",
+    "-[NSConcretePointerArray dealloc]",
+    "AutoreleasePoolPage::releaseUntil(objc_object**)",
+    "objc_autoreleasePoolPop",
+    "CA::Context::commit_transaction(CA::Transaction*, double, double*)",
+    "CA::Transaction::commit()",
+    "CA::Transaction::flush_as_runloop_observer(bool)",
+    "__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__",
+    "__CFRunLoopDoObservers",
+    "_CFRunLoopRunSpecificWithOptions",
+    "+[XCTWaiter _synchronouslyWaitForTimeInterval:]"
+  ]
+}

@@ -29,3 +29,10 @@ NOT_RUN; parse do app e testes macOS do pacote não o substituem. T5 pode avanç
 não devem ser declaradas concluídas por essa limpeza.
 
 Manifesto: `docs/reviews/evidence/2026-10-27-authorized-cleanup/manifest.json`.
+
+
+Avaliação adicional de compressão: `ditto --hfsCompression` foi aplicado somente a uma cópia temporária
+em /tmp de um DWARF antigo. A cópia não passou na comparação de bytes e foi descartada; o original
+não foi modificado. Portanto, nenhuma evidência/produto foi substituído por esse método. O resultado
+está em `evidence/2026-10-27-authorized-cleanup/compression-probe.json`. O cache grande do atualizador
+foi revalidado: o processo Updater continua ativo e o diretório foi preservado.

@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "pt-BR",
   "strings": {
+    "Fontes importadas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported sources"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fontes importadas"
+          }
+        }
+      }
+    },
     "Há fontes excluídas das novas publicações. Você pode rever essas regras nos filtros de conteúdo.": {
       "localizations": {
         "en": {

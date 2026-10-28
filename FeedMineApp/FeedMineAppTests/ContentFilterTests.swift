@@ -219,3 +219,52 @@ extension ContentFilterTests {
         await association.close()
     }
 }
+
+extension ContentFilterTests {
+    func testImportedSourceExclusionUsesReaderAuthorityWithoutChangingSelection() async throws {
+        let directory = directory(), root = root(directory: directory)
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: db)
+        _ = try preferences.initialize(sourceKeys: [])
+        let key = "https://reader.example/feed"
+        _ = try ReaderLibraryStore(database: db).commitImport([
+            .init(id: key, title: "Imported Orchard", requestURL: key, categoryPath: [])
+        ], rejected: 0, at: Date(timeIntervalSince1970: 100))
+        let before = try preferences.load()
+        let row = try XCTUnwrap(root.importedSourceRows.first { $0.id == key })
+        try await root.excludeImportedSource(forKey: row.id, displayName: row.title)
+        let after = try preferences.load()
+        XCTAssertEqual(after?.sourceKeys, before?.sourceKeys)
+        XCTAssertEqual(after?.selectionVersion, before?.selectionVersion)
+        XCTAssertEqual(after?.activeContextKey, before?.activeContextKey)
+        let rule = try XCTUnwrap(try settings(directory).contentSourceExclusions.first)
+        XCTAssertEqual(rule.sourceID, ReaderSourceIdentity.sourceID(forKey: key))
+        XCTAssertNotEqual(rule.sourceID, LegacyCatalogImport.sourceID(forKey: key))
+        XCTAssertEqual(rule.displayName, row.title)
+        do {
+            try await root.excludeImportedSource(forKey: "https://unknown.example/feed", displayName: row.title)
+            XCTFail("an unknown key must not mint a rule")
+        } catch {}
+        XCTAssertEqual(try settings(directory).contentSourceExclusions, [rule])
+    }
+}
+
+extension ContentFilterTests {
+    func testImportedSourceKeepsThePreviouslyEstablishedCatalogueIdentity() async throws {
+        let directory = directory(), root = root(directory: directory)
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        _ = try ReaderPreferencesStore(database: db).initialize(sourceKeys: [])
+        let key = "https://reader.example/catalogue-first"
+        let library = ReaderLibraryStore(database: db)
+        try library.rememberResolvedSources([(key: key, authority: "catalog")])
+        _ = try library.commitImport([
+            .init(id: key, title: "Imported copy", requestURL: key, categoryPath: [])
+        ], rejected: 0, at: Date(timeIntervalSince1970: 100))
+        let before = try library.sourceLinks()
+        try await root.excludeImportedSource(forKey: key, displayName: "Imported copy")
+        let rule = try XCTUnwrap(try settings(directory).contentSourceExclusions.first)
+        XCTAssertEqual(rule.sourceID, LegacyCatalogImport.sourceID(forKey: key))
+        XCTAssertNotEqual(rule.sourceID, ReaderSourceIdentity.sourceID(forKey: key))
+        XCTAssertEqual(try library.sourceLinks(), before)
+    }
+}

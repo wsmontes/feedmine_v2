@@ -259,3 +259,31 @@ Verificação final deste incremento: **1771 testes, 1 skip, 0 falhas**, 97,063 
 incluem fim com histórico e fim sem apresentação. Parse app exit 0 (somente sintaxe), avaliador 6/6,
 diff sem erros. O teste app de continuidade também verifica master off pela tela geral, regras
 persistidas e mesma associação/Edition/âncora/prefixo; **não executado em iOS**. Espaço livre ~2,3 GiB.
+
+
+## Continuação — fontes importadas na superfície de Fontes
+
+A tela Fontes agora mostra as entradas da autoridade reader_imported_sources, inclusive sem catálogo.
+O host passa key/nome conhecido; nenhum UUID é digitado. A ação de importadas exige um registro de
+importação existente e usa o resolvedor operacional já existente, preservando namespace/aliases.
+Uma fonte nova do leitor usa identidade reader; uma fonte já estabelecida como catálogo conserva
+essa identidade mesmo quando importada. Não criar identidade alternativa só porque a linha é importada.
+O menu de exclusão, confirmação descritiva, AX e falha ao salvar são compartilhados com o catálogo.
+O callback só grava a regra e notifica; não modifica seleção/autoridade de aquisição.
+
+TDD: RED por interface de lista ausente. Primeira captura OCR retornou vazia: List nativa ainda não
+havia desenhado; o teste agora aguarda um ciclo de display AppKit. O caso passou isolado. A primeira
+suíte completa encerrou com sinal 11 após esse teste: o diagnóstico aponta objc_release em
+_NSWindowTransformAnimation dealloc. A janela de teste agora desativa animação e não se libera
+automaticamente ao fechar. A classe inteira passou **22 testes, zero falhas**, 8,024 s. Logs de falha,
+interrupção controlada e resumo do diagnóstico foram preservados; não são evidência GREEN.
+
+Dois casos app foram adicionados: identidade reader conhecida/recusa de chave desconhecida e
+preservação de identidade catalog anteriormente registrada. Ambos continuam **NOT_RUN em iOS**;
+parse é somente sintaxe. As jornadas de confirmação/cancelamento/reversão e acessibilidade continuam
+parte de T6, sem alegação de PASS por compilação do pacote.
+
+
+Verificação final de importadas: suíte completa **1772 testes, 1 skip, 0 falhas**, 97,537 s;
+app parse exit 0 (sintaxe somente); avaliador 6/6; diff sem erros. Espaço livre ~2,1 GiB.
+T4/T5/T6 seguem abertas nos gates iOS/aceitação. A tentativa de compressão não foi aplicada a originais.

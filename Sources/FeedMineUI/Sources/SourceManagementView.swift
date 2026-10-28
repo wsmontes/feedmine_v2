@@ -29,16 +29,22 @@ public struct SourceManagementView: View {
     /// V1 imported OPML from this screen; the file picker is the host's, so the row reports the intent.
     private let onImport: () -> Void
     private let onClose: () -> Void
+    private let importedSources: [NodeSourceRow]
+    private let onExcludeImportedSource: ((NodeSourceRow) async throws -> Void)?
 
     public init(store: SourceManagementStore, appearance: ReaderAppearance = .standard,
         onOpenNode: @escaping (CatalogNodeSummary) -> Void, onOpenCountries: @escaping () -> Void,
-        onImport: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}) {
+        onImport: @escaping () -> Void = {}, onClose: @escaping () -> Void = {},
+        importedSources: [NodeSourceRow] = [],
+        onExcludeImportedSource: ((NodeSourceRow) async throws -> Void)? = nil) {
         _store = State(initialValue: store)
         self.appearance = appearance
         self.onOpenNode = onOpenNode
         self.onOpenCountries = onOpenCountries
         self.onImport = onImport
         self.onClose = onClose
+        self.importedSources = importedSources
+        self.onExcludeImportedSource = onExcludeImportedSource
     }
 
     /// V1's footer, with V2's own words for the same fact.
@@ -66,6 +72,20 @@ public struct SourceManagementView: View {
     #endif
 
     @ViewBuilder private var content: some View {
+        if !importedSources.isEmpty {
+            Section {
+                ForEach(importedSources) { row in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: row.title)
+                        Text(verbatim: row.detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("imported-source-\(row.id)")
+                    .modifier(SourceExclusionMenu(row: row, onExclude: onExcludeImportedSource))
+                }
+            } header: {
+                Text(verbatim: String(localized: "Fontes importadas"))
+            }
+        }
         if store.hasCatalog {
             sectionsSection
             countriesSection

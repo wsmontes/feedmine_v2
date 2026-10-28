@@ -356,6 +356,27 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertNil(store.state.presentation)
     }
 
+    func testImportedSourceRemainsVisibleWhenTheCatalogueIsUnavailable() async throws {
+        let f = try fixture()
+        let store = SourceManagementStore(backend: SourceCatalogBackend(
+            coordinator: SourceManagementCoordinator(catalogURL: nil, database: f.database)))
+        let row = NodeSourceRow(id: "https://reader.example/feed", title: "Imported Orchard",
+            detail: "https://reader.example/feed", isSelected: true)
+        let screen = SourceManagementView(store: store, onOpenNode: { _ in }, onOpenCountries: {},
+            importedSources: [row], onExcludeImportedSource: { _ in })
+        await store.load()
+        let hosted = host(screen)
+        hosted.window.isReleasedWhenClosed = false
+        hosted.window.animationBehavior = .none
+        hosted.window.orderFront(nil)
+        defer { hosted.window.close() }
+        // Native List cells are installed on the next AppKit display cycle.
+        try await Task.sleep(for: .milliseconds(100))
+        let text = try renderedText(hosted)
+        XCTAssertTrue(text.contains { $0.contains("Imported Orchard") }, text.description)
+        XCTAssertTrue(text.contains { $0.contains("catálogo") }, text.description)
+    }
+
     func testU14UIBoundaryHasNoProductionImportsOrHiddenEffects() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let ui = root.appendingPathComponent("Sources/FeedMineUI")

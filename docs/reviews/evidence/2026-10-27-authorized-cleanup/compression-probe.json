@@ -1,0 +1,10 @@
+{
+  "method": "ditto --hfsCompression to temporary destination only",
+  "source": ".build/omp-ops-20261020/jobs/integration/scratch/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests.dSYM/Contents/Resources/DWARF/FeedMinePackageTests",
+  "source_size": 66634762,
+  "source_sha256": "154956200c7f2e99e56a849032ecd17836bd37f9911ec8751515cb0dd775c728",
+  "temporary_size": 0,
+  "temporary_allocated": 17952768,
+  "integrity_passed": false,
+  "action": "rejected compression; deleted temporary copy only; original never modified"
+}

@@ -1382,6 +1382,14 @@ final class AppComposition {
             searchScope: key.searchScope)
     }
 
+    var importedSourceRows: [NodeSourceRow] {
+        readerSourceEntries().map { entry in
+            NodeSourceRow(id: entry.id,
+                title: entry.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? entry.id : entry.title,
+                detail: entry.requestURL, isSelected: selectedFeeds.contains { $0.principal == entry.id })
+        }
+    }
+
     private func readerSourceEntries() -> [ReaderImportEntry] {
         guard let database = libraryDatabase() else { return [] }
         return Self.readerSourceEntries(in: database)
@@ -1515,11 +1523,23 @@ final class AppComposition {
     /// The source surface passes its known key; the existing resolver supplies the authority's identity.
     /// Exclusion changes future supply without changing selection or opening a new reader session.
     func excludeSource(forKey key: String, displayName: String) async throws {
-        guard let feed = selectedFeeds.first(where: { $0.principal == key }) ?? catalogueFeed(forKey: key),
-            let store = makeContentFilterStore() else { throw CocoaError(.fileReadNoSuchFile) }
+        guard let feed = selectedFeeds.first(where: { $0.principal == key }) ?? catalogueFeed(forKey: key)
+            else { throw CocoaError(.fileReadNoSuchFile) }
+        try await excludeResolvedSource(feed.sourceID, displayName: displayName)
+    }
+
+    /// The imported record authorizes this row. Resolution still preserves the established namespace:
+    /// importing an already catalogue-managed key must not mint a second editorial identity.
+    func excludeImportedSource(forKey key: String, displayName: String) async throws {
+        guard readerSourceEntries().contains(where: { $0.id == key }) else { throw CocoaError(.fileReadNoSuchFile) }
+        try await excludeSource(forKey: key, displayName: displayName)
+    }
+
+    private func excludeResolvedSource(_ sourceID: SourceID, displayName: String) async throws {
+        guard let store = makeContentFilterStore() else { throw CocoaError(.fileReadNoSuchFile) }
         await store.load()
         guard store.errorMessage == nil else { throw CocoaError(.fileReadUnknown) }
-        let rule = ReaderSourceExclusion(sourceID: feed.sourceID, displayName: displayName)
+        let rule = ReaderSourceExclusion(sourceID: sourceID, displayName: displayName)
         // An identical existing rule is already the requested durable state.
         if store.sourceExclusions.contains(rule) { return }
         guard await store.addSourceExclusion(rule) else { throw CocoaError(.fileWriteUnknown) }
