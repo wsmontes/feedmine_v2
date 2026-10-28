@@ -64,7 +64,8 @@ public struct FeedScreen: View {
         if !hasSources {
             // V1 drew this surface instead of the feed, with the reader's chrome: nothing is being prepared,
             // so there is no progress to state.
-            ReaderShell(store: store, appearance: appearance, status: { statusChip },
+            ReaderShell(store: store, appearance: appearance,
+                onManageSourceExclusions: headerSourceRecoveryAction, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 FeedSourcesEmptyStateView(appearance: appearance, onChooseSources: onChooseSources)
             }
@@ -72,7 +73,8 @@ public struct FeedScreen: View {
         // searching, but the shell — and its results page — must still be mounted. Without this the app kept the
         // loading surface over a search that had already completed.
         } else if store.isSearching || !store.renderedItems.isEmpty {
-            ReaderShell(store: store, appearance: appearance, status: { statusChip },
+            ReaderShell(store: store, appearance: appearance,
+                onManageSourceExclusions: headerSourceRecoveryAction, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 // The cover and its accessibility hiding are scoped to the **feed content**, never to the shell:
                 // the reader's own header (context chip, sources, saved, filters, menu) stays usable while the
@@ -98,7 +100,8 @@ public struct FeedScreen: View {
             // the shell it drew a full-screen "Finding stories for you…" with no header, no context control and
             // no way back to Main or to the sources (measured 2026-10-23: more than seven minutes, no control).
             // The same chrome is mounted over the loading content; the content stays the work surface it was.
-            ReaderShell(store: store, appearance: appearance, status: { statusChip },
+            ReaderShell(store: store, appearance: appearance,
+                onManageSourceExclusions: headerSourceRecoveryAction, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 loadingSurface
             }
@@ -282,6 +285,13 @@ public struct FeedScreen: View {
         }
     }
 
+    /// Recovery must not change the scrollable extent of published history. The existing menu's
+    /// fixed-size button states the active restriction and opens the same editor from the chrome.
+    private var headerSourceRecoveryAction: (@MainActor () -> Void)? {
+        guard !store.renderedItems.isEmpty, !store.isSearching, offersSourceRecovery else { return nil }
+        return onManageSourceExclusions
+    }
+
     private var offersSourceRecovery: Bool {
         switch store.work {
         case .idle, .unavailable, .deferred, .endOfContent: true
@@ -319,9 +329,6 @@ public struct FeedScreen: View {
                     FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
                         explicit: true)
                 })
-        }
-        if offersSourceRecovery {
-            sourceExclusionRecovery
         }
     }
 }

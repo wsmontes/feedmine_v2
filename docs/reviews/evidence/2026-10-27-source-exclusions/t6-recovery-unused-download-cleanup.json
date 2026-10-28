@@ -1,0 +1,13 @@
+[
+  {
+    "path": "/Users/wagnersilvamontes/Library/Caches/ollama/updates/c663f2550e0dea86eff1565df8e2cbf78af61a6096d5949520fb6e6d0a8716d0/Ollama-darwin.zip",
+    "bytes": 229486920,
+    "sha256": "ada902575abd306423627a0567bcff1c2c52bdd3ec454e65f075554c94f63fa4",
+    "reason": "unused update download ZIP; lsof no handles; installed app and models preserved"
+  },
+  {
+    "path": "/Users/wagnersilvamontes/Library/Caches/Homebrew",
+    "bytes": 42929444,
+    "reason": "regenerable metadata/download cache; no brew process or open handles; Cellar and installations preserved"
+  }
+]

@@ -331,7 +331,7 @@ final class FeedScreenRenderingTests: XCTestCase {
     }
 
 
-    func testSourceExclusionRecoveryAtEndKeepsPublishedCardsAndSequence() async throws {
+    func testRecoveryUsesChromeWithoutAConditionalFooterAtEndOfHistory() async throws {
         let f = try fixture(), first = try await snapshot(f)
         let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
         let screen = FeedScreen(store: store, onManageSourceExclusions: {})
@@ -341,7 +341,7 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertFalse(try renderedText(screen, height: 1500).contains { $0.contains("Rever fontes excluídas") })
         try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))
         let text = try renderedText(screen, height: 1500)
-        XCTAssertTrue(text.contains { $0.contains("Rever fontes excluídas") }, text.description)
+        XCTAssertFalse(text.contains { $0.contains("Rever fontes excluídas") }, "recovery belongs to the stable chrome, not the scrolling footer")
         XCTAssertEqual(text.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
         XCTAssertEqual(try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs, admitted)
         let unrestricted = FeedScreen(store: store)
@@ -366,21 +366,21 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertNil(store.state.presentation)
     }
 
-    func testIdleRecoveryFollowsHistoryWithoutChangingThePublishedSequence() async throws {
+    func testIdleRecoveryDoesNotAddAChangingFooterToPublishedHistory() async throws {
         let f = try fixture(), first = try await snapshot(f)
         let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
         let screen = FeedScreen(store: store, onManageSourceExclusions: {})
         try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
         let admitted = try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs
-        let text = try renderedText(screen, height: 1500)
-        let last = try XCTUnwrap(text.firstIndex(of: "Amber headline"))
-        let recovery = try XCTUnwrap(text.firstIndex { $0.contains("Rever fontes excluídas") })
-        XCTAssertGreaterThan(recovery, last)
+        // Use the standard reader viewport: Vision misreads intact text on the mostly blank 1500pt canvas.
+        let text = try renderedText(screen, height: 900)
+        XCTAssertFalse(text.contains { $0.contains("Rever fontes excluídas") },
+            "the recovery action is in the existing menu; removing it cannot shorten the list")
         XCTAssertEqual(text.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
         XCTAssertEqual(try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs, admitted)
         XCTAssertFalse(text.contains { $0.contains("fim das histórias") }, text.description)
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
-        XCTAssertFalse(try renderedText(screen, height: 1500).contains { $0.contains("Rever fontes excluídas") })
+        XCTAssertFalse(try renderedText(screen, height: 900).contains { $0.contains("Rever fontes excluídas") })
     }
 
     func testProvisionalAbsenceWithSourceRulesAlsoOffersRecovery() throws {

@@ -17,6 +17,113 @@ final class SourceExclusionJourneyUITests: XCTestCase {
         try journey(language: "en", locale: "en_US", largeType: true)
     }
 
+    /// This rule names an imported source outside the fixture supply. It proves the real recovery route
+    /// and geometry, not that excluded fixture supply became publishable (a separate acceptance case).
+    @MainActor
+    func testRecoveryRouteRemovesRuleWithoutMovingTheLastAdmittedCard() throws {
+        try recoveryRoute(largeType: false)
+    }
+
+    @MainActor
+    func testRecoveryRouteKeepsTailInEnglishLargeType() throws {
+        try recoveryRoute(largeType: true)
+    }
+
+    @MainActor
+    private func recoveryRoute(largeType: Bool) throws {
+        let language = largeType ? "en" : "pt-BR"
+        var arguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", largeType ? "en_US" : "pt_BR"]
+        if largeType { arguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        let app = SurfaceTest.launchFixture([
+            "FEEDMINE_IMPORT_FIXTURE": "1", "FEEDMINE_DISABLE_CATALOGUE_SYNC": "1",
+            "FEEDMINE_FIXTURE_ITEMS": "6", "FEEDMINE_TRACE_CAPTURE": "1"
+        ], arguments: arguments)
+        defer { app.terminate() }
+        let importAction = app.buttons["import-confirm"]
+        XCTAssertTrue(importAction.waitForExistence(timeout: 30))
+        importAction.tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(importAction, timeout: 30))
+        SurfaceTest.menuEntry(app, largeType ? "Sources" : "Fontes")
+        let row = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'imported-source-'")).firstMatch
+        XCTAssertTrue(SurfaceTest.scrollIntoView(row, in: app, timeout: 30))
+        let key = String(row.identifier.dropFirst("imported-source-".count))
+        row.press(forDuration: 1.2)
+        let exclude = app.buttons["source-exclusion-action-\(key)"]
+        XCTAssertTrue(exclude.waitForExistence(timeout: 15))
+        exclude.tap()
+        let confirm = app.buttons["source-exclusion-confirm"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15))
+        confirm.tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(confirm, timeout: 15))
+        app.buttons["sources-done"].tap()
+
+        let feed = app.scrollViews.firstMatch
+        let proof = app.staticTexts["feed-window-proof"]
+        XCTAssertTrue(proof.exists)
+        feed.swipeUp(velocity: .slow)
+        for _ in 0..<16 {
+            let current = String(proof.label.split(separator: ";")[0])
+            let tailID = try XCTUnwrap(current.dropFirst("ids=".count).split(separator: ",").last).description
+            let tail = SurfaceTest.element(app, tailID)
+            if tail.exists, tail.frame.intersection(feed.frame).height > 40,
+                tail.frame.maxY <= feed.frame.maxY + 1 { break }
+            feed.swipeUp(velocity: .slow)
+        }
+        let admitted = String(proof.label.split(separator: ";")[0])
+        let lastID = try XCTUnwrap(admitted.dropFirst("ids=".count).split(separator: ",").last).description
+        let last = SurfaceTest.element(app, lastID)
+        XCTAssertTrue(last.exists)
+        let before = last.frame
+        let viewportBefore = feed.frame
+        XCTAssertLessThanOrEqual(before.maxY, feed.frame.maxY + 1,
+            "the gesture must reach the admitted tail, not only a partially visible final card")
+        XCTAssertGreaterThan(before.intersection(feed.frame).height, 40,
+            "the last admitted card must still be visible at the tail")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "source-recovery-tail-before-\(language)"; shot.lifetime = .keepAlways; add(shot)
+        let activeValue = largeType ? "Excluded sources" : "Fontes excluídas"
+        XCTAssertEqual(app.buttons["more-menu"].value as? String, activeValue)
+        SurfaceTest.openMenu(app)
+        let recovery = app.buttons["source-exclusion-recovery"].firstMatch
+        XCTAssertTrue(recovery.waitForExistence(timeout: 15), app.debugDescription)
+        recovery.tap()
+        let remove = app.buttons.matching(NSPredicate(format:
+            "identifier BEGINSWITH 'content-filter-remove-source-'")).firstMatch
+        XCTAssertTrue(SurfaceTest.scrollIntoView(remove, in: app, timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Revista"].exists)
+        if largeType {
+            XCTAssertGreaterThan(app.staticTexts["Revista"].frame.height, 30,
+                "the recovery route actually draws accessibility-sized content")
+        }
+        remove.tap()
+        XCTAssertTrue(SurfaceTest.element(app, "content-filter-sources-empty").waitForExistence(timeout: 15))
+        let done = app.buttons[largeType ? "Done" : "Concluir"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        done.tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(done, timeout: 15))
+        XCTAssertTrue(SurfaceTest.waitForAbsence(recovery, timeout: 15))
+        XCTAssertNotEqual(app.buttons["more-menu"].value as? String, activeValue)
+        XCTAssertEqual(String(proof.label.split(separator: ";")[0]), admitted,
+            "removing an unrelated rule preserves this admitted window")
+        XCTAssertTrue(last.exists)
+        XCTAssertEqual(feed.frame.minY, viewportBefore.minY, accuracy: 1)
+        XCTAssertEqual(feed.frame.height, viewportBefore.height, accuracy: 1)
+        let frames = (0..<5).map { _ -> CGRect in
+            Thread.sleep(forTimeInterval: 0.2)
+            return last.frame
+        }
+        let finalShot = XCTAttachment(screenshot: app.screenshot())
+        finalShot.name = "source-recovery-tail-after-\(language)"; finalShot.lifetime = .keepAlways; add(finalShot)
+        let geometry = XCTAttachment(string: "\(admitted) last=\(lastID) before=\(before) afterSamples=\(frames) viewportBefore=\(viewportBefore) viewportAfter=\(feed.frame) proof=\(proof.label)")
+        geometry.name = "source-recovery-tail-geometry"; geometry.lifetime = .keepAlways; add(geometry)
+        for after in frames {
+            XCTAssertGreaterThan(after.intersection(feed.frame).height, 40)
+            XCTAssertEqual(after.minY, before.minY, accuracy: 1,
+                "the last admitted card keeps its viewport position in consecutive observations")
+        }
+    }
+
     @MainActor
     private func journey(language: String, locale: String, largeType: Bool) throws {
         let portuguese = language == "pt-BR"

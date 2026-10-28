@@ -1,0 +1,41 @@
+[
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-85595F37-3ED4-4A01-B226-6BBD796AF653-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-FE0EDE58-11C9-4D98-9CE5-16B8A1826300/StandardOutputAndStandardError-com.feedmine.app.txt",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-85595F37-3ED4-4A01-B226-6BBD796AF653-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-FE0EDE58-11C9-4D98-9CE5-16B8A1826300/StandardOutputAndStandardError-com.feedmine.app.txt.gz",
+    "bytes": 391057406,
+    "gzip_bytes": 28229957,
+    "sha256_uncompressed": "9b7be264db0bae56fd9990e52795a3b63f9a13bf9d3b084afe54c2f5823dd87b",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792725719537672713,
+    "reason": "unopened log in incomplete result from 2026-10-22; bytes preserved in gzip; no product/database/session touched",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-85595F37-3ED4-4A01-B226-6BBD796AF653-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-FE0EDE58-11C9-4D98-9CE5-16B8A1826300/StandardOutputAndStandardError-com.feedmine.app.txt.gz",
+    "saved_bytes": 362827449
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log.gz",
+    "bytes": 78857685,
+    "gzip_bytes": 4793208,
+    "sha256_uncompressed": "6c080249504e7c49bb49bc471740526a457b375fe792b4ff84fc3661cd114234",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792725852008891411,
+    "reason": "unopened log in incomplete result from 2026-10-22; bytes preserved in gzip; no product/database/session touched",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log.gz",
+    "saved_bytes": 74064477
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-85595F37-3ED4-4A01-B226-6BBD796AF653-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-FE0EDE58-11C9-4D98-9CE5-16B8A1826300/Session-FeedMineUITests-2026-10-22_195656-fKrDSk.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-85595F37-3ED4-4A01-B226-6BBD796AF653-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-FE0EDE58-11C9-4D98-9CE5-16B8A1826300/Session-FeedMineUITests-2026-10-22_195656-fKrDSk.log.gz",
+    "bytes": 62427067,
+    "gzip_bytes": 3579557,
+    "sha256_uncompressed": "f32c95533b7890ea34bfba73d79b367e128ed423e2ed563931ed106309c5cdb8",
+    "verified": true,
+    "mode": 33152,
+    "mtime_ns": 1792724780378457437,
+    "reason": "unopened log in incomplete result from 2026-10-22; bytes preserved in gzip; no product/database/session touched",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-85595F37-3ED4-4A01-B226-6BBD796AF653-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-FE0EDE58-11C9-4D98-9CE5-16B8A1826300/Session-FeedMineUITests-2026-10-22_195656-fKrDSk.log.gz",
+    "saved_bytes": 58847510
+  }
+]

@@ -1,5 +1,9 @@
 # F13 — recuperação e controles — 2026-10-28
 
+Checkpoint posterior: [recuperação real e geometria](2026-10-28-f13-recovery-route.md) corrige
+o deslocamento de 117 pt medido ao retirar o footer, usando o menu Mais estável. Rotas pt/en AX XXXL
+aprovadas com delta zero; este documento preserva a evidência do incremento anterior.
+
 Incremento sobre `ef485ed7`; F13 permanece aberta.
 
 ## Comportamento

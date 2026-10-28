@@ -36,3 +36,21 @@ em /tmp de um DWARF antigo. A cópia não passou na comparação de bytes e foi 
 não foi modificado. Portanto, nenhuma evidência/produto foi substituído por esse método. O resultado
 está em `evidence/2026-10-27-authorized-cleanup/compression-probe.json`. O cache grande do atualizador
 foi revalidado: o processo Updater continua ativo e o diretório foi preservado.
+
+
+## 2026-10-28 — preservar evidências e concluir a regressão de cauda
+
+Manifestos em `evidence/2026-10-27-source-exclusions/`: cache de download Ollama e Homebrew sem
+handles foram liberados, sem modelos/instalações. Intermediários próprios inativos foram regenerados
+quando necessário. O updater Codex permaneceu ativo e seu cache não foi removido.
+
+`t6-interrupted-result-archive.json`: resultado próprio já incompleto (`Info.plist` ausente) em
+tar.gz restaurável, todos os arquivos conferidos por SHA-256; economia de 253605760 bytes.
+`t6-historical-incomplete-log-compression.json` e `t6-chrome-capacity-preservation.json`: somente
+logs fechados em resultados históricos já incompletos, gzip descomprimido conferido por SHA-256,
+modos/mtimes e caminhos originais registrados. Nenhum conteúdo foi descartado. A restauração dos
+bytes usa gunzip; modos/mtimes originais constam dos manifestos se necessários.
+
+A sondagem de dois resultados falhos completos não produziu economia útil: os tar.gz temporários
+foram retirados e as pastas originais mantidas (`t6-failed-results-archive.json`). Resultados completos
+aprovados, produtos, bancos, simuladores e sessões de outros chats permaneceram intactos.

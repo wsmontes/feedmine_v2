@@ -170,10 +170,20 @@ Build Debug sem símbolos/índice e monitor de reserva de 700 MiB permitiram exe
 ### Atualização 2026-10-28 — F13 recuperação e controles
 
 Ver `2026-10-28-f13-recovery-and-controls.md`. Recuperação idle/unavailable/deferred e grupo AX
-corrigidos; pacote1777/1skip/0; app9/0; jornadas controles/processo pt e en AX XXXL aprovadas
+corrigidos; pacote 1777/1skip/0; app 9/0; jornadas controles/processo pt e en AX XXXL aprovadas
 (pt confirmado novamente no mesmo runner final, 1/0; inglês AX XXXL 1/0). Revisão independente sem P1/P2 confirmado. Espaço liberado só de intermediários
 regeneráveis próprios, sem banco, simulador ou produtos. B03/B06 inalterados.
 
 Próximo trabalho de aceitação: botão real de recuperação e viewport de cauda; publicação inédita
 A/B com fonte excluída, shared canonical, save/history e contexto A→B→A; medir R4 de palavras sem
 relaxar contrato de histórico. Não tratar o checkpoint de controles como F13 integral concluída.
+
+
+### Checkpoint posterior — rota de recuperação e posição da cauda
+
+Ver `2026-10-28-f13-recovery-route.md`: RED de deslocamento de 117 pt corrigido com ação no chrome,
+pt/en AX XXXL delta zero em cinco amostras e mesma janela/viewport; pacote 1777/1skip/0, app 9/0.
+Nova prioridade: supply inédita A/B e canonical compartilhado/contexto, recuperação causal quando
+as fontes elegíveis estão efetivamente excluídas, R4 de palavras. Não repetir a prova de controles
+ou de cauda sem nova mudança/falha. B03/B06 e guarda de 3 GiB de benchmark permanecem inalterados.
+Resultados incompletos/logs arquivados sem perda têm manifestos de restauração; não apagar dados.

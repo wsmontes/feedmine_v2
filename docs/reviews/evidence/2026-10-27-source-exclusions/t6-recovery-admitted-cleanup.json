@@ -1,0 +1,12 @@
+[
+  {
+    "path": ".build/f13-ios-tests/ModuleCache.noindex",
+    "bytes": 200723267,
+    "reason": "two builds terminal exit0; regenerable intermediates only; products/results retained"
+  },
+  {
+    "path": ".build/f13-ios-tests/Build/Intermediates.noindex",
+    "bytes": 172539961,
+    "reason": "two builds terminal exit0; regenerable intermediates only; products/results retained"
+  }
+]

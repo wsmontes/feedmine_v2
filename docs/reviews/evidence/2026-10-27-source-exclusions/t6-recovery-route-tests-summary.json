@@ -1,0 +1,49 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "220FD546-698A-4DFE-A9E6-DD40135DED72",
+        "deviceName" : "iPhone 17 Pro Max",
+        "modelName" : "iPhone 17 Pro Max",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 1,
+      "passedTests" : 0,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "FeedMine · Built with macOS 26.5.2",
+  "expectedFailures" : 0,
+  "failedTests" : 1,
+  "finishTime" : 1793202334.485,
+  "passedTests" : 0,
+  "result" : "Failed",
+  "skippedTests" : 0,
+  "startTime" : 1793202264.764,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "XCTAssertTrue failed",
+      "targetName" : "FeedMineUITests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "SourceExclusionJourneyUITests/testRecoveryRouteRemovesRuleWithoutMovingTheLastPublishedCard()",
+      "testIdentifierURL" : "test://com.apple.xcode/FeedMineApp/FeedMineUITests/SourceExclusionJourneyUITests/testRecoveryRouteRemovesRuleWithoutMovingTheLastPublishedCard",
+      "testName" : "testRecoveryRouteRemovesRuleWithoutMovingTheLastPublishedCard()"
+    }
+  ],
+  "title" : "Test - FeedMine",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 1
+}

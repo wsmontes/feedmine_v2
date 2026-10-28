@@ -1,0 +1,129 @@
+[
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/00FED6E0-ECF0-491F-9FC9-DBE725468BD6/launchd_state.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/00FED6E0-ECF0-491F-9FC9-DBE725468BD6/launchd_state.log.gz",
+    "bytes": 17667425,
+    "gzip_bytes": 1002652,
+    "sha256_uncompressed": "4877d8d8732168ed7b83b8a2f82520bbe7c686288ba4c64194cb32c9c6285987",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792725860459351216,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/real-reader-journeys/evidence/journeys-validation-c95.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/00FED6E0-ECF0-491F-9FC9-DBE725468BD6/launchd_state.log.gz",
+    "saved_bytes": 16664773
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-F58C74A6-036F-4D33-A81A-7972AF5068B2-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E85700A8-C42D-4CBC-ABE2-10DAFAE6F089/Session-FeedMineUITests-2026-10-22_121754-PbgW8b.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-F58C74A6-036F-4D33-A81A-7972AF5068B2-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E85700A8-C42D-4CBC-ABE2-10DAFAE6F089/Session-FeedMineUITests-2026-10-22_121754-PbgW8b.log.gz",
+    "bytes": 7977937,
+    "gzip_bytes": 425852,
+    "sha256_uncompressed": "006dce7efc449741ec78472dedbcd850a0ff870b177cd6ee70ec32e02dc60e9c",
+    "verified": true,
+    "mode": 33152,
+    "mtime_ns": 1792696763577958101,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-F58C74A6-036F-4D33-A81A-7972AF5068B2-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E85700A8-C42D-4CBC-ABE2-10DAFAE6F089/Session-FeedMineUITests-2026-10-22_121754-PbgW8b.log.gz",
+    "saved_bytes": 7552085
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-F58C74A6-036F-4D33-A81A-7972AF5068B2-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E85700A8-C42D-4CBC-ABE2-10DAFAE6F089/StandardOutputAndStandardError-com.feedmine.app.txt",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-F58C74A6-036F-4D33-A81A-7972AF5068B2-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E85700A8-C42D-4CBC-ABE2-10DAFAE6F089/StandardOutputAndStandardError-com.feedmine.app.txt.gz",
+    "bytes": 40638141,
+    "gzip_bytes": 3714407,
+    "sha256_uncompressed": "6c97c4c99ebec432bab211c48a47db46a50ef6cb70b62ef9a450f6204ee049c0",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792696762787164301,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-F58C74A6-036F-4D33-A81A-7972AF5068B2-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E85700A8-C42D-4CBC-ABE2-10DAFAE6F089/StandardOutputAndStandardError-com.feedmine.app.txt.gz",
+    "saved_bytes": 36923734
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/00FED6E0-ECF0-491F-9FC9-DBE725468BD6/launchd_state.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/00FED6E0-ECF0-491F-9FC9-DBE725468BD6/launchd_state.log.gz",
+    "bytes": 16848656,
+    "gzip_bytes": 963161,
+    "sha256_uncompressed": "e8dd965e3785e6b0079e7ddf250e2b616cc0b974e3fb4e009371046e406102df",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792696773922485712,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/00FED6E0-ECF0-491F-9FC9-DBE725468BD6/launchd_state.log.gz",
+    "saved_bytes": 15885495
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log.gz",
+    "bytes": 72212880,
+    "gzip_bytes": 4359803,
+    "sha256_uncompressed": "3c0ea21fcbe2a29ea143c8dbd13cfc8765844006c8682b998ae78b771dc7467f",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792696764653911080,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/native-restore-resolution/evidence/final-fastdrag-20261022T1338Z.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log.gz",
+    "saved_bytes": 67853077
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-73B1ABAC-5E27-4F16-8528-55FF90F5287E-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E376E03E-1460-43F0-BD54-084CA2FF9E28/Session-FeedMineUITests-2026-10-22_012832-pMKLF8.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-73B1ABAC-5E27-4F16-8528-55FF90F5287E-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E376E03E-1460-43F0-BD54-084CA2FF9E28/Session-FeedMineUITests-2026-10-22_012832-pMKLF8.log.gz",
+    "bytes": 1583658,
+    "gzip_bytes": 116687,
+    "sha256_uncompressed": "54b55f26948927c65c7bbbb4827a5f7000570be9e7ffcb3e4cbeda5ed52bcabe",
+    "verified": true,
+    "mode": 33152,
+    "mtime_ns": 1792657843096264997,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-73B1ABAC-5E27-4F16-8528-55FF90F5287E-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E376E03E-1460-43F0-BD54-084CA2FF9E28/Session-FeedMineUITests-2026-10-22_012832-pMKLF8.log.gz",
+    "saved_bytes": 1466971
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-73B1ABAC-5E27-4F16-8528-55FF90F5287E-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E376E03E-1460-43F0-BD54-084CA2FF9E28/StandardOutputAndStandardError-com.feedmine.app.txt",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-73B1ABAC-5E27-4F16-8528-55FF90F5287E-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E376E03E-1460-43F0-BD54-084CA2FF9E28/StandardOutputAndStandardError-com.feedmine.app.txt.gz",
+    "bytes": 13718957,
+    "gzip_bytes": 1017841,
+    "sha256_uncompressed": "fc3f2c66265f53404d371980110bc6923939f1b491e2d2974d0c40b46c896f00",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792657867741984521,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/FeedMineUITests-73B1ABAC-5E27-4F16-8528-55FF90F5287E-Configuration-Test Scheme Action-Iteration-1/FeedMineUITests-E376E03E-1460-43F0-BD54-084CA2FF9E28/StandardOutputAndStandardError-com.feedmine.app.txt.gz",
+    "saved_bytes": 12701116
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/59CF88B8-273F-4CCF-BD2C-122D80BFFC4C/launchd_state.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/59CF88B8-273F-4CCF-BD2C-122D80BFFC4C/launchd_state.log.gz",
+    "bytes": 15404083,
+    "gzip_bytes": 855273,
+    "sha256_uncompressed": "04490990777ddc059953995244330d4e0ab1f5db3c3043b244d8c797f20cb06f",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792657895120576871,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/59CF88B8-273F-4CCF-BD2C-122D80BFFC4C/launchd_state.log.gz",
+    "saved_bytes": 14548810
+  },
+  {
+    "source": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log",
+    "gzip": ".build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log.gz",
+    "bytes": 32621812,
+    "gzip_bytes": 1930228,
+    "sha256_uncompressed": "39524ce62422d86c6fd1a67b32de6aa8587c0e11ec8320e62ab4b2c2fc41aa70",
+    "verified": true,
+    "mode": 33188,
+    "mtime_ns": 1792657886754726659,
+    "reason": "closed historical log in incomplete result; all bytes preserved",
+    "restore": "gunzip .build/omp-reader-controls-20261021/jobs/surface-release-proof/evidence/resume-remaining-classes-20261022T082829Z/SettingsAndDiscoveryJourneyUITests.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics/CoreSimulator.log.gz",
+    "saved_bytes": 30691584
+  },
+  {
+    "path": ".build/f13-ios-tests/ModuleCache.noindex",
+    "bytes": 200723266,
+    "reason": "successful build terminal; regenerable intermediates only; products preserved"
+  },
+  {
+    "path": ".build/f13-ios-tests/Build/Intermediates.noindex",
+    "bytes": 172203797,
+    "reason": "successful build terminal; regenerable intermediates only; products preserved"
+  }
+]

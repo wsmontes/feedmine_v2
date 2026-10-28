@@ -332,3 +332,19 @@ resultado final deve ser lido no relatório posterior, sem generalizar a aprova�
 Relatório e limites: [recuperação e controles](2026-10-28-f13-recovery-and-controls.md).
 Logs/patches de tentativas terminais em gzip verificado; manifestos JSON preservam comando, hashes,
 revisão base e capacidade. Não houve mudança de PD-4 nem publicação de release.
+
+
+## 2026-10-28 — rota real de recuperação e regressão de 117 pt
+
+O novo XCUI revelou um defeito: remover a regra retirava o footer e movia a carta tail 117 pt,
+sem alterar a janela admitida. Correção: recuperar pelo menu Mais de tamanho constante, com badge
+semântica e valor AX localizado; sem cartas permanece o atalho direto. Sem offset writes/spacer ou
+mudança de captura, scheduler, contexto ou PD-4. Decisão e custo de toque extra documentados na spec.
+
+GREEN: pacote completo1777/1skip/0 (106,192s), app 9/0, rota pt 1/0 e en AX XXXL 1/0. As duas rotas
+mantêm 12 IDs, viewport e cinco coordenadas da última carta admitida, delta zero. Revisão focal sem P1/P2.
+Relatório: [recuperação real e geometria](2026-10-28-f13-recovery-route.md).
+
+Capacidade exigiu um lote Swift por módulo e compactação sem perda de logs/resultados incompletos;
+manifestos registram hashes e restauração. Produtos, bancos, simuladores e resultados completos intactos.
+F13 segue aberta: causalidade da supply, A/B/shared/contexto, R4 e gates de benchmark existentes.

@@ -145,3 +145,18 @@ A suite final deve medir as variantes com palavras existentes e registrar qualqu
 pendência de produto, sem trocar a comparação de histórico por uma asserção menor. A origem de cada
 regra (contextual versus global) deve permanecer distinguível; não retirar palavras de uma Edition
 antiga supondo que eram globais. Não declarar UX13-B/D PASS só porque o novo caso de fonte passou.
+
+
+## Ajuste de representação após prova de cauda — 2026-10-28
+
+Decisão do implementador sob a autorização de continuidade autônoma: com histórico, a recuperação
+fica no menu Mais existente, com indicador eye.slash e valor AX Fontes excluídas no botão de tamanho
+constante. Abrir o menu oferece Rever fontes excluídas e o mesmo editor direto. Sem cartas, a
+explicação e o atalho direto permanecem na superfície de ausência. Estado idle/unavailable/deferred/
+endOfContent segue sendo só lembrete de regras efetivas, sem atribuir causalidade da ausência.
+
+Motivo medido: retirar o footer na cauda recuou o offset máximo e moveu a última carta admitida
+117 pt, mantendo os mesmos IDs. Não criar espaço invisível nem navegação/correção de offset.
+O custo da escolha é um toque extra no menu para quem tem histórico; não há novo espaço no chrome
+nem mudança de filtros/contexto, captura, scheduler ou PD-4. A prova deve comparar a mesma janela
+e carta em cinco observações após retornar do editor; não alega histórico integral nem supply A/B.

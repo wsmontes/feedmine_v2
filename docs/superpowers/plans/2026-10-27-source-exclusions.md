@@ -85,7 +85,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 ### Task 5: Explicit source action, visible reversible rules and recovery
 
-**Status:** incremento parcial: backend/store, seção removível pt/en, ação confirmada do catálogo e notificação de composição implementados; switch geral e recuperação de supply implementados/verificados no pacote; superfície/ação de importadas implementada; 9 testes app aprovados em iOS. Recuperação em idle/unavailable/deferred coberta no pacote; jornadas e destino real da recuperação ainda pendentes.
+**Status:** incremento parcial: backend/store, seção removível pt/en, ação confirmada do catálogo e notificação de composição implementados; switch geral e recuperação de supply implementados/verificados no pacote; superfície/ação de importadas implementada; 9 testes app aprovados em iOS. Recuperação sem cartas coberta no pacote; com histórico usa chrome estável após RED de 117 pt. Jornada real pelo menu/editor/remoção e viewport aprovada em pt/en AX XXXL. Recuperação causal de supply e UX13 integral ainda pendentes.
 
 **Files:** Modify `Sources/FeedMineUI/Settings/ReaderContentFilterView.swift`, `Sources/FeedMineComposition/ReaderContentFilterAdapter.swift`, `Sources/FeedMineUI/Sources/NodeSourcesView.swift`, source surface propagation (`SourceManagementView.swift`, `SourceManagementStore.swift` as needed), `FeedMineApp/FeedMineApp/FeedMineApp.swift`, `AppComposition.swift`, existing String Catalog; tests in `Tests/ArchitectureSmokeTests/ReaderContentFilterStoreTests.swift`, `Tests/FeedMineCompositionTests/ReaderContentFilterAdapterTests.swift` and app `ContentFilterTests.swift`.
 
@@ -117,7 +117,11 @@ implementation should not dispatch per-task implementers. One final independent 
 Current gates: actual iOS ContentFilterTests now pass (9/0, monitored symbol-less Debug build);
 empty-list no-op and cold recovery preserve the association. Idle/provisional recovery renders without
 a false search/end claim. Full package after AX grouping: 1777 tests, one skip, zero failures.
-T6 UI/process/word-history/review and the real recovery destination remain open. Standard benchmark
+T6 controls/process and recovery editor/tail geometry now pass in pt/en AX XXXL.
+Causal supply recovery, publication A/B/shared/context and word-history acceptance remain open.
+Latest whole-change plus focused review found no confirmed P1/P2; final whole acceptance remains open. Standard benchmark
 capacity guard remains 3 GiB. See docs/reviews/2026-10-28-f13-ios-validation.md.
 The existing F13 keyword/history caveat is explicit in the design, T6, and final acceptance record; it is
 not resolved by the source-only feature. This plan does not alter baseline criteria or authorize cleanup.
+
+2026-10-28 recovery checkpoint: actual tail RED de 117 pt -> chrome action GREEN delta zero across five observations in pt/en AX XXXL; package 1777/1skip/0 and app 9/0 on identified final build. See docs/reviews/2026-10-28-f13-recovery-route.md.

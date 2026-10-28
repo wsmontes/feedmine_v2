@@ -1,0 +1,127 @@
+[
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/ModuleCache",
+    "bytes": 249789834,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineMedia.build",
+    "bytes": 1108768,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedKit.build",
+    "bytes": 15063140,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/XMLKit.build",
+    "bytes": 1834901,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineMediaTests.build",
+    "bytes": 1248249,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineSyndicationTests.build",
+    "bytes": 5560986,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePersistence.build",
+    "bytes": 6188759,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineEditorial.build",
+    "bytes": 2004943,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineRuntime.build",
+    "bytes": 5934340,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineUI.build",
+    "bytes": 23603705,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/GRDB.build",
+    "bytes": 27380706,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePublication.build",
+    "bytes": 2082902,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineAcquisitionTests.build",
+    "bytes": 3747932,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineEditorialTests.build",
+    "bytes": 4551028,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineAcquisition.build",
+    "bytes": 2060173,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePublicationTests.build",
+    "bytes": 3509065,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineCompositionTests.build",
+    "bytes": 27194788,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/ArchitectureSmokeTests.build",
+    "bytes": 10833580,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineSyndication.build",
+    "bytes": 2572490,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineRuntimeTests.build",
+    "bytes": 16573857,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.build",
+    "bytes": 82157,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineDomain.build",
+    "bytes": 5783075,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePersistenceTests.build",
+    "bytes": 11760089,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineComposition.build",
+    "bytes": 9777895,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  },
+  {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMineDomainTests.build",
+    "bytes": 3340949,
+    "reason": "full package suite terminal exit0; compiler intermediates only; tested binary preserved"
+  }
+]

@@ -38,11 +38,13 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
     public let onBookmarks: () -> Void
     public let onFilters: () -> Void
     public let onNavigate: (ReaderDestination) -> Void
+    private let onManageSourceExclusions: (@MainActor () -> Void)?
 
     public init(appearance: ReaderAppearance, isSearching: Bool, bookmarkBoxActive: Bool,
         filterCount: Int, menuEntries: [ReaderMenuEntry],
         onToggleSearch: @escaping () -> Void, onBookmarks: @escaping () -> Void,
         onFilters: @escaping () -> Void, onNavigate: @escaping (ReaderDestination) -> Void,
+        onManageSourceExclusions: (@MainActor () -> Void)? = nil,
         @ViewBuilder status: () -> Status, @ViewBuilder lens: () -> Lens) {
         self.appearance = appearance
         self.isSearching = isSearching
@@ -53,6 +55,7 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
         self.onBookmarks = onBookmarks
         self.onFilters = onFilters
         self.onNavigate = onNavigate
+        self.onManageSourceExclusions = onManageSourceExclusions
         self.status = status()
         self.lens = lens()
     }
@@ -126,6 +129,13 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
     /// V1's ellipsis menu. Only the entries the host offered are drawn (T4's rule: no dead control).
     private var menu: some View {
         Menu {
+            if let onManageSourceExclusions {
+                Button(action: onManageSourceExclusions) {
+                    Label(String(localized: "Rever fontes excluídas"), systemImage: "eye.slash")
+                }
+                .accessibilityIdentifier("source-exclusion-recovery")
+                Divider()
+            }
             ForEach(Array(menuEntries.enumerated()), id: \.element.id) { index, entry in
                 if entry.isDestructive {
                     Button(role: .destructive) { onNavigate(entry.destination) } label: {
@@ -143,8 +153,20 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .readerHeaderButton(accent: appearance.accent)
+                .overlay(alignment: .topTrailing) {
+                    if onManageSourceExclusions != nil {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(appearance.accent)
+                            .padding(2)
+                            .background(.background, in: Circle())
+                            .accessibilityHidden(true)
+                    }
+                }
         }
         .accessibilityIdentifier("more-menu")
         .accessibilityLabel(String(localized: "Mais"))
+        .accessibilityValue(onManageSourceExclusions != nil
+            ? Text(String(localized: "Fontes excluídas")) : Text(""))
     }
 }
