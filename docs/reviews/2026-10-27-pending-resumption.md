@@ -158,3 +158,10 @@ Bloqueio de espaço reiterado em três retomadas, com ENOSPC real nesta. Agora *
 `/private/tmp` usa o mesmo volume, e o scratch total de 1,3 GiB não bastaria para alcançar a guarda de
 3 GiB nem se fosse apagado integralmente. Não houve limpeza. Detalhes/logs/rulings em
 `2026-10-27-source-exclusions-execution.md`. Nenhum processo próprio permanece em voo.
+
+
+## Retomada 2026-10-28 — validação iOS parcial desbloqueada
+
+Build Debug sem símbolos/índice e monitor de reserva de 700 MiB permitiram executar ContentFilterTests:
+8 testes, 0 falhas, no simulador iOS 26.5. Guarda de benchmark permanece 3 GiB. Relatório atual:
+`docs/reviews/2026-10-28-f13-ios-validation.md`. Próximo: recuperação em idle e T6 UI/processo/revisão.

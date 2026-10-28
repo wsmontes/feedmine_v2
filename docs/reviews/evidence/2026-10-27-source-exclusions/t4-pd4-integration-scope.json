@@ -1,0 +1,9 @@
+{
+  "command": "swift test --scratch-path .build/index-build --disable-index-store --jobs 1 --filter SourceExclusionProductionTests",
+  "exit_code": 0,
+  "executed_tests": 5,
+  "failures": 0,
+  "source_file": "Tests/FeedMineCompositionTests/SourceExclusionProductionTests.swift",
+  "source_sha256": "4eb70a47ab2962b6c18a1ef10332404c4b13b65958ab4c131b94590bccfd6e55",
+  "scope": "focused package integration; no new full-package claim"
+}

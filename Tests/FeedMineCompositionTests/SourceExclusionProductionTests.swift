@@ -15,7 +15,8 @@ private struct ExclusionProductionFixture: Sendable {
     let plan: FeedPlan
     let policy: ResolvedSelectionPolicy
 
-    init(_ test: XCTestCase) throws {
+    init(_ test: XCTestCase, sequencingVersion: UInt64 = 1,
+        sequencing: ResolvedSelectionPolicy.SequencingBehavior = .recencyDescending) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = directory
         test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
@@ -24,13 +25,13 @@ private struct ExclusionProductionFixture: Sendable {
         let context = FeedContext(request: .main), version = PolicyVersion(rawValue: 1)
         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
             catalogGeneration: .init(rawValue: 1), userSelectionVersion: version,
-            eligibilityPolicyVersion: version, scoringPolicyVersion: version, sequencingPolicyVersion: version,
+            eligibilityPolicyVersion: version, scoringPolicyVersion: version, sequencingPolicyVersion: .init(rawValue: sequencingVersion),
             exposurePolicyVersion: version, selectionSchemaVersion: .init(rawValue: 1))
         plan = FeedPlan(context: context, revision: revision)!
         policy = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: version,
-            eligibilityPolicyVersion: version, scoringPolicyVersion: version, sequencingPolicyVersion: version,
+            eligibilityPolicyVersion: version, scoringPolicyVersion: version, sequencingPolicyVersion: .init(rawValue: sequencingVersion),
             exposurePolicyVersion: version, selectionSchemaVersion: revision.selectionSchemaVersion,
-            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending,
+            eligibility: .structuralOnly, scoring: .equal, sequencing: sequencing,
             exposure: .excludePublishedRevisions)
     }
 
@@ -199,5 +200,110 @@ final class SourceExclusionProductionTests: XCTestCase {
         else { return XCTFail("the same queued story becomes eligible after rule removal") }
         XCTAssertEqual(try PublicationStore(database: f.database).card(id: receipt.cardIDs[0])?.originRecordID, a.originRecordID)
         XCTAssertEqual(reoffer.count, 0)
+    }
+}
+
+extension SourceExclusionProductionTests {
+    func testReopenedDatabaseRestoresPublishedAndSavedHistoryWhileRulesOnlyGateNewSupply() throws {
+        let f = try ExclusionProductionFixture(self)
+        _ = try f.admit(f.a, number: 1)
+        _ = try f.admit(f.b, number: 2)
+        guard case .published(_, let initial) = try InitialProductionSlice(database: f.database)
+            .run(f.initial(), prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("the proof starts with A and B published") }
+        let original = PublicationStore(database: f.database)
+        let a = try XCTUnwrap(initial.cardIDs.first { try original.card(id: $0)?.sourceID == f.a })
+        try original.toggleBookmark(cardID: a, at: Date(timeIntervalSince1970: 200))
+        let checkpoint = SessionStore.CheckpointRecord(editionID: f.editionID, cardID: a,
+            anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 201), topDelta: 12, cardHeight: 300)
+        try SessionStore(database: f.database).saveCheckpoint(checkpoint)
+        let cards = try initial.cardIDs.map { try XCTUnwrap(original.card(id: $0)) }
+        let segments = try original.segments(editionID: f.editionID)
+        let before = try XCTUnwrap(PublicationHistory(database: f.database)
+            .restore(backwardCapacity: 8, forwardCapacity: 16))
+        try f.exclude([f.a])
+
+        // A fresh connection and fresh production owners read the durable rule; this is not an app relaunch.
+        let reopened = try RuntimeDatabase(location: .init(directory: f.directory))
+        let store = PublicationStore(database: reopened)
+        let restored = try XCTUnwrap(PublicationHistory(database: reopened)
+            .restore(backwardCapacity: 8, forwardCapacity: 16))
+        XCTAssertEqual(restored, before)
+        XCTAssertEqual(try store.segments(editionID: f.editionID), segments)
+        XCTAssertEqual(try store.bookmarkedCardIDs(), [a])
+        XCTAssertEqual(try store.card(id: a), cards.first { $0.id == a })
+        let blocked = try ReaderSourceExclusionPolicy.capture(in: reopened)
+        XCTAssertEqual(blocked.sourceIDs, [f.a])
+        let newA = try f.admit(f.a, number: 3), newB = try f.admit(f.b, number: 4)
+        var request = try f.local()
+        request.sourceExclusions = blocked
+        let local = LocalProductionSlice(database: reopened)
+        guard case .published(_, let allowed) = try local.run(request, prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("a new opportunity publishes B while A remains excluded") }
+        XCTAssertEqual(allowed.cardIDs.count, 1)
+        XCTAssertEqual(try store.card(id: allowed.cardIDs[0])?.originRevisionID, newB.id)
+        XCTAssertEqual(try SessionStore(database: reopened).checkpoint(), checkpoint)
+        for card in cards { XCTAssertEqual(try store.card(id: card.id), card) }
+
+        try f.exclude([])
+        var unrestricted = try f.local()
+        unrestricted.sourceExclusions = try ReaderSourceExclusionPolicy.capture(in: reopened)
+        guard case .published(_, let recovered) = try local.run(unrestricted, prepare: ExclusionProductionFixture.prepared)
+        else { return XCTFail("removing the durable rule permits unpublished A") }
+        XCTAssertEqual(recovered.cardIDs.count, 1)
+        XCTAssertEqual(try store.card(id: recovered.cardIDs[0])?.originRevisionID, newA.id)
+        for _ in 0..<2 {
+            guard case .advancedWithoutPublication = try local.run(unrestricted, prepare: ExclusionProductionFixture.prepared)
+            else { return XCTFail("neither historical nor newly published material may recur") }
+        }
+        let all = try store.segments(editionID: f.editionID).flatMap(\.cardIDs)
+        XCTAssertEqual(Array(all.prefix(initial.cardIDs.count)), initial.cardIDs)
+        XCTAssertEqual(all.count, 4)
+        XCTAssertEqual(Set(all).count, all.count)
+        XCTAssertEqual(try store.bookmarkedCardIDs(), [a])
+        XCTAssertEqual(try SessionStore(database: reopened).checkpoint(), checkpoint)
+        for card in cards { XCTAssertEqual(try store.card(id: card.id), card) }
+    }
+}
+
+extension SourceExclusionProductionTests {
+    func testSourceExclusionPreservesPD4HoldAndPublishesWhenThePredecessorIsCompatible() throws {
+        for excludeTail in [false, true] {
+            let f = try ExclusionProductionFixture(self, sequencingVersion: 6, sequencing: .maximumDistance)
+            _ = try f.admit(f.a, number: 1)
+            _ = try f.admit(f.b, number: 2)
+            guard case .published(_, let first) = try InitialProductionSlice(database: f.database)
+                .run(f.initial(), prepare: ExclusionProductionFixture.prepared)
+            else { return XCTFail("initial A/B publication") }
+            let store = PublicationStore(database: f.database)
+            let old = try first.cardIDs.map { try XCTUnwrap(store.card(id: $0)) }
+            let tailSource = try XCTUnwrap(old.last?.sourceID)
+            let other = tailSource == f.a ? f.b : f.a
+            let excluded = excludeTail ? tailSource : other
+            let allowed = excludeTail ? other : tailSource
+            let blocked = try f.admit(excluded, number: 3)
+            let offered = try f.admit(allowed, number: 4)
+            try f.exclude([excluded])
+            let local = LocalProductionSlice(database: f.database)
+            let outcome = try local.run(f.local(), prepare: ExclusionProductionFixture.prepared)
+            if excludeTail {
+                guard case .published(_, let receipt) = outcome else { return XCTFail("compatible B must publish") }
+                XCTAssertEqual(receipt.cardIDs.count, 1)
+                XCTAssertEqual(try store.card(id: receipt.cardIDs[0])?.originRevisionID, offered.id)
+            } else {
+                guard case .advancedWithoutPublication = outcome else { return XCTFail("F13 must not bypass PD-4") }
+                XCTAssertEqual(try store.segments(editionID: f.editionID).flatMap(\.cardIDs), first.cardIDs)
+            }
+            for card in old { XCTAssertEqual(try store.card(id: card.id), card) }
+            try f.exclude([])
+            guard case .published(_, _) = try local.run(f.local(), prepare: ExclusionProductionFixture.prepared)
+            else { return XCTFail("removal allows the opposite source to unlock alternation") }
+            let ids = try store.segments(editionID: f.editionID).flatMap(\.cardIDs)
+            let revisions = try ids.map { try XCTUnwrap(store.card(id: $0)).originRevisionID }
+            XCTAssertEqual(revisions.filter { $0 == offered.id }.count, 1)
+            XCTAssertEqual(revisions.filter { $0 == blocked.id }.count, 1)
+            XCTAssertEqual(ids.count, 4)
+            for card in old { XCTAssertEqual(try store.card(id: card.id), card) }
+        }
     }
 }

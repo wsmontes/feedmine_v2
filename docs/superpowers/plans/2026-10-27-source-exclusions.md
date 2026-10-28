@@ -70,7 +70,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 ### Task 4: Production fiação, stale recovery and reconsideration
 
-**Status:** pacote integrado e verificado; T4 ainda aberta: build/teste iOS pendentes por capacidade. O parse não é essa prova.
+**Status:** build iOS aprovado e 8 ContentFilterTests executados no simulador; integração warm por nova composição e 5 testes de produção aprovados. Ainda aberta para no-op vazio e aceitação real de processo/UI; ver relatório 2026-10-28-f13-ios-validation.md.
 
 **Files:** Create `Sources/FeedMineRuntime/ProductionSourceExclusions.swift`; modify `Sources/FeedMineRuntime/InitialProductionSlice.swift`, `Sources/FeedMineRuntime/PendingMediaReconsideration.swift`, `Sources/FeedMineEditorial/CandidateProvider.swift` (shared projection), `Sources/FeedMineComposition/ReaderSourceExclusionPolicy.swift` (capture), `Sources/FeedMineRuntime/LocalProductionSlice.swift`, `Sources/FeedMineRuntime/RunwayController.swift`, `Sources/FeedMineComposition/FeedRunwayDriver.swift`, `Sources/FeedMineComposition/ColdFeedBootstrap.swift`, `FeedMineApp/FeedMineApp/AppComposition.swift`; add `Tests/FeedMineCompositionTests/SourceExclusionProductionTests.swift`, extend controller tests and `FeedMineApp/FeedMineAppTests/ContentFilterTests.swift`.
 
@@ -80,12 +80,12 @@ reusar `.build/index-build` enquanto existir e couberem.
 - [x] RED: cursor already passed A; remove rule, notify policy fact, existing lane can publish A with new ID only if material was never published. Assert no duplicates after two more opportunities.
 - [ ] RED: warm relaunch with rule restores published A unchanged but excludes new A; saved A still readable. Source-only edit never invokes session replacement. Cover empty source list as no-op.
 - [x] Implement single snapshot per local opportunity and guard transport to first/append. Handle stale as reconsiderable local state, with no failure/retry timer invented. Do not silently skip a guard in media reoffer/head/cold paths.
-- [ ] GREEN: package production/controller tests; compile and execute app ContentFilterTests when capacity permits. Record each separately; package cannot substitute for app test.
-- [ ] Commit runtime/composition wiring and tests.
+- [x] GREEN: package production/controller tests; app ContentFilterTests compilados/executados separadamente (8/0, simulador iOS 26.5, Debug sem símbolos).
+- [x] Commit runtime/composition wiring and tests (fc09ff88 e incrementos seguintes; correções do build iOS registradas no checkpoint atual).
 
 ### Task 5: Explicit source action, visible reversible rules and recovery
 
-**Status:** incremento parcial: backend/store, seção removível pt/en, ação confirmada do catálogo e notificação de composição implementados; switch geral e recuperação de supply implementados/verificados no pacote; superfície/ação de importadas implementada; validação iOS e jornadas ainda pendentes.
+**Status:** incremento parcial: backend/store, seção removível pt/en, ação confirmada do catálogo e notificação de composição implementados; switch geral e recuperação de supply implementados/verificados no pacote; superfície/ação de importadas implementada; 8 testes app aprovados em iOS. Recuperação em idle e jornadas ainda pendentes.
 
 **Files:** Modify `Sources/FeedMineUI/Settings/ReaderContentFilterView.swift`, `Sources/FeedMineComposition/ReaderContentFilterAdapter.swift`, `Sources/FeedMineUI/Sources/NodeSourcesView.swift`, source surface propagation (`SourceManagementView.swift`, `SourceManagementStore.swift` as needed), `FeedMineApp/FeedMineApp/FeedMineApp.swift`, `AppComposition.swift`, existing String Catalog; tests in `Tests/ArchitectureSmokeTests/ReaderContentFilterStoreTests.swift`, `Tests/FeedMineCompositionTests/ReaderContentFilterAdapterTests.swift` and app `ContentFilterTests.swift`.
 
@@ -93,7 +93,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 - [ ] RED: adding A leaves selection/authority unchanged and states rule; removing A preserves word rules/templates; master off retains source list; rename/removal from catalog leaves understandable removable row. Simulated failed write restores durable state and shows error.
 - [ ] Implement confirmation/action “Não publicar mais desta fonte”; existing filters show “Fontes excluídas”, remove action and master status. Add pt/en copy and stable AX identifiers. Add recovery action to source-filtered no-new-supply state without hiding historical cards or reporting network failure.
-- [ ] GREEN: UI-store/backend tests and app content-filter tests. Test imported source separately from catalog; source unavailable for naming uses frozen name.
+- [x] GREEN: UI-store/backend e app ContentFilterTests (8/0); importadas e autoridade catalog estabelecida testadas separadamente, nomes persistidos.
 - [ ] Commit complete controls/fiação with validation scope stated.
 
 ### Task 6: End-to-end acceptance and current-state ledger
@@ -114,6 +114,8 @@ Every design proof maps to T1–T6; domain/snapshot/coordinator names above are 
 Tasks 1–3 are complete; tasks 4–6 remain open. Native execution follows the user's autonomous-work instruction;
 implementation should not dispatch per-task implementers. One final independent review remains required.
 
-Current gating resource: app validation cannot be declared done at 711 MiB free; remeasure before starting.
+Current gates: actual iOS ContentFilterTests now pass (8/0, monitored symbol-less Debug build);
+empty-list no-op, idle recovery and T6 UI/process/word-history/review remain open. Standard benchmark
+capacity guard remains 3 GiB. See docs/reviews/2026-10-28-f13-ios-validation.md.
 The existing F13 keyword/history caveat is explicit in the design, T6, and final acceptance record; it is
 not resolved by the source-only feature. This plan does not alter baseline criteria or authorize cleanup.

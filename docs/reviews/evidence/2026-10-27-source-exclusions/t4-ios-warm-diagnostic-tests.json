@@ -1,0 +1,36 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-only-testing:FeedMineAppTests/ContentFilterTests/testWarmRelaunchKeepsSavedHistoryAndGatesOnlyNewSourceSupply",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t4-ios-warm-diagnostic-tests.xcresult"
+  ],
+  "compiled_build_report": "t4-ios-warm-diagnostic-build.json",
+  "compiled_build_report_sha256": "e8b001b16da1922f849dd438f204badb1836c0dd7cc7f8e7474c743a340bfa28",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "92de9087e1479418a6957224e2090e2c4812e47646d3f38567439a58df092287",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests": "7137f1d853f72d0c264a2703bd4cb86e66e4d91088fbed7320e5eda8a705163e"
+  },
+  "xctestrun_sha256": "61e99f9bb44881488954ecdd45b1ed80612aed456a61cb7f2abe2302df884031",
+  "exit_code": 65,
+  "stopped_for_disk_budget": false,
+  "free_before": 1247997952,
+  "minimum_observed_free": 755748864,
+  "free_after": 892637184,
+  "reserved_free_floor": 734003200,
+  "elapsed_seconds": 60.1,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/t4-ios-warm-diagnostic-tests.xcresult",
+  "scope": "actual iOS simulator app unit tests, existing Debug build without symbols; not benchmark or UI journey"
+}

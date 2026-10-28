@@ -1,0 +1,13 @@
+diff --git a/FeedMineApp/FeedMineApp/FeedMineApp.swift b/FeedMineApp/FeedMineApp/FeedMineApp.swift
+index 5141444a..07ac049c 100644
+--- a/FeedMineApp/FeedMineApp/FeedMineApp.swift
++++ b/FeedMineApp/FeedMineApp/FeedMineApp.swift
+@@ -668,7 +668,7 @@ struct FeedMineApp: App {
+                             if let store = composition.makeContentFilterStore() {
+                                 ReaderContentFilterView(store: store, appearance: appearance)
+                                     .toolbar {
+-                                        ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
++                                        ToolbarItem(placement: .topBarTrailing) {
+                                             Button(String(localized: "Concluir")) { popSurface() }
+                                         }
+                                     }

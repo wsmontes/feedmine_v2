@@ -1,0 +1,164 @@
+diff --git a/FeedMineApp/FeedMineApp/FeedMineApp.swift b/FeedMineApp/FeedMineApp/FeedMineApp.swift
+index 5141444a..9f894d44 100644
+--- a/FeedMineApp/FeedMineApp/FeedMineApp.swift
++++ b/FeedMineApp/FeedMineApp/FeedMineApp.swift
+@@ -475,8 +475,7 @@ struct FeedMineApp: App {
+                             onTryAgain: { Task { await composition.refreshFromTheReader() } },
+                             // R3: the flow that owns the reader's interests is the existing one.
+                             onAdjustInterests: { present(.settings) },
+-                            onManageSourceExclusions: composition.hasActiveSourceExclusions
+-                                ? { present(.contentFilters) } : nil,
++                            onManageSourceExclusions: sourceExclusionRecoveryAction,
+                             editorial: { card, index, previous in
+                                 editorialInvitation(for: card, index: index, previous: previous,
+                                     association: association)
+@@ -664,16 +663,7 @@ struct FeedMineApp: App {
+                             }
+                         }
+                     case .contentFilters:
+-                        NavigationStack {
+-                            if let store = composition.makeContentFilterStore() {
+-                                ReaderContentFilterView(store: store, appearance: appearance)
+-                                    .toolbar {
+-                                        ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
+-                                            Button(String(localized: "Concluir")) { popSurface() }
+-                                        }
+-                                    }
+-                            }
+-                        }
++                        contentFilterSurface
+                     case .settings:
+                         NavigationStack {
+                             if let store = settingsStore {
+@@ -2065,6 +2055,24 @@ struct ReaderHost: UIViewControllerRepresentable {
+             : Text(verbatim: ""))
+     }
+ 
++    private var sourceExclusionRecoveryAction: (@MainActor () -> Void)? {
++        guard composition.hasActiveSourceExclusions else { return nil }
++        return { present(.contentFilters) }
++    }
++
++    private var contentFilterSurface: some View {
++        NavigationStack {
++            if let store = composition.makeContentFilterStore() {
++                ReaderContentFilterView(store: store, appearance: appearance)
++                    .toolbar {
++                        ToolbarItem(placement: .topBarTrailing) {
++                            Button(String(localized: "Concluir")) { popSurface() }
++                        }
++                    }
++            }
++        }
++    }
++
+     private var activeContextLabel: String? {
+         switch composition.currentContext {
+         case .main: return nil
+diff --git a/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift b/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
+index 5d8ab7e9..da756928 100644
+--- a/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
++++ b/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
+@@ -268,3 +268,102 @@ extension ContentFilterTests {
+         XCTAssertEqual(try library.sourceLinks(), before)
+     }
+ }
++
++extension ContentFilterTests {
++    func testWarmRelaunchKeepsSavedHistoryAndGatesOnlyNewSourceSupply() async throws {
++        let directory = directory(), firstRoot = root(directory: directory)
++        await firstRoot.launch()
++        let firstAssociation = try XCTUnwrap(firstRoot.association)
++        let db = try RuntimeDatabase(location: .init(directory: directory))
++        let publication = PublicationStore(database: db)
++        let editionID = try XCTUnwrap(firstAssociation.store.state.presentation).editionID
++        let initialIDs = try publication.segments(editionID: editionID).flatMap(\.cardIDs)
++        let savedID = try XCTUnwrap(initialIDs.first)
++        let saved = try XCTUnwrap(publication.card(id: savedID))
++        let a = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID == saved.sourceID })
++        let b = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID != a.sourceID })
++        try publication.toggleBookmark(cardID: savedID, at: Date())
++        try await firstRoot.excludeSource(forKey: a.principal, displayName: a.displayName)
++        await firstAssociation.close()
++        let frozenIDs = try publication.segments(editionID: editionID).flatMap(\.cardIDs)
++        let frozen = try frozenIDs.map { try XCTUnwrap(publication.card(id: $0)) }
++        let checkpoint = try XCTUnwrap(SessionStore(database: db).checkpoint())
++
++        let warmRoot = root(directory: directory)
++        await warmRoot.launch()
++        let warm = try XCTUnwrap(warmRoot.association)
++        XCTAssertTrue(warmRoot.hasActiveSourceExclusions)
++        let restored = try XCTUnwrap(warm.store.state.presentation)
++        XCTAssertEqual(restored.editionID, editionID)
++        XCTAssertEqual(restored.window.anchor.cardID, checkpoint.cardID)
++        XCTAssertEqual(try publication.bookmarkedCardIDs(), [savedID])
++        for card in frozen { XCTAssertEqual(try publication.card(id: card.id), card) }
++
++        XCTAssertEqual(try SessionStore(database: db).checkpoint(), checkpoint)
++        let newA = try admitWarmSupply(sourceID: a.sourceID, title: "F13 excluded new A", database: db)
++        let newB = try admitWarmSupply(sourceID: b.sourceID, title: "F13 permitted new B", database: db)
++        await warm.driver.noteLocalSupplyFact()
++        // Fresh supply does not force publication into an already stocked reader. The next opportunity
++        // is a real tail approach; only this intentional reader movement may change the durable anchor.
++        try await waitForWarmPublication(newB.id, association: warm, publication: publication, requestTailDemand: true)
++        _ = try await warm.session.checkpointCurrentPosition(at: Date())
++        let demandCheckpoint = try SessionStore(database: db).checkpoint()
++        let demandAnchor = try XCTUnwrap(warm.store.state.presentation).window.anchor
++        var ids = try publication.segments(editionID: editionID).flatMap(\.cardIDs)
++        var revisions = try ids.map { try XCTUnwrap(publication.card(id: $0)).originRevisionID }
++        XCTAssertFalse(revisions.contains(newA.id))
++        XCTAssertEqual(revisions.filter { $0 == newB.id }.count, 1)
++        XCTAssertTrue(warmRoot.association === warm)
++
++        let filters = try XCTUnwrap(warmRoot.makeContentFilterStore())
++        await filters.load()
++        let removed = await filters.removeSourceExclusion(a.sourceID)
++        XCTAssertTrue(removed)
++        try await waitForWarmPublication(newA.id, association: warm, publication: publication)
++        for _ in 0..<2 { _ = try await warm.driver.drive(resources: warm.resources) }
++        ids = try publication.segments(editionID: editionID).flatMap(\.cardIDs)
++        revisions = try ids.map { try XCTUnwrap(publication.card(id: $0)).originRevisionID }
++        XCTAssertEqual(revisions.filter { $0 == newA.id }.count, 1)
++        XCTAssertEqual(revisions.filter { $0 == newB.id }.count, 1)
++        XCTAssertEqual(Array(ids.prefix(frozenIDs.count)), frozenIDs)
++        XCTAssertEqual(try publication.bookmarkedCardIDs(), [savedID])
++        XCTAssertEqual(try SessionStore(database: db).checkpoint(), demandCheckpoint)
++        for card in frozen { XCTAssertEqual(try publication.card(id: card.id), card) }
++        XCTAssertEqual(warm.store.state.presentation?.window.anchor, demandAnchor)
++        XCTAssertTrue(warmRoot.association === warm)
++        await warm.close()
++    }
++
++    private func admitWarmSupply(sourceID: SourceID, title: String, database: RuntimeDatabase) throws -> OriginRevision {
++        let origin = OriginRecordID(), now = Date()
++        let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin,
++            externalVersionIdentity: nil, headline: title, summary: "Independent local source exclusion proof",
++            bodyText: String(repeating: "Locally retained story body. ", count: 20), authoredAt: now,
++            modifiedAt: nil, observedAt: now, language: "en", primaryLink: nil, searchProjection: nil, providerID: nil)
++        try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
++            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "f13-app-proof",
++                value: origin.rawValue.uuidString, role: .object), revision: revision, mediaCandidates: [],
++            availability: .available, observedAt: now, expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
++            membershipMutations: [.upsert(sourceID: sourceID, kind: .direct, observedAt: now)]))
++        return revision
++    }
++
++    private func waitForWarmPublication(_ revision: OriginRevisionID, association: FeedAssociation,
++        publication: PublicationStore, requestTailDemand: Bool = false) async throws {
++        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
++        while ContinuousClock.now < deadline {
++            if requestTailDemand {
++                // Advance through already published reserve before expecting a new publication.
++                let tail = try XCTUnwrap(association.store.state.presentation?.window.items.last)
++                await association.viewport(.init(anchor: .init(cardID: tail.id, placement: .top)), activity: .explicitTailApproach)
++            } else {
++                _ = try await association.driver.drive(resources: association.resources)
++            }
++            let edition = try XCTUnwrap(association.store.state.presentation?.editionID)
++            let ids = try publication.segments(editionID: edition).flatMap(\.cardIDs)
++            if try ids.contains(where: { try publication.card(id: $0)?.originRevisionID == revision }) { return }
++            try await Task.sleep(for: .milliseconds(20))
++        }
++        XCTFail("the existing local-supply opportunity did not publish the expected allowed revision")
++    }
++}

@@ -475,8 +475,7 @@ struct FeedMineApp: App {
                             onTryAgain: { Task { await composition.refreshFromTheReader() } },
                             // R3: the flow that owns the reader's interests is the existing one.
                             onAdjustInterests: { present(.settings) },
-                            onManageSourceExclusions: composition.hasActiveSourceExclusions
-                                ? { present(.contentFilters) } : nil,
+                            onManageSourceExclusions: sourceExclusionRecoveryAction,
                             editorial: { card, index, previous in
                                 editorialInvitation(for: card, index: index, previous: previous,
                                     association: association)
@@ -664,16 +663,7 @@ struct FeedMineApp: App {
                             }
                         }
                     case .contentFilters:
-                        NavigationStack {
-                            if let store = composition.makeContentFilterStore() {
-                                ReaderContentFilterView(store: store, appearance: appearance)
-                                    .toolbar {
-                                        ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
-                                            Button(String(localized: "Concluir")) { popSurface() }
-                                        }
-                                    }
-                            }
-                        }
+                        contentFilterSurface
                     case .settings:
                         NavigationStack {
                             if let store = settingsStore {
@@ -2063,6 +2053,24 @@ struct ReaderHost: UIViewControllerRepresentable {
         .accessibilityValue(composition.contextSwitchInProgress
             ? Text("Mudando de contexto")
             : Text(verbatim: ""))
+    }
+
+    private var sourceExclusionRecoveryAction: (@MainActor () -> Void)? {
+        guard composition.hasActiveSourceExclusions else { return nil }
+        return { present(.contentFilters) }
+    }
+
+    private var contentFilterSurface: some View {
+        NavigationStack {
+            if let store = composition.makeContentFilterStore() {
+                ReaderContentFilterView(store: store, appearance: appearance)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(String(localized: "Concluir")) { popSurface() }
+                        }
+                    }
+            }
+        }
     }
 
     private var activeContextLabel: String? {

@@ -287,3 +287,26 @@ parte de T6, sem alegação de PASS por compilação do pacote.
 Verificação final de importadas: suíte completa **1772 testes, 1 skip, 0 falhas**, 97,537 s;
 app parse exit 0 (sintaxe somente); avaliador 6/6; diff sem erros. Espaço livre ~2,1 GiB.
 T4/T5/T6 seguem abertas nos gates iOS/aceitação. A tentativa de compressão não foi aplicada a originais.
+
+
+## Continuação — restauração com política durável
+
+Nova prova de integração (sem alteração de produção): publica A+B, salva A e grava âncora com
+geometria, persiste exclusão de A e cria conexão/owners de produção novos sobre o mesmo arquivo.
+O RestoredPublication inteiro, CardRecords, segmentos, bookmark e checkpoint permanecem iguais.
+Nova supply publica B e retém A; remover a regra permite somente a A inédita. Duas oportunidades
+extras não repetem material; prefixo/âncora/salvo continuam iguais. **4 testes focados, zero falhas**,
+0,307 s. A prova é de reabertura de banco/conexão; não se declara relaunch do app ou jornada iOS.
+
+Uma avaliação separada de build-for-testing iOS foi iniciada, com Debug sem símbolos, sem índices,
+checkouts já existentes e um job. O monitor interrompe abaixo de 700 MiB livres. Isso avalia o
+footprint específico de testes do app; não reduz a guarda de 3 GiB do ensaio padrão/benchmark,
+não executa benchmark e não substitui configuração de release. Resultado do build será registrado
+em t4-ios-budgeted-build.json/log. Antes de concluir, execução de ContentFilterTests continua pendente.
+
+
+## Atualização de 2026-10-28
+
+Build iOS e execução agora disponíveis com configuração de menor footprint: 8 testes app aprovados,
+mais 5 testes focados de integração. Diagnóstico PD-4, limites de escopo, hashes e próximos gates em
+`docs/reviews/2026-10-28-f13-ios-validation.md`. F13 não concluída; recuperação em idle é a próxima correção.
