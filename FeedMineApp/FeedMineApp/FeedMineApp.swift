@@ -616,7 +616,10 @@ struct FeedMineApp: App {
                                             NodeSourcesView(store: store, node: node,
                                                 onOpenNode: { sourcesPath.append(.node($0)) },
                                                 onOpenSource: { openSourceRow($0) },
-                                                onClose: { popSurface() })
+                                                onClose: { popSurface() },
+                                                onExcludeSource: { row in
+                                                    try await composition.excludeSource(forKey: row.id, displayName: row.title)
+                                                })
                                         }
                                     }
                             } else {

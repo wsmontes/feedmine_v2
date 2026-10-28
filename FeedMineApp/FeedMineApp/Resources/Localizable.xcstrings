@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "pt-BR",
   "strings": {
+    "Não publicar mais desta fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop publishing from this source"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não publicar mais desta fonte"
+          }
+        }
+      }
+    },
+    "Impede novas publicações desta fonte. Histórias já publicadas e salvas permanecem. Reverta em Filtros de conteúdo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prevents new publications from this source. Published and saved stories remain. Undo in Content filters."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impede novas publicações desta fonte. Histórias já publicadas e salvas permanecem. Reverta em Filtros de conteúdo."
+          }
+        }
+      }
+    },
     "Nenhuma fonte excluída.": {
       "localizations": {
         "en": {

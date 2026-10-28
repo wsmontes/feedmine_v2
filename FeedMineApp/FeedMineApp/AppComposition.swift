@@ -1512,6 +1512,19 @@ final class AppComposition {
         return true
     }
 
+    /// The source surface passes its known key; the existing resolver supplies the authority's identity.
+    /// Exclusion changes future supply without changing selection or opening a new reader session.
+    func excludeSource(forKey key: String, displayName: String) async throws {
+        guard let feed = selectedFeeds.first(where: { $0.principal == key }) ?? catalogueFeed(forKey: key),
+            let store = makeContentFilterStore() else { throw CocoaError(.fileReadNoSuchFile) }
+        await store.load()
+        guard store.errorMessage == nil else { throw CocoaError(.fileReadUnknown) }
+        let rule = ReaderSourceExclusion(sourceID: feed.sourceID, displayName: displayName)
+        // An identical existing rule is already the requested durable state.
+        if store.sourceExclusions.contains(rule) { return }
+        guard await store.addSourceExclusion(rule) else { throw CocoaError(.fileWriteUnknown) }
+    }
+
     /// The catalogue's own identity for one key, resolved by the owner that produced it. Nil when the key is not
     /// in the active catalogue or cannot be fetched; nothing is derived here and no URL or title is matched.
     private func catalogueFeed(forKey key: String) -> TrustedFeed? {

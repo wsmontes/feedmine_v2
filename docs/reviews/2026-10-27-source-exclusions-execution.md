@@ -196,3 +196,25 @@ foi marcado. T6 e as ressalvas de histórico de palavras/B03/B06 continuam abert
 Verificação final deste incremento: suíte completa do pacote **1767 testes, 1 skip, 0 falhas**,
 99,452 s; parse do app exit 0 (apenas sintaxe); seis hashes do avaliador OK; diff sem erros.
 Espaço após a regeneração de caches: cerca de 2,3 GiB, ainda abaixo do guard iOS.
+
+
+## Continuação — ação explícita no catálogo
+
+O menu de uma fonte do catálogo oferece “Não publicar mais desta fonte”, também como ação de
+acessibilidade, e pede confirmação sobre novas publicações, preservação de histórico/salvos e reversão.
+O host resolve o key pela mesma autoridade existente usada para abrir a fonte, passa o SourceID ao
+store de filtros e aguarda a gravação/notificação. A operação não chama adoção de seleção nem abertura
+ou substituição de sessão. Erro de resolução/gravação produz mensagem de falha ao salvar.
+O editor de rascunho de filtros, que compartilha NodeSourcesView, não oferece essa ação: o host não
+fornece o callback nessa superfície. A fonte conserva seu toggle independente.
+
+O teste app de continuidade agora chama a ação real do host e compara seleção/version/contexto,
+além de associação/Edition/âncora/prefixo. **Execução iOS ainda NOT_RUN:** o parse só prova sintaxe.
+O pacote compilou NodeSourcesView e passou os dois testes de backend/store; isso não prova a confirmação
+nem os controles em tela. Copy pt/en e identificadores AX estão presentes; jornada visual pendente.
+
+Restam ação acessível para fonte importada, recuperação de supply, testes iOS e T6. A frente continua aberta.
+
+Verificação final da ação do catálogo: pacote **1767 testes, 1 skip, 0 falhas**, 97,052 s;
+parse de AppComposition/FeedMineApp/ContentFilterTests exit 0 (sintaxe somente), hashes do avaliador 6/6,
+diff sem erros. Espaço livre ~2,3 GiB; build iOS não iniciado.
