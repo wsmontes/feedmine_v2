@@ -17,6 +17,36 @@ import Foundation
 import FeedMineDomain
 
 public enum ReaderContentFilterPolicy {
+    public enum ResolutionError: Error, Equatable {
+        case duplicateTemplate(String)
+        case missingTemplates([String])
+    }
+
+    /// Strict resolution for future publication. An unresolved active template is not permission to publish.
+    /// Context-owned words are independent of the global gate; neither input is mutated.
+    public static func resolvedExclusions(settings: ReaderSettings, templates: [ReaderContentFilterTemplate],
+        context: ReaderContentExclusions = .disabled,
+        languages: [String] = ReaderContentFilterTemplate.preferredLanguages) throws -> ReaderContentExclusions {
+        guard settings.contentFiltersEnabled else {
+            return combining(context: context, global: .disabled)
+        }
+        var words = settings.contentFilterRules
+        if !settings.contentFilterTemplates.isEmpty {
+            var byKey: [String: ReaderContentFilterTemplate] = [:]
+            for template in templates.sorted(by: { $0.key < $1.key }) {
+                guard byKey.updateValue(template, forKey: template.key) == nil else {
+                    throw ResolutionError.duplicateTemplate(template.key)
+                }
+            }
+            let missing = Set(settings.contentFilterTemplates).filter { byKey[$0] == nil }.sorted()
+            guard missing.isEmpty else { throw ResolutionError.missingTemplates(missing) }
+            for key in settings.contentFilterTemplates {
+                words.append(contentsOf: byKey[key]!.rules(languages: languages))
+            }
+        }
+        return combining(context: context, global: ReaderContentExclusions(isEnabled: true, rules: words))
+    }
+
     /// The keyword set the reader's own rules and their enabled templates add up to, whether or not the gate is
     /// on. This is what a surface states and what a rule is added to or removed from.
     public static func rules(settings: ReaderSettings, templates: [ReaderContentFilterTemplate],

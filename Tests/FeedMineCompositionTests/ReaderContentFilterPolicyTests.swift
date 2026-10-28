@@ -95,6 +95,67 @@ final class ReaderContentFilterPolicyTests: XCTestCase {
             "a disabled set contributes nothing, rules or not")
     }
 
+    func testStrictResolutionRejectsMissingTemplates() {
+        let settings = ReaderSettings(contentFilterTemplates: ["z", "missing", "z"])
+        XCTAssertThrowsError(try ReaderContentFilterPolicy.resolvedExclusions(
+            settings: settings, templates: [template], languages: ["en"])) {
+            XCTAssertEqual($0 as? ReaderContentFilterPolicy.ResolutionError,
+                .missingTemplates(["missing", "z"]))
+        }
+    }
+
+    func testStrictResolutionRejectsDuplicateCatalogueDefinitions() {
+        let settings = ReaderSettings(contentFilterTemplates: ["crypto"])
+        XCTAssertThrowsError(try ReaderContentFilterPolicy.resolvedExclusions(
+            settings: settings, templates: [template, template], languages: ["en"])) {
+            XCTAssertEqual($0 as? ReaderContentFilterPolicy.ResolutionError, .duplicateTemplate("crypto"))
+        }
+    }
+
+    func testStrictDuplicateValidationIncludesUnselectedKeysAndIsOrderIndependent() {
+        let a = ReaderContentFilterTemplate(key: "a", names: [:], keywords: ["en": ["alpha"]])
+        let z = ReaderContentFilterTemplate(key: "z", names: [:], keywords: ["en": ["zeta"]])
+        let catalogue = [z, a, template, z, a]
+        for entries in [catalogue, Array(catalogue.reversed())] {
+            XCTAssertThrowsError(try ReaderContentFilterPolicy.resolvedExclusions(
+                settings: ReaderSettings(contentFilterTemplates: ["crypto"]),
+                templates: entries, languages: ["en"])) {
+                XCTAssertEqual($0 as? ReaderContentFilterPolicy.ResolutionError, .duplicateTemplate("a"))
+            }
+        }
+    }
+
+    func testStrictGateOffIgnoresUnresolvedTemplatesAndKeepsContextWords() throws {
+        let context = ReaderContentExclusions(isEnabled: true, rules: ["crypto", "squash"])
+        let settings = ReaderSettings(contentFiltersEnabled: false, contentFilterRules: ["crypto"],
+            contentFilterTemplates: ["missing"])
+        XCTAssertEqual(try ReaderContentFilterPolicy.resolvedExclusions(settings: settings,
+            templates: [template, template], context: context, languages: ["en"]), context)
+    }
+
+    func testStrictResolutionCombinesContextGlobalAndLocalizedTemplateWords() throws {
+        let settings = ReaderSettings(contentFilterRules: [" SQUASH ", "crypto"],
+            contentFilterTemplates: ["crypto"])
+        let context = ReaderContentExclusions(isEnabled: true, rules: ["context", "squash"])
+        XCTAssertEqual(try ReaderContentFilterPolicy.resolvedExclusions(settings: settings,
+            templates: [template], context: context, languages: ["pt"]),
+            ReaderContentExclusions(isEnabled: true,
+                rules: ["bitcoin", "blockchain", "context", "cripto", "crypto", "squash"]))
+    }
+
+    func testStrictEffectivePolicyIgnoresTemplateLabelsAndRuleOrder() throws {
+        let renamed = ReaderContentFilterTemplate(key: "crypto", names: ["en": "Renamed"],
+            keywords: ["en": ["blockchain", "crypto", "crypto"]])
+        let settings = ReaderSettings(contentFilterTemplates: ["crypto"])
+        XCTAssertEqual(try ReaderContentFilterPolicy.resolvedExclusions(settings: settings,
+            templates: [template], languages: ["en"]),
+            try ReaderContentFilterPolicy.resolvedExclusions(settings: settings,
+                templates: [renamed], languages: ["en"]))
+        XCTAssertEqual(try ReaderContentFilterPolicy.resolvedExclusions(
+            settings: ReaderSettings(contentFilterRules: [" Explicit "]), templates: [], languages: ["en"]),
+            ReaderContentExclusions(isEnabled: true, rules: ["explicit"]))
+    }
+
     /// The catalogue is V1's own file, read from the package: six templates, each with English words.
     func testTheCatalogueIsV1sOwnFile() {
         let templates = ReaderContentFilterCatalog.bundled()

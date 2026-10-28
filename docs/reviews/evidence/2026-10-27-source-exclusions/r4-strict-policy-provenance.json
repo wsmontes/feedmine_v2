@@ -1,0 +1,25 @@
+{
+  "base": "6dcf9cf4",
+  "files_sha256": {
+    "Sources/FeedMineComposition/ReaderContentFilterPolicy.swift": "e93a96479109e47163c666ab2ca8655328d972bd281bcbe7bfa0e9bca66d14e1",
+    "Tests/FeedMineCompositionTests/ReaderContentFilterPolicyTests.swift": "0251257a66c134fb321563e0fe74193ff1126f23f597291a214b7963e49415aa"
+  },
+  "logs": {
+    "r4-strict-policy-red.log.gz": {
+      "uncompressed_sha256": "a58a06c9d93a4bd8a4e930783360f702766edee4266ba6688b8c26051603565f",
+      "bytes": 773354
+    },
+    "r4-strict-policy-green.log.gz": {
+      "uncompressed_sha256": "5c7fe763f8d1c5b1496b1ca1152ba64afd4a2c5aa975fd119eeccd9190b756fa",
+      "bytes": 563104
+    },
+    "r4-strict-policy-final.log.gz": {
+      "uncompressed_sha256": "a5dd1d4354cfd0e220e830b50d284a45e3630687a362c7f14c0b134af8b848e4",
+      "bytes": 10784
+    }
+  },
+  "final_tests": 14,
+  "failures": 0,
+  "R4_host_status": "FAIL",
+  "production_host_wiring_changed": false
+}

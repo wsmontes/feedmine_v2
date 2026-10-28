@@ -1,0 +1,23 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--scratch-path",
+    ".build/index-build",
+    "--disable-index-store",
+    "--jobs",
+    "1",
+    "-Xswiftc",
+    "-gnone",
+    "--filter",
+    "ReaderContentFilterPolicyTests"
+  ],
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "minimum_observed_free": 460070912,
+  "free_before": 460533760,
+  "free_after": 459898880,
+  "reserved_free_floor": 314572800,
+  "elapsed_seconds": 5.03925283299759,
+  "scope": "filtered macOS Debug policy tests without symbols; not benchmark or R4 host acceptance"
+}
