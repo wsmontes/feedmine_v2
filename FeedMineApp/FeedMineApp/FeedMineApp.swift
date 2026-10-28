@@ -95,6 +95,7 @@ struct FeedMineApp: App {
         case bookmarkBoxes
         case collections
         case settings
+        case contentFilters
         case curatedHood
         case export
         case filters
@@ -108,6 +109,7 @@ struct FeedMineApp: App {
             case .bookmarkBoxes: return "bookmarkBoxes"
             case .collections: return "collections"
             case .settings: return "settings"
+            case .contentFilters: return "contentFilters"
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
@@ -473,6 +475,8 @@ struct FeedMineApp: App {
                             onTryAgain: { Task { await composition.refreshFromTheReader() } },
                             // R3: the flow that owns the reader's interests is the existing one.
                             onAdjustInterests: { present(.settings) },
+                            onManageSourceExclusions: composition.hasActiveSourceExclusions
+                                ? { present(.contentFilters) } : nil,
                             editorial: { card, index, previous in
                                 editorialInvitation(for: card, index: index, previous: previous,
                                     association: association)
@@ -653,6 +657,17 @@ struct FeedMineApp: App {
                                     }
                             } else {
                                 ProgressView("Abrindo as caixas de salvos")
+                            }
+                        }
+                    case .contentFilters:
+                        NavigationStack {
+                            if let store = composition.makeContentFilterStore() {
+                                ReaderContentFilterView(store: store, appearance: appearance)
+                                    .toolbar {
+                                        ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
+                                            Button(String(localized: "Concluir")) { popSurface() }
+                                        }
+                                    }
                             }
                         }
                     case .settings:

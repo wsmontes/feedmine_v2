@@ -85,7 +85,7 @@ reusar `.build/index-build` enquanto existir e couberem.
 
 ### Task 5: Explicit source action, visible reversible rules and recovery
 
-**Status:** incremento parcial: backend/store, seção removível pt/en, ação confirmada do catálogo e notificação de composição implementados; ação para importadas, recuperação de supply e validação iOS ainda pendentes.
+**Status:** incremento parcial: backend/store, seção removível pt/en, ação confirmada do catálogo e notificação de composição implementados; switch geral e recuperação de supply implementados/verificados no pacote; ação para importadas e validação iOS ainda pendentes.
 
 **Files:** Modify `Sources/FeedMineUI/Settings/ReaderContentFilterView.swift`, `Sources/FeedMineComposition/ReaderContentFilterAdapter.swift`, `Sources/FeedMineUI/Sources/NodeSourcesView.swift`, source surface propagation (`SourceManagementView.swift`, `SourceManagementStore.swift` as needed), `FeedMineApp/FeedMineApp/FeedMineApp.swift`, `AppComposition.swift`, existing String Catalog; tests in `Tests/ArchitectureSmokeTests/ReaderContentFilterStoreTests.swift`, `Tests/FeedMineCompositionTests/ReaderContentFilterAdapterTests.swift` and app `ContentFilterTests.swift`.
 

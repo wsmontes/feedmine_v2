@@ -30,6 +30,7 @@ public struct FeedScreen: View {
     /// executes neither.
     private let onTryAgain: @MainActor () -> Void
     private let onAdjustInterests: @MainActor () -> Void
+    private let onManageSourceExclusions: (@MainActor () -> Void)?
     /// The host's editorial row: offered between cards, and only where the host says there is something truthful
     /// to ask. Nil — or a nil answer for a card — draws nothing, so the feed surface never invents an offer.
     private let editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)?
@@ -41,6 +42,7 @@ public struct FeedScreen: View {
         onChooseSources: @escaping @MainActor () -> Void = {},
         onTryAgain: @escaping @MainActor () -> Void = {},
         onAdjustInterests: @escaping @MainActor () -> Void = {},
+        onManageSourceExclusions: (@MainActor () -> Void)? = nil,
         editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)? = nil) {
         self.store = store
         self.appearance = appearance
@@ -51,6 +53,7 @@ public struct FeedScreen: View {
         self.onChooseSources = onChooseSources
         self.onTryAgain = onTryAgain
         self.onAdjustInterests = onAdjustInterests
+        self.onManageSourceExclusions = onManageSourceExclusions
         self.editorial = editorial
     }
 
@@ -97,9 +100,7 @@ public struct FeedScreen: View {
             // The same chrome is mounted over the loading content; the content stays the work surface it was.
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
-                FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                    onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
-                    sourceContextName: sourceContextName)
+                loadingSurface
             }
         }
     }
@@ -118,9 +119,7 @@ public struct FeedScreen: View {
     /// The preparation surface as a cover: the same honest surface the launch already draws (its copy is the
     /// work state's own), filled and opaque so the reader never sees a half-composed screen beneath it.
     private var preparationSurface: some View {
-        FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-            onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
-            sourceContextName: sourceContextName)
+        loadingSurface
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.background)
     }
@@ -265,9 +264,29 @@ public struct FeedScreen: View {
                 .overlay(alignment: .bottom) { workFeedback }
             }
         } else {
+            loadingSurface
+        }
+    }
+
+    private var loadingSurface: some View {
+        VStack(spacing: 12) {
             FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
                 onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() },
                 sourceContextName: sourceContextName)
+            if store.work == .endOfContent { sourceExclusionRecovery }
+        }
+    }
+
+    /// The callback is supplied only for active rules; no cause of exhaustion is inferred here.
+    @ViewBuilder private var sourceExclusionRecovery: some View {
+        if let onManageSourceExclusions {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verbatim: String(localized: "Há fontes excluídas das novas publicações. Você pode rever essas regras nos filtros de conteúdo."))
+                    .font(.callout)
+                Button(String(localized: "Rever fontes excluídas"), action: onManageSourceExclusions)
+                    .accessibilityIdentifier("source-exclusion-recovery")
+            }
+            .padding()
         }
     }
 
@@ -288,6 +307,7 @@ public struct FeedScreen: View {
                     FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
                         explicit: true)
                 })
+            sourceExclusionRecovery
         }
     }
 }

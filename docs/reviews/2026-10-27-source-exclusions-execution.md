@@ -218,3 +218,44 @@ Restam ação acessível para fonte importada, recuperação de supply, testes i
 Verificação final da ação do catálogo: pacote **1767 testes, 1 skip, 0 falhas**, 97,052 s;
 parse de AppComposition/FeedMineApp/ContentFilterTests exit 0 (sintaxe somente), hashes do avaliador 6/6,
 diff sem erros. Espaço livre ~2,3 GiB; build iOS não iniciado.
+
+
+## Continuação — switch dos ajustes e recuperação de regras
+
+Causa inspecionada: o master switch da tela geral grava por ReaderSettingsBackendAdapter,
+que apenas sinalizava invalidação de cache; o callback de exclusões só existia no editor específico.
+O backend geral agora compara snapshots efetivos antes/depois da gravação e aguarda a notificação
+source-only antes de retornar. Mudanças de aparência não notificam essa política; desligar mantém
+as regras. A fábrica do app fornece o callback, e a notificação de fonte invalida o snapshot de settings.
+RED: callback ausente; GREEN: 11 testes focados de filtros/settings/produção, zero falhas.
+
+No fim da supply, FeedScreen aceita o callback de recuperação somente quando o host informa regras
+ativas. A mensagem informa a existência de exclusões sem atribuir a elas toda exaustão de supply.
+A ação “Rever fontes excluídas” leva diretamente ao editor existente, em sheet com Concluir.
+Com histórico, o bloco vem depois das cartas; sem histórico, acompanha a ausência de supply.
+RED: interface de recuperação ausente; GREEN: 28 testes focados, incluindo renderização OCR que
+compara cartas/ordem/occurrenceIDs antes e depois. Nova prova de ausência de histórico foi incluída
+na suíte completa. Copy pt/en e AX presentes; não equivalem a jornada iOS.
+
+Continuam pendentes a superfície para fontes importadas e as provas iOS de T4/T5/T6, incluindo
+acessibilidade real, relaunch e guards de aceitação. A margem de espaço iOS continua insuficiente.
+
+
+### Perda de regras ao voltar do editor — reproduzida e corrigida
+
+A revisão causal encontrou um segundo caminho: ReaderSettingsStore mantinha settings da abertura
+da tela. Após o editor filho gravar regras, mudar o master switch aplicava a intenção a essa cópia
+antiga e gravava as listas vazias. Regressão com backend real reproduziu **três falhas**: perda das
+fontes, palavras e modelos. O store agora lê o valor atual pelo backend antes de aplicar a intenção
+e relê depois da gravação. A correção preserva as regras do editor filho; teste GREEN com 9 testes
+focados, zero falhas. Não se afirma transação atômica entre escritores concorrentes: esta prova cobre
+o fluxo serial de navegar/editar/voltar ao ajuste, antes quebrado.
+
+A suíte intermediária anterior a essa correção passou 1770 testes, 1 skip, zero falhas (97,657 s),
+incluindo a recuperação sem histórico. Esse log é intermediário; a suíte final é registrada à parte.
+
+
+Verificação final deste incremento: **1771 testes, 1 skip, 0 falhas**, 97,063 s. Os testes de renderização
+incluem fim com histórico e fim sem apresentação. Parse app exit 0 (somente sintaxe), avaliador 6/6,
+diff sem erros. O teste app de continuidade também verifica master off pela tela geral, regras
+persistidas e mesma associação/Edition/âncora/prefixo; **não executado em iOS**. Espaço livre ~2,3 GiB.

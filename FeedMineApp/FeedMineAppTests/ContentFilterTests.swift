@@ -203,6 +203,19 @@ extension ContentFilterTests {
         XCTAssertEqual(after.window.anchor, before.window.anchor)
         XCTAssertEqual(Array(after.window.items.map(\.id).prefix(ids.count)), ids)
         XCTAssertEqual(try settings(directory).contentSourceExclusions, [rule])
+        XCTAssertTrue(root.hasActiveSourceExclusions)
+        let generalSettings = try XCTUnwrap(root.makeReaderSettingsStore())
+        await generalSettings.load()
+        await generalSettings.update { $0.contentFiltersEnabled = false }
+        XCTAssertNil(generalSettings.errorMessage)
+        XCTAssertFalse(root.hasActiveSourceExclusions)
+        XCTAssertEqual(try settings(directory).contentSourceExclusions, [rule])
+        await root.reapplyReaderFilters()
+        XCTAssertTrue(root.association === association)
+        let disabled = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(disabled.editionID, before.editionID)
+        XCTAssertEqual(disabled.window.anchor, before.window.anchor)
+        XCTAssertEqual(Array(disabled.window.items.map(\.id).prefix(ids.count)), ids)
         await association.close()
     }
 }

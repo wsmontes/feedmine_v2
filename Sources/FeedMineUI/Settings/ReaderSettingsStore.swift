@@ -37,10 +37,17 @@ public final class ReaderSettingsStore {
     /// One change, written and read back. A refused write restores what the backend actually has, so the
     /// screen never keeps a value the database did not take.
     public func update(_ change: (inout ReaderSettings) -> Void) async {
-        var next = settings
-        change(&next)
-        guard next != settings else { return }
         do {
+            // A child editor can have written rules since this page loaded. Apply this intent to the
+            // current durable value, so an appearance/master edit cannot restore a stale rule list.
+            let current = try await backend.settings()
+            var next = current
+            change(&next)
+            guard next != current else {
+                settings = current
+                errorMessage = nil
+                return
+            }
             try await backend.update(next)
             settings = try await backend.settings()
             errorMessage = nil

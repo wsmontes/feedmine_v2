@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "pt-BR",
   "strings": {
+    "Há fontes excluídas das novas publicações. Você pode rever essas regras nos filtros de conteúdo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some sources are excluded from new publications. You can review these rules in Content filters."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Há fontes excluídas das novas publicações. Você pode rever essas regras nos filtros de conteúdo."
+          }
+        }
+      }
+    },
+    "Rever fontes excluídas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review excluded sources"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rever fontes excluídas"
+          }
+        }
+      }
+    },
     "Não publicar mais desta fonte": {
       "localizations": {
         "en": {

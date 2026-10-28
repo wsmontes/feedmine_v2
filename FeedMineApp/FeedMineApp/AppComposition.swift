@@ -1794,7 +1794,10 @@ final class AppComposition {
     /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
     func makeReaderSettingsStore() -> ReaderSettingsStore? {
         libraryDatabase().map { database in
-            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] in
+            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database,
+                onSourceExclusionsChanged: { [weak self] in
+                    await self?.noteSourceExclusionsChanged()
+                }) { [weak self] in
                 // The one place a settings write refreshes what the feed reads: the snapshot this composition
                 // caches for its per-card render path and the per-subject answers cached beside it.
                 self?.noteReaderSettingsWritten()
@@ -1886,8 +1889,14 @@ final class AppComposition {
         return ReaderMediaCoordinator(database: database, player: mediaAdapter)
     }
 
+    var hasActiveSourceExclusions: Bool {
+        guard let settings = readerSettings() else { return false }
+        return !ReaderSourceExclusionSnapshot(settings: settings).sourceIDs.isEmpty
+    }
+
     /// Source-only rules are future eligibility, so they reopen local supply without replacing the reader.
     func noteSourceExclusionsChanged() async {
+        noteReaderSettingsWritten()
         guard let association, !replacingSession else { return }
         await association.sourceExclusionsChanged()
     }

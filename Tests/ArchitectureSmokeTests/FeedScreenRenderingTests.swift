@@ -331,6 +331,31 @@ final class FeedScreenRenderingTests: XCTestCase {
     }
 
 
+    func testSourceExclusionRecoveryAtEndKeepsPublishedCardsAndSequence() async throws {
+        let f = try fixture(), first = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        let screen = FeedScreen(store: store, onManageSourceExclusions: {})
+        try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
+        let admitted = try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs
+        XCTAssertFalse(try renderedText(screen, height: 1500).contains { $0.contains("Rever fontes excluídas") })
+        try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))
+        let text = try renderedText(screen, height: 1500)
+        XCTAssertTrue(text.contains { $0.contains("Rever fontes excluídas") }, text.description)
+        XCTAssertEqual(text.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
+        XCTAssertEqual(try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs, admitted)
+        let unrestricted = FeedScreen(store: store)
+        XCTAssertFalse(try renderedText(unrestricted, height: 1500).contains { $0.contains("Rever fontes excluídas") })
+    }
+
+    func testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory() throws {
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))
+        let text = try renderedText(FeedScreen(store: store, onManageSourceExclusions: {}), height: 1200)
+        XCTAssertTrue(text.contains { $0.contains("Rever fontes excluídas") }, text.description)
+        XCTAssertTrue(store.renderedItems.isEmpty)
+        XCTAssertNil(store.state.presentation)
+    }
+
     func testU14UIBoundaryHasNoProductionImportsOrHiddenEffects() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let ui = root.appendingPathComponent("Sources/FeedMineUI")

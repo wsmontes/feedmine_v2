@@ -54,11 +54,14 @@ public struct ReaderSettingsBackendAdapter: ReaderSettingsBackend {
     /// reader re-enabled the suggestions in the preferences page and the feed refused every offer with `.hidden`
     /// until the next launch (measured 2026-10-20).
     private let onWrite: @MainActor @Sendable () -> Void
+    private let onSourceExclusionsChanged: @Sendable () async -> Void
 
     public init(database: RuntimeDatabase,
+        onSourceExclusionsChanged: @escaping @Sendable () async -> Void = {},
         onWrite: @MainActor @Sendable @escaping () -> Void) {
         self.database = database
         self.onWrite = onWrite
+        self.onSourceExclusionsChanged = onSourceExclusionsChanged
     }
 
     public func settings() async throws -> ReaderSettings {
@@ -67,10 +70,15 @@ public struct ReaderSettingsBackendAdapter: ReaderSettingsBackend {
 
     public func update(_ settings: ReaderSettings) async throws {
         // The coordinator's own value, not the caller's: a write it normalizes is stored normalized.
-        _ = try ReaderSettingsCoordinator(database: database).update(settings)
+        let coordinator = ReaderSettingsCoordinator(database: database)
+        let previous = ReaderSourceExclusionSnapshot(settings: try coordinator.settings())
+        let stored = try coordinator.update(settings)
         // Stated before the write returns, and stating only that a write happened: the reader of this signal
         // drops its cache instead of carrying a value across the main-actor boundary, so two writers reaching it
         // in either order cannot leave an older value installed.
         await MainActor.run { onWrite() }
+        if ReaderSourceExclusionSnapshot(settings: stored) != previous {
+            await onSourceExclusionsChanged()
+        }
     }
 }

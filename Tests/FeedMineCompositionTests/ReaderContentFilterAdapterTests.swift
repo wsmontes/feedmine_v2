@@ -92,3 +92,58 @@ extension ReaderContentFilterAdapterTests {
         XCTAssertEqual(store.enabledTemplates, ["politics"])
     }
 }
+
+extension ReaderContentFilterAdapterTests {
+    func testGeneralSettingsMasterSwitchAwaitsEffectiveSourcePolicyNotification() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: .init(directory: root))
+        _ = try ReaderPreferencesStore(database: db).initialize(sourceKeys: ["source"])
+        let coordinator = ReaderSettingsCoordinator(database: db)
+        var settings = try coordinator.settings()
+        let rule = ReaderSourceExclusion(sourceID: SourceID(), displayName: "Source")
+        settings.contentSourceExclusions = [rule]
+        try coordinator.update(settings)
+        let notifications = Notifications()
+        let adapter = ReaderSettingsBackendAdapter(database: db,
+            onSourceExclusionsChanged: { await notifications.note() }, onWrite: {})
+        settings.contentFiltersEnabled = false
+        try await adapter.update(settings)
+        let offCount = await notifications.count
+        XCTAssertEqual(offCount, 1)
+        XCTAssertEqual(try coordinator.settings().contentSourceExclusions, [rule])
+        settings.nightMode.toggle()
+        try await adapter.update(settings)
+        let appearanceCount = await notifications.count
+        XCTAssertEqual(appearanceCount, 1)
+        settings.contentFiltersEnabled = true
+        try await adapter.update(settings)
+        let onCount = await notifications.count
+        XCTAssertEqual(onCount, 2)
+    }
+}
+
+extension ReaderContentFilterAdapterTests {
+    @MainActor
+    func testGeneralSettingsEditDoesNotOverwriteRulesChangedInTheChildEditor() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: .init(directory: root))
+        _ = try ReaderPreferencesStore(database: db).initialize(sourceKeys: ["source"])
+        let general = ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: db, onWrite: {}))
+        await general.load()
+        let filters = ReaderContentFilterAdapter(database: db, templates: [])
+        let rule = ReaderSourceExclusion(sourceID: SourceID(), displayName: "Source")
+        try await filters.setSourceExclusions([rule])
+        try await filters.setRules(["word"])
+        try await filters.setTemplates(["politics"])
+        await general.update { $0.contentFiltersEnabled = false }
+        let stored = try ReaderSettingsCoordinator(database: db).settings()
+        XCTAssertFalse(stored.contentFiltersEnabled)
+        XCTAssertEqual(stored.contentSourceExclusions, [rule])
+        XCTAssertEqual(stored.contentFilterRules, ["word"])
+        XCTAssertEqual(stored.contentFilterTemplates, ["politics"])
+        XCTAssertNil(general.errorMessage)
+        XCTAssertEqual(general.settings, stored)
+    }
+}
