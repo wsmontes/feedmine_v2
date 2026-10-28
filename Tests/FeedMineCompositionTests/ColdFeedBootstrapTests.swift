@@ -1143,3 +1143,77 @@ extension ColdFeedBootstrapTests {
         XCTAssertFalse(try canonical(f).isEmpty, "source exclusion keeps legitimate canonical supply")
     }
 }
+
+extension ColdFeedBootstrapTests {
+    func testWordCaptureMasksColdSupplyAndRemovalRecoversWithTheSameOwner() async throws {
+        let f = try fixture(registrations: false)
+        try Self.seed(f.database, source: f.source)
+        let prefs = ReaderPreferencesStore(database: f.database)
+        _ = try prefs.initialize(sourceKeys: ["source"])
+        var settings = try XCTUnwrap(prefs.load()).settings
+        settings.contentFilterRules = ["local"]
+        _ = try prefs.setSettings(settings)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            wordPolicy: ReaderWordExclusionPolicy(database: f.database, templates: []))
+        let id = identity()
+        let masked = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 8)
+        guard case .unavailable = masked else { return XCTFail("local rule must block first publication") }
+        try assertAbsent(f, identity: id)
+        settings.contentFilterRules = []
+        _ = try prefs.setSettings(settings)
+        let restored = try published(await bootstrap.run(identity: id, resources: resources(),
+            backwardCapacity: 0, forwardCapacity: 8))
+        XCTAssertEqual(restored.editionID, id.editionID)
+        XCTAssertEqual(f.http.calls, 0)
+    }
+
+    func testColdPreparationWordRaceRestartsWithoutPublishingStaleCards() async throws {
+        let f = try fixture(registrations: false)
+        try Self.seed(f.database, source: f.source)
+        let prefs = ReaderPreferencesStore(database: f.database)
+        _ = try prefs.initialize(sourceKeys: ["source"])
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { selection in
+                var settings = try XCTUnwrap(prefs.load()).settings
+                settings.contentFilterRules = ["local"]
+                _ = try prefs.setSettings(settings)
+                return Self.prepared(selection)
+            }, wordPolicy: ReaderWordExclusionPolicy(database: f.database, templates: []))
+        let id = identity()
+        let result = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 8)
+        guard case .unavailable = result else { return XCTFail("new rule should suppress the stale prepared card") }
+        try assertAbsent(f, identity: id)
+        XCTAssertEqual(f.http.calls, 0)
+    }
+}
+
+extension ColdFeedBootstrapTests {
+    func testWordRemovalRestartsColdPartialWindowAtThePreviouslyMaskedHead() async throws {
+        let f = try fixture(registrations: false)
+        try Self.seed(f.database, source: f.source, count: 2)
+        let newest = try XCTUnwrap(canonical(f).first).originRevisionID
+        let prefs = ReaderPreferencesStore(database: f.database)
+        _ = try prefs.initialize(sourceKeys: ["source"])
+        var settings = try XCTUnwrap(prefs.load()).settings
+        settings.contentFilterRules = ["local"]
+        _ = try prefs.setSettings(settings)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            wordPolicy: ReaderWordExclusionPolicy(database: f.database, templates: []))
+        let id = identity()
+        let masked = try await bootstrap.run(identity: id, resources: resources(local: 1),
+            backwardCapacity: 0, forwardCapacity: 8)
+        guard case .localWorkRemaining(let progress) = masked else { return XCTFail("must retain a partial cursor") }
+        XCTAssertNotNil(progress.nextCursor)
+        XCTAssertFalse(progress.exhausted)
+        settings.contentFilterRules = []
+        _ = try prefs.setSettings(settings)
+        _ = try published(await bootstrap.run(identity: id, resources: resources(local: 1),
+            backwardCapacity: 0, forwardCapacity: 8))
+        let store = PublicationStore(database: f.database)
+        let card = try XCTUnwrap(store.segments(editionID: id.editionID).first?.cardIDs.first)
+        XCTAssertEqual(try store.card(id: card)?.originRevisionID, newest,
+            "a changed word policy must rewind the partial walk to the masked head")
+    }
+}

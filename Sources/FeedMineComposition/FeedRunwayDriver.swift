@@ -97,6 +97,8 @@ public actor FeedRunwayDriver {
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let selectedSourceCoverage: AcquisitionDemand?
     private var traversalSourceExclusions: ProductionSourceExclusions?
+    private let wordPolicy: ReaderWordExclusionPolicy?
+    private var traversalWordExclusions: ReaderContentExclusions?
     private let candidateProvider: CandidateProvider
     /// Optional evidence of the replenishment attempts this driver executes; nil records nothing.
     private let trace: ReplenishmentTrace?
@@ -158,7 +160,8 @@ public actor FeedRunwayDriver {
         // The host's publication cap for one opportunity: the runway's own published-reserve target. Nil keeps the
         // uncapped behavior; a capped slice that leaves ready candidates behind reports the walk it started from,
         // so the next opportunity publishes the following block instead of the walk passing cards nobody published.
-        publicationLimit: Int? = nil) throws {
+        publicationLimit: Int? = nil,
+        wordPolicy: ReaderWordExclusionPolicy? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         if let demand = selectedSourceCoverage {
             guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
@@ -168,6 +171,8 @@ public actor FeedRunwayDriver {
         self.onDiscoveryPage = onDiscoveryPage
         self.selectedSourceCoverage = selectedSourceCoverage
         traversalSourceExclusions = try? ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
+        self.wordPolicy = wordPolicy
+        traversalWordExclusions = (try? wordPolicy?.capture())?.exclusions
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         self.reoffer = reoffer
@@ -195,10 +200,17 @@ public actor FeedRunwayDriver {
 
     /// A rule edit is local eligibility, never a new context or a replacement reader.
     public func noteSourceExclusionsChanged() async {
+        await noteContentExclusionsChanged()
+    }
+
+    /// Effective policy changes reopen the existing walk; they never replace the presented reader.
+    public func noteContentExclusionsChanged() async {
         guard let exclusions = try? ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase),
-            exclusions != traversalSourceExclusions,
             let scope = try? await validateCurrentScope() else { return }
+        let words = (try? wordPolicy?.capture())?.exclusions
+        guard exclusions != traversalSourceExclusions || words != traversalWordExclusions else { return }
         traversalSourceExclusions = exclusions
+        traversalWordExclusions = words
         do { try await runway.noteSourceExclusionsChanged(scope: scope) }
         catch { return }
         pendingReplenishmentMeasurement = nil
@@ -847,8 +859,10 @@ public actor FeedRunwayDriver {
                     // transition wakes the existing reconsideration. The opportunity is the only channel — the
                     // product always provides it, and an execution without one has nothing to request.
                     let exclusions = try ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
-                    if exclusions != traversalSourceExclusions {
+                    let words = try wordPolicy?.capture()
+                    if exclusions != traversalSourceExclusions || words?.exclusions != traversalWordExclusions {
                         traversalSourceExclusions = exclusions
+                        traversalWordExclusions = words?.exclusions
                         pendingReplenishmentMeasurement = nil
                         try await runway.noteSourceExclusionsChanged(scope: scope)
                         lateFactScope = scope
@@ -857,7 +871,7 @@ public actor FeedRunwayDriver {
                     }
                     let revisions = try await nextEditorialRevisions(after: intent.after,
                         capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
-                        operation: intent.operation, sourceExclusions: exclusions)
+                        operation: intent.operation, sourceExclusions: exclusions, wordExclusions: words?.exclusions)
                     causalExecution?.mediaOpportunity?.request(revisions)
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
@@ -870,6 +884,7 @@ public actor FeedRunwayDriver {
                         readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID,
                         operation: intent.operation)
                     request.sourceExclusions = exclusions
+                    request.wordExclusions = words
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     do {
                         try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
@@ -890,7 +905,7 @@ public actor FeedRunwayDriver {
                         await recordReplenishmentPublication(receipt)
                         await onPublication?(receipt)
                     }
-                } catch LocalProductionSliceError.staleSourceExclusions {
+                } catch LocalProductionSliceError.staleSourceExclusions, LocalProductionSliceError.staleWordExclusions {
                     pendingReplenishmentMeasurement = nil
                     await noteSourceExclusionsChanged()
                     continue
@@ -929,9 +944,9 @@ public actor FeedRunwayDriver {
     /// (unless edited articles may recur) and origins still waiting ahead of the reader.
     private func nextEditorialRevisions(after cursor: CandidateSupplyCursor?, capacity: Int,
         editionID: FeedEditionID, operation: FeedReplenishmentOperationID,
-        sourceExclusions: ProductionSourceExclusions) async throws -> [OriginRevisionID] {
+        sourceExclusions: ProductionSourceExclusions, wordExclusions: ReaderContentExclusions?) async throws -> [OriginRevisionID] {
         let window = try candidateProvider.candidates(for: plan, after: cursor, examinedCapacity: capacity,
-            operation: operation, consult: "preparation", trace: trace, excludingSourceIDs: sourceExclusions.sourceIDs)
+            operation: operation, consult: "preparation", trace: trace, excludingSourceIDs: sourceExclusions.sourceIDs, wordExclusions: wordExclusions)
         let anchor = await session.currentPresentation()?.window.anchor.cardID
         let facts = try publicationHistory.exposure(editionID: editionID,
             originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: anchor)
@@ -958,7 +973,7 @@ public actor FeedRunwayDriver {
             if !entries.isEmpty {
                 let offered = try candidateProvider.candidates(for: plan, after: nil,
                     examinedCapacity: entries.count, originIDs: entries.map(\.originRecordID),
-                    excludingSourceIDs: sourceExclusions.sourceIDs)
+                    excludingSourceIDs: sourceExclusions.sourceIDs, wordExclusions: wordExclusions)
                 let byOrigin = Dictionary(uniqueKeysWithValues: offered.candidates.map { ($0.originRecordID, $0) })
                 for entry in entries {
                     guard let candidate = byOrigin[entry.originRecordID],

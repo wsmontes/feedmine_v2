@@ -113,7 +113,8 @@ final class FeedRunwayDriverTests: XCTestCase {
     }
     private func fixture(historyCount:Int = 1,checkpoint:Bool = true,seedLocal:Bool = false,registrations:Bool = true,
         paused:Bool = false,otherPaused:Bool = false,error:URLError? = nil,context:FeedContext? = nil,driverContext:FeedContext? = nil,
-        differentRevision:Bool = false,prepareFailure:Bool = false,cancelPrepare:Bool = false) throws -> Fixture {
+        differentRevision:Bool = false,prepareFailure:Bool = false,cancelPrepare:Bool = false,
+        wordPolicyEnabled: Bool = false, wordChangeDuringPrepare: Bool = false) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at:root) }
         let db = try RuntimeDatabase(location:.init(directory:root))
@@ -162,8 +163,16 @@ final class FeedRunwayDriverTests: XCTestCase {
         let publications = DriverPublicationLog()
         let driver = try FeedRunwayDriver(session:session,runway:runway,plan:driverPlan,policy:policy(driverPlan),acquisition:acquisition,coordinator:coordinator,
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
-                if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
-            }, onPublication: { receipt in publications.append(receipt) })
+                if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }
+                if wordChangeDuringPrepare {
+                    let prefs = ReaderPreferencesStore(database: db)
+                    var settings = try XCTUnwrap(prefs.load()).settings
+                    settings.contentFilterRules = ["late"]
+                    _ = try prefs.setSettings(settings)
+                }
+                return Self.prepared(selection)
+            }, onPublication: { receipt in publications.append(receipt) },
+            wordPolicy: wordPolicyEnabled ? ReaderWordExclusionPolicy(database: db, templates: []) : nil)
         // The association's close order, in the fixture: stop new starts and the late-opportunity drain, cancel and
         // await every authorized pull, and only then let the registered transport invalidation run. Registered
         // after that block, this teardown runs before it (LIFO), so no escaped task can call
@@ -1791,5 +1800,83 @@ extension FeedRunwayDriverTests {
         XCTAssertEqual(unchanged, state, "an empty unchanged rule set is not another reset")
         _ = try await f.driver.drive(resources: resources())
         XCTAssertEqual(try store.segments(editionID: f.edition).flatMap(\.cardIDs), ids)
+    }
+}
+
+extension FeedRunwayDriverTests {
+    func testWordRuleRemovalReopensPassedWalkWithoutReplacingReaderOrDuplicatingHistory() async throws {
+        let f = try fixture(registrations: false, wordPolicyEnabled: true)
+        let prefs = ReaderPreferencesStore(database: f.database)
+        _ = try prefs.initialize(sourceKeys: ["source"])
+        var settings = try XCTUnwrap(prefs.load()).settings
+        settings.contentFilterRules = ["late"]
+        _ = try prefs.setSettings(settings)
+        let revision = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        let before = try await restore(f)
+        _ = try await tail(f, before)
+        _ = try await f.driver.drive(resources: resources())
+        let store = PublicationStore(database: f.database)
+        let first = try XCTUnwrap(store.card(id: f.cards[0]))
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
+        XCTAssertEqual(try store.segments(editionID: f.edition).flatMap(\.cardIDs), f.cards)
+        for _ in 0..<200_000 {
+            let state = await f.runway.snapshot()
+            if state.localSupplyExhausted && !state.localSliceInFlight { break }
+            await Task.yield()
+        }
+        let exhausted = await f.runway.snapshot()
+        XCTAssertTrue(exhausted.localSupplyExhausted, "premise: the walk passed the excluded origin; state=\(exhausted)")
+        guard exhausted.localSupplyExhausted else { return }
+        settings.contentFilterRules = []
+        _ = try prefs.setSettings(settings)
+        await f.driver.noteContentExclusionsChanged()
+        _ = try await f.driver.drive(resources: resources())
+        // The existing late-fact drain is asynchronous; its receipt is the completion signal.
+        for _ in 0..<200_000 {
+            if !f.publications.values.isEmpty { break }
+            await Task.yield()
+        }
+        XCTAssertEqual(f.publications.values.count, 1)
+        let ids = try store.segments(editionID: f.edition).flatMap(\.cardIDs)
+        XCTAssertEqual(ids.count, f.cards.count + 1)
+        XCTAssertEqual(try store.card(id: try XCTUnwrap(ids.last))?.originRevisionID, revision)
+        XCTAssertEqual(try store.card(id: first.id), first)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        let current = await f.session.currentPresentation()
+        let after = try XCTUnwrap(current)
+        XCTAssertEqual(after.editionID, before.editionID)
+        XCTAssertEqual(after.window.anchor, before.window.anchor)
+        let state = await f.runway.snapshot()
+        await f.driver.noteContentExclusionsChanged()
+        let unchanged = await f.runway.snapshot()
+        XCTAssertEqual(unchanged, state, "an empty unchanged rule set is not another reset")
+        settings.contentFiltersEnabled = false
+        settings.contentFilterRules = ["late"]
+        settings.contentFilterTemplates = ["missing-but-masked"]
+        _ = try prefs.setSettings(settings)
+        await f.driver.noteContentExclusionsChanged()
+        let equivalent = await f.runway.snapshot()
+        XCTAssertEqual(equivalent, state, "masked stored words/templates do not change effective policy")
+        _ = try await f.driver.drive(resources: resources())
+        XCTAssertEqual(try store.segments(editionID: f.edition).flatMap(\.cardIDs), ids)
+    }
+}
+
+extension FeedRunwayDriverTests {
+    func testWordRaceDuringLivePreparationRejectsStaleCardsAndPreservesReader() async throws {
+        let f = try fixture(registrations: false, wordPolicyEnabled: true, wordChangeDuringPrepare: true)
+        let prefs = ReaderPreferencesStore(database: f.database)
+        _ = try prefs.initialize(sourceKeys: ["source"])
+        _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        let before = try await restore(f)
+        _ = try await tail(f, before)
+        _ = try await f.driver.drive(resources: resources())
+        let store = PublicationStore(database: f.database)
+        XCTAssertEqual(try store.segments(editionID: f.edition).flatMap(\.cardIDs), f.cards)
+        XCTAssertTrue(f.publications.values.isEmpty, "stale prepared late card must never commit")
+        let current = await f.session.currentPresentation()
+        XCTAssertEqual(current?.editionID, before.editionID)
+        XCTAssertEqual(current?.window.anchor, before.window.anchor)
+        XCTAssertEqual(try prefs.load()?.settings.contentFilterRules, ["late"])
     }
 }

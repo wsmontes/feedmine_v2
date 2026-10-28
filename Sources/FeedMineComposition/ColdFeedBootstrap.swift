@@ -95,6 +95,7 @@ private final class ColdPublicationAuthority: @unchecked Sendable {
     private var active = true
     // Examination progress belongs to this bootstrap, not to a reserved Edition or checkpoint.
     private var cursor: CandidateSupplyCursor?
+    private var wordExclusions: ReaderContentExclusions?
     func cancel() { lock.lock(); active = false; lock.unlock() }
     func perform<T>(_ operation: () throws -> T) throws -> T {
         lock.lock(); defer { lock.unlock() }
@@ -103,7 +104,15 @@ private final class ColdPublicationAuthority: @unchecked Sendable {
         return try operation()
     }
 
-    func currentCursor() throws -> CandidateSupplyCursor? { try perform { cursor } }
+    func currentCursor(wordExclusions: ReaderContentExclusions?) throws -> CandidateSupplyCursor? {
+        try perform {
+            if self.wordExclusions != wordExclusions {
+                cursor = nil
+                self.wordExclusions = wordExclusions
+            }
+            return cursor
+        }
+    }
     func restartExamination() throws { try perform { cursor = nil } }
     func examine(after expectedCursor: CandidateSupplyCursor?,
         _ operation: () throws -> InitialProductionSliceOutcome) throws -> InitialProductionSliceOutcome {
@@ -129,6 +138,7 @@ public struct ColdFeedBootstrap: Sendable {
     private let initialProductionSlice: InitialProductionSlice
     private let coordinator: AcquisitionCoordinator
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
+    private let wordPolicy: ReaderWordExclusionPolicy?
     private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let evidence: (@Sendable (ColdFeedEvidence) async -> Void)?
@@ -153,7 +163,8 @@ public struct ColdFeedBootstrap: Sendable {
         // The ingestion receipt this run produces for the consumer that owns local work. `selectableSupplyChanged` is
         // the same durable fact this bootstrap uses to reopen its own examination; the composition states it to the
         // driver so the walk the first drive declared exhausted can be reopened by supply that arrived later.
-        onDurableSupply: (@Sendable () async -> Void)? = nil) throws {
+        onDurableSupply: (@Sendable () async -> Void)? = nil,
+        wordPolicy: ReaderWordExclusionPolicy? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
@@ -167,6 +178,7 @@ public struct ColdFeedBootstrap: Sendable {
         initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
             reoffer: reoffer, trace: trace, publicationLimit: publicationLimit)
         self.prepare = prepare
+        self.wordPolicy = wordPolicy
     }
 
     public func run(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
@@ -263,8 +275,9 @@ public struct ColdFeedBootstrap: Sendable {
         remainingWindows: Int? = nil, mediaOpportunity: MediaPreparationOpportunity? = nil) async throws -> PublicationAttempt {
         try Task.checkCancellation()
         let remaining = remainingWindows ?? resources.localWindowCapacity
-        let after = try authority.currentCursor()
-        let request = try makeRequest(identity: identity, resources: resources, after: after)
+        let words = try wordPolicy?.capture()
+        let after = try authority.currentCursor(wordExclusions: words?.exclusions)
+        let request = try makeRequest(identity: identity, resources: resources, after: after, wordExclusions: words)
         let outcome: InitialProductionSliceOutcome
         let mediaRevisions = try initialProductionSlice.revisionsToPrepare(for: request)
         if let mediaOpportunity, !mediaRevisions.isEmpty {
@@ -274,8 +287,8 @@ public struct ColdFeedBootstrap: Sendable {
         }
         do {
             outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
-        } catch InitialProductionSliceError.staleSourceExclusions {
-            // A source-rule edit is not a network/startup failure. Reconsider within this opportunity's
+        } catch InitialProductionSliceError.staleSourceExclusions, InitialProductionSliceError.staleWordExclusions {
+            // A content-rule edit is not a network/startup failure. Reconsider within this opportunity's
             // existing finite window budget; never advance the cursor from the rejected policy.
             try authority.restartExamination()
             guard remaining > 1 else {
@@ -309,13 +322,15 @@ public struct ColdFeedBootstrap: Sendable {
     }
 
     private func makeRequest(identity: ColdFeedPublicationIdentity,
-        resources: ColdFeedBootstrapResources, after: CandidateSupplyCursor?) throws -> InitialProductionSlice.Request {
+        resources: ColdFeedBootstrapResources, after: CandidateSupplyCursor?,
+        wordExclusions: ReaderWordExclusionSnapshot?) throws -> InitialProductionSlice.Request {
         var request = InitialProductionSlice.Request(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), examinedCapacity: resources.localExaminedCapacity,
             editionID: identity.editionID, publicationSchemaVersion: identity.publicationSchemaVersion,
             selectionSeed: identity.selectionSeed, editionCreatedAt: identity.editionCreatedAt,
             segmentID: identity.segmentID, segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
             anchorPlacement: identity.anchorPlacement, checkpointedAt: identity.checkpointedAt, after: after)
         request.sourceExclusions = try ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
+        request.wordExclusions = wordExclusions
         return request
     }
 

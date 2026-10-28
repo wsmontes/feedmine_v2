@@ -1,0 +1,34 @@
+{
+  "base": "b8bc334e",
+  "files_sha256": {
+    "Sources/FeedMineComposition/ReaderWordExclusionPolicy.swift": "25a8a84fe53d9507e1cf7027082001cb685bd545983273f9dc61c0dcd8e391a6",
+    "Sources/FeedMineComposition/FeedRunwayDriver.swift": "b0ffa90e7a7d4620bf5a79b180977b43a132056b5b55abe1b6efef5b4c1292f5",
+    "Sources/FeedMineComposition/ColdFeedBootstrap.swift": "63c48a61a24b559b45cc99120765591371851ac38732f66ccf447e1d0eafee0b",
+    "Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift": "3cf896529e5111b89b8f040102877d202bee6e6790238090cbbd603b882390de",
+    "Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift": "8447ce0c18ccda144d90e9973d6015353bdaada92628241d7dfbf3addb82b76a"
+  },
+  "test_executable_sha256": "3d0ced50271728e8d65610b74407f3658c61753e973a45dfeeed3bca7e84c89a",
+  "logs": {
+    "r4-word-capture-compatibility.log.gz": {
+      "uncompressed_sha256": "09faf7d6ccbbd1c5251b999a62a57acec65753193ec60b704cf64184d5e06752",
+      "bytes": 38197
+    },
+    "r4-word-capture-final.log.gz": {
+      "uncompressed_sha256": "1d687c849847e31a459868d34008872655ff502aecb924707b27caf67c3b9d4c",
+      "bytes": 8658
+    },
+    "r4-word-capture-green.log.gz": {
+      "uncompressed_sha256": "954a04c2f41d7549669cdb17d52e52e23420b601b768390ea1ebd823303e9769",
+      "bytes": 353865
+    },
+    "r4-word-capture-red.log.gz": {
+      "uncompressed_sha256": "d8b62db655083a01b2a90db62292722277d39436c8b03aa220eab6e275f06e8c",
+      "bytes": 17653
+    }
+  },
+  "focused_tests": 5,
+  "affected_suite_tests": 136,
+  "failures": 0,
+  "AppComposition_injection": false,
+  "R4_native_host_status": "FAIL"
+}
