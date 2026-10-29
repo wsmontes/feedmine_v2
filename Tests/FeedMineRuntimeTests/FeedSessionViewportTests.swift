@@ -123,6 +123,63 @@ final class FeedSessionViewportTests: XCTestCase {
         }
     }
 
+    /// Every viewport callback is not another reading: reporting the same card (including
+    /// placement-only changes) must not write usage or refresh last_seen_at repeatedly.
+    /// Moving to a genuinely different card must still hit Publication's exposure writer,
+    /// including after a failed write; returning to a previously seen card is legitimate.
+    func testRepeatedViewportCardAvoidsExposureWritesButMovementStillRecordsSeen() async throws {
+        try await withLocation { location in
+            let edition = WarmPresentationFixture.edition()
+            let cards = try cards()
+            try persist(edition, cards: cards, location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: .init(database: database))
+            let restored = try await session.admitPresentation(
+                .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            let initial = try XCTUnwrap(restored)
+            XCTAssertEqual(initial.window.anchor.cardID, cards[4].id)
+
+            // Test-only SQLite tripwires: any call through PublicationStore.markSeen
+            // while these are installed fails, whether the call upserts or updates usage.
+            // This tests the physical write, not just projection equality.
+            try database.write { db in
+                try db.execute(sql: """
+                    CREATE TRIGGER fail_duplicate_seen_insert BEFORE INSERT ON publication_card_usage
+                    BEGIN SELECT RAISE(ABORT, 'unexpected exposure write'); END
+                    """)
+                try db.execute(sql: """
+                    CREATE TRIGGER fail_duplicate_seen_update BEFORE UPDATE ON publication_card_usage
+                    BEGIN SELECT RAISE(ABORT, 'unexpected exposure write'); END
+                    """)
+            }
+            for index in 0..<40 {
+                let placement: PresentationAnchorPlacement = index.isMultiple(of: 2) ? .top : .center
+                let observed = try await session.submitViewport(observation(cards[4], placement: placement))
+                XCTAssertEqual(observed?.window.items, initial.window.items)
+                XCTAssertEqual(observed?.window.anchor.cardID, cards[4].id)
+            }
+
+            // A new card still needs to visit the same persistence owner. The
+            // deliberate failure must not install a new logical reading position.
+            do {
+                _ = try await session.submitViewport(observation(cards[6]))
+                XCTFail("Changing the reading card should attempt an exposure write")
+            } catch {
+                XCTAssertTrue(String(describing: error).contains("unexpected exposure write"),
+                    "The expected failure must come from the write tripwire, not another path")
+            }
+            XCTAssertEqual(await session.currentPresentation()?.window.anchor.cardID, cards[4].id)
+            try database.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_duplicate_seen_insert")
+                try db.execute(sql: "DROP TRIGGER fail_duplicate_seen_update")
+            }
+            let moved = try await session.submitViewport(observation(cards[6]))
+            XCTAssertEqual(moved?.window.anchor.cardID, cards[6].id)
+            let revisited = try await session.submitViewport(observation(cards[4], placement: .top))
+            XCTAssertEqual(revisited?.window.anchor.cardID, cards[4].id)
+        }
+    }
+
     func testPlacementOnlyChangeAndSequentialShiftAreAccepted() async throws {
         try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
