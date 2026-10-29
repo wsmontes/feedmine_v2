@@ -170,9 +170,82 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         // PO 2026-10-17: preserving frozen geometry does not make an undecoded hero render-ready.
         // The caller may decline the restore, or present only cards that really have their final pixels.
         // A hero containing nil decoded pixels must never cross the presentation admission boundary.
-        if let missing {
-            XCTAssertFalse(missing.window.items.contains { $0.isImageBearing && $0.image == nil },
-                "Restore admitted a hero without decoded pixels after its local asset was evicted")
+        XCTAssertNil(missing, "An undecodable image-bearing card must not be admitted on restore")
+        let warm = try FeedSession.warmStart(publicationHistory: .init(database: database),
+            imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"),
+                heroMaxPixel: 300, thumbnailMaxPixel: 88),
+            bounds: .init(backwardCapacity: 8, forwardCapacity: 16))
+        XCTAssertNil(warm, "Warm-start must enforce the same readiness boundary as ordinary restore")
+        let retainedHistory = try PublicationHistory(database: database).window(editionID: edition.id,
+            around: .init(cardID: card.id, placement: .center), backwardCapacity: 0, forwardCapacity: 0)
+        XCTAssertEqual(retainedHistory.cards.map(\.id), [card.id],
+            "Withholding an undecodable presentation must not remove its published history")
+        let recoveredDigest = try writeLocalAsset(directory: directory)
+        XCTAssertEqual(recoveredDigest, digest)
+        let retry = try await reopened.admitPresentation(.restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
+        XCTAssertEqual(retry?.window.items.map(\.id), [card.id])
+        XCTAssertEqual(retry?.window.items.first?.image?.cgImage.width, 300,
+            "The same preserved card becomes admissible once its exact local asset is available")
+    }
+
+    /// One frozen hero is already on screen. A later published hero loses its disk asset before
+    /// projection: neither publication growth nor a forward admission may expose its placeholder.
+    /// Once the same bytes return, both independent admission paths must reach it without reordering.
+    func testGrowthAndForwardScrollWithholdUndecodableHeroUntilLocalAssetReturns() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let digest = try writeLocalAsset(directory: directory)
+        let assetURL = localAssetURL(directory: directory, digest: digest)
+        let savedBytes = try Data(contentsOf: assetURL)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let edition = Self.measuredEdition()
+        let first = Self.measuredCard(digest: digest)
+        let next = Self.measuredCard(digest: digest)
+        let store = PublicationStore(database: database)
+        try store.createInitialEdition(edition, firstSegment: .init(
+            id: FeedSegmentID(), editionID: edition.id, ordinal: 0, segmentSeed: 1,
+            publicationSchemaVersion: 1, createdAt: Date(), cardIDs: [first.id]),
+            cards: [first], initialCheckpoint: .init(editionID: edition.id,
+                cardID: first.id, anchorPlacement: "top", updatedAt: Date()))
+        let history = PublicationHistory(database: database)
+        let decoder = PresentationImageDecoder(assetDirectory: directory.appendingPathComponent("Media"),
+            heroMaxPixel: 300, thumbnailMaxPixel: 88)
+        let growth = FeedSession(publicationHistory: history, imageDecoder: decoder)
+        let forward = FeedSession(publicationHistory: history, imageDecoder: decoder)
+        let bounds = FeedPresentationBounds(backwardCapacity: 0, forwardCapacity: 2)
+        let beforeGrowth = try XCTUnwrap(try await growth.admitPresentation(.initial(bounds)))
+        let beforeForward = try XCTUnwrap(try await forward.admitPresentation(.initial(bounds)))
+        XCTAssertEqual(beforeGrowth.window.items.map(\.id), [first.id])
+        XCTAssertEqual(beforeForward.window.items.first?.image?.cgImage.width, 300)
+
+        try FileManager.default.removeItem(at: assetURL)
+        try store.appendSegment(.init(id: FeedSegmentID(), editionID: edition.id,
+            ordinal: 1, segmentSeed: 2, publicationSchemaVersion: 1,
+            createdAt: Date(), cardIDs: [next.id]), cards: [next])
+
+        let afterGrowth = try await growth.admitPresentation(.publishedGrowth)
+        let observed = ViewportObservation(anchor: beforeForward.window.anchor)
+        _ = try await forward.submitViewport(observed)
+        let afterForward = try await forward.admitPresentation(.forwardScroll(observed))
+        for attempt in [afterGrowth, afterForward] {
+            XCTAssertEqual(attempt?.window.items.map(\.id), [first.id],
+                "A missing hero must not enter the admitted list or displace the ready prefix")
+            XCTAssertEqual(attempt?.window.items.first?.image?.cgImage.width, 300,
+                "An already-admitted hero must retain its pixels despite eviction of disk bytes")
+        }
+        // Publication is immutable; a failed visual admission must not mutate published order.
+        let published = try history.window(editionID: edition.id,
+            around: .init(cardID: first.id, placement: .center),
+            backwardCapacity: 0, forwardCapacity: 2)
+        XCTAssertEqual(published.cards.map(\.id), [first.id, next.id])
+
+        try savedBytes.write(to: assetURL)
+        let recoveredGrowth = try await growth.admitPresentation(.publishedGrowth)
+        let recoveredForward = try await forward.admitPresentation(.forwardScroll(observed))
+        for recovered in [recoveredGrowth, recoveredForward] {
+            XCTAssertEqual(recovered?.window.items.map(\.id), [first.id, next.id])
+            XCTAssertTrue(recovered?.window.items.allSatisfy { !$0.isImageBearing || $0.image != nil } ?? false,
+                "Only render-ready values may cross admission")
         }
     }
 }
