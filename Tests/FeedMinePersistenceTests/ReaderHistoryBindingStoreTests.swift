@@ -298,6 +298,12 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
                         PersistenceValueCoding.uuid((archived ? wrongEdition.id : edition.id).rawValue)])
             }
             let sessions = SessionStore(database: db), original = try XCTUnwrap(sessions.checkpoint())
+            let prefs = try self.prefs(db, words: [])
+            let snapshot = try prefs.wordExclusionSnapshot(templates: [])
+            let candidates = try ReaderHistoryBindingStore(database: db).legacyCandidates(logicalKey: logical, wordExclusions: snapshot)
+            let candidate = try XCTUnwrap(candidates.first { $0.edition.id == edition.id })
+            XCTAssertEqual(candidate.checkpoints.first(where: \.isActive)?.point, original,
+                "inventory resolves archived cards before adoption, preserving the wrong column as original evidence")
             let binding = try ReaderHistoryBindingStore(database: db).resolve(logicalKey: logical,
                 adopting: .init(editionID: edition.id, publicationKey: logical, evidence: .exactContext, checkpoint: original))
             let corrected = SessionStore.CheckpointRecord(editionID: edition.id, cardID: original.cardID,
@@ -309,6 +315,116 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
             XCTAssertEqual(try sessions.checkpoint(bindingActivation: activation), corrected)
             XCTAssertEqual(try sessions.checkpoint(), corrected)
         }
+    }
+
+    func testLegacyInventoryKeepsAllExactAndForwardCandidatesWithoutMutation() throws {
+        let db = try StorageFixture.database(self), logical = key(["own"]), frozen = key(["own", "global"])
+        let prefs = try prefs(db, words: ["global"])
+        let (forward, _) = try published(db, key: frozen)
+        let exact = StorageFixture.edition(revision: EditorialRevision(id: EditorialRevisionID(), contextKey: logical,
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: .init(rawValue: 1),
+            eligibilityPolicyVersion: .init(rawValue: 1), scoringPolicyVersion: .init(rawValue: 1),
+            sequencingPolicyVersion: .init(rawValue: 1), exposurePolicyVersion: .init(rawValue: 1), selectionSchemaVersion: .init(rawValue: 1)))
+        let card = StorageFixture.card(), second = StorageFixture.edition(revision: exact.editorialRevision), secondCard = StorageFixture.card()
+        let publication = PublicationStore(database: db)
+        try publication.createEdition(exact, firstSegment: StorageFixture.segment(exact, [card]), cards: [card])
+        try publication.createEdition(second, firstSegment: StorageFixture.segment(second, [secondCard]), cards: [secondCard])
+        let original = try SessionStore(database: db).checkpoint(), store = ReaderHistoryBindingStore(database: db)
+        let retainedPoint = SessionStore.CheckpointRecord(editionID: exact.id, cardID: card.id,
+            anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 100), topDelta: -7, cardHeight: 150)
+        try SessionStore(database: db).saveCheckpoint(retainedPoint)
+        try SessionStore(database: db).saveCheckpoint(try XCTUnwrap(original))
+        let snapshot = try prefs.wordExclusionSnapshot(templates: [], context: logical.filter.exclusions)
+        let candidates = try store.legacyCandidates(logicalKey: logical, wordExclusions: snapshot)
+        XCTAssertEqual(Set(candidates.map { $0.edition.id }), [forward.id, exact.id, second.id])
+        let legacy = try XCTUnwrap(candidates.first { $0.edition.id == forward.id })
+        XCTAssertEqual(legacy.evidence, .legacyWords(snapshot))
+        XCTAssertEqual(legacy.checkpoints.map(\.point), [try XCTUnwrap(original)])
+        XCTAssertEqual(legacy.checkpoints.map(\.isActive), [true], "identical context/singleton evidence is deduplicated")
+        let retainedCandidate = try XCTUnwrap(candidates.first { $0.edition.id == exact.id })
+        XCTAssertEqual(retainedCandidate.evidence, .exactContext)
+        XCTAssertEqual(retainedCandidate.checkpoints.map(\.point), [retainedPoint])
+        XCTAssertEqual(retainedCandidate.checkpoints.map(\.isActive), [false])
+        XCTAssertTrue(try XCTUnwrap(candidates.first { $0.edition.id == second.id }).checkpoints.isEmpty)
+        XCTAssertEqual(try store.legacyCandidates(logicalKey: logical, wordExclusions: snapshot), candidates)
+        XCTAssertNil(try store.binding(for: logical))
+        XCTAssertEqual(try SessionStore(database: db).checkpoint(), original)
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM session_reader_binding") }, 0)
+    }
+
+    func testLegacyInventoryResolvesActiveCardBeforeAdoptionAndExcludesOwnedEditions() throws {
+        let db = try StorageFixture.database(self), logical = key([])
+        let (actual, card) = try published(db, key: logical)
+        let wrong = StorageFixture.edition(revision: actual.editorialRevision), spare = StorageFixture.card()
+        try PublicationStore(database: db).createEdition(wrong,
+            firstSegment: StorageFixture.segment(wrong, [spare]), cards: [spare])
+        try db.write { try $0.execute(sql: "UPDATE session_checkpoint SET edition_id = ?, anchor_top_delta = -19, anchor_height = 200",
+            arguments: [PersistenceValueCoding.uuid(wrong.id.rawValue)]) }
+        let prefs = try prefs(db, words: []), snapshot = try prefs.wordExclusionSnapshot(templates: [])
+        let store = ReaderHistoryBindingStore(database: db)
+        let candidates = try store.legacyCandidates(logicalKey: logical, wordExclusions: snapshot)
+        let candidate = try XCTUnwrap(candidates.first { $0.edition.id == actual.id })
+        XCTAssertEqual(candidate.checkpoints.count, 2, "distinct active and retained original statements are both exposed")
+        let active = try XCTUnwrap(candidate.checkpoints.first(where: \.isActive))
+        XCTAssertEqual(active.point.editionID, wrong.id, "keep original durable evidence, not a substituted cursor")
+        XCTAssertEqual(active.point.cardID, card.id)
+        XCTAssertFalse(try XCTUnwrap(candidates.first { $0.edition.id == wrong.id }).checkpoints.contains(where: \.isActive))
+        let binding = try store.resolve(logicalKey: logical, adopting: .init(editionID: actual.id,
+            publicationKey: logical, evidence: candidate.evidence, checkpoint: active.point))
+        XCTAssertEqual(try SessionStore(database: db).checkpoint(bindingID: binding.id)?.topDelta, -19)
+        XCTAssertEqual(try store.legacyCandidates(logicalKey: logical, wordExclusions: snapshot).map { $0.edition.id }, [wrong.id])
+    }
+
+    func testLegacyInventoryRejectsStaleOrWrongContextPolicyWithoutGuessingWordOrigin() throws {
+        let db = try StorageFixture.database(self), logical = key([])
+        let prefs = try prefs(db, words: ["old"])
+        let snapshot = try prefs.wordExclusionSnapshot(templates: [])
+        let (edition, _) = try published(db, key: key(["unexplained"]))
+        let store = ReaderHistoryBindingStore(database: db)
+        XCTAssertTrue(try store.legacyCandidates(logicalKey: logical, wordExclusions: snapshot).isEmpty,
+            "unexplained frozen words are not subtracted or adopted")
+        XCTAssertThrowsError(try store.legacyCandidates(logicalKey: key(["own"]), wordExclusions: snapshot)) {
+            XCTAssertEqual($0 as? ReaderHistoryBindingStore.Failure, .incompatibleAdoption)
+        }
+        _ = try self.prefs(db, words: ["new"])
+        XCTAssertThrowsError(try store.legacyCandidates(logicalKey: logical, wordExclusions: snapshot)) {
+            XCTAssertEqual($0 as? ReaderHistoryBindingStore.Failure, .staleAdoptionPolicy)
+        }
+        XCTAssertNil(try store.binding(for: logical))
+        XCTAssertNotNil(try PublicationStore(database: db).edition(id: edition.id))
+    }
+
+    func testLegacyInventoryFindsRetainedCardDespiteWrongContextProjection() throws {
+        let db = try StorageFixture.database(self), logical = key([])
+        let (actual, card) = try published(db, key: logical)
+        let v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: key(["other"]),
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: v, eligibilityPolicyVersion: v,
+            scoringPolicyVersion: v, sequencingPolicyVersion: v, exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
+        let other = StorageFixture.edition(revision: revision), otherCard = StorageFixture.card()
+        try PublicationStore(database: db).createEdition(other,
+            firstSegment: StorageFixture.segment(other, [otherCard]), cards: [otherCard])
+        let sessions = SessionStore(database: db)
+        try sessions.saveCheckpoint(.init(editionID: other.id, cardID: otherCard.id,
+            anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 2000)))
+        try db.write { db in
+            try db.execute(sql: "UPDATE context_checkpoints SET context_identity = 'legacy-wrong-projection', edition_id = ? WHERE card_id = ?",
+                arguments: [PersistenceValueCoding.uuid(other.id.rawValue), PersistenceValueCoding.uuid(card.id.rawValue)])
+        }
+        XCTAssertNil(try sessions.checkpoint(for: logical))
+        let active = try sessions.checkpoint(), prefs = try prefs(db, words: [])
+        let store = ReaderHistoryBindingStore(database: db)
+        let candidates = try store.legacyCandidates(logicalKey: logical,
+            wordExclusions: prefs.wordExclusionSnapshot(templates: []))
+        XCTAssertEqual(candidates.map { $0.edition.id }, [actual.id])
+        let original = try XCTUnwrap(candidates.first?.checkpoints.first)
+        XCTAssertFalse(original.isActive)
+        XCTAssertEqual(original.point.editionID, other.id)
+        XCTAssertEqual(original.point.cardID, card.id)
+        let binding = try store.resolve(logicalKey: logical, adopting: .init(editionID: actual.id,
+            publicationKey: logical, evidence: .exactContext, checkpoint: original.point))
+        XCTAssertEqual(try sessions.checkpoint(bindingID: binding.id)?.editionID, actual.id)
+        XCTAssertEqual(try sessions.checkpoint(), active)
     }
 
 }

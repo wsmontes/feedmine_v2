@@ -37,7 +37,7 @@ public struct ReaderHistoryBindingStore: Sendable {
         }
     }
 
-    private let database: RuntimeDatabase
+    let database: RuntimeDatabase
     public init(database: RuntimeDatabase) { self.database = database }
 
     public func binding(for key: ContextKey) throws -> Record? {

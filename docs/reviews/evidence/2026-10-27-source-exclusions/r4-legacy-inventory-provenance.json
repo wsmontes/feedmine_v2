@@ -1,0 +1,26 @@
+{
+  "logs": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-inventory-final.log.gz": {
+      "sha256_uncompressed": "61b3a892bab189cf0b4db847853b1cbd349a1367987a98eeeea603d28eeee8fe",
+      "bytes": 11366
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-inventory-green.log.gz": {
+      "sha256_uncompressed": "626bae7d2d328212856872d1e5adb90070e34dbab2d089b71d033c00562cf15e",
+      "bytes": 819796
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-inventory-red.log.gz": {
+      "sha256_uncompressed": "ca7f6c0efd5dc724f95fe5f016e0f84aee2b2abe0e76ca346edff3d435820335",
+      "bytes": 15343
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-inventory-verified.log.gz": {
+      "sha256_uncompressed": "f8fc1127628d6b73de107aa3c3a68486015dd5f28051cf8869de15f985e145eb",
+      "bytes": 11546
+    }
+  },
+  "files": {
+    "Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift": "792a32a1f57b8db0f30b6dc932a3dd16e0b61a49090fb0ee40238f303a24930b",
+    "Sources/FeedMinePersistence/ReaderHistoryBindingStore+LegacyCandidates.swift": "99c117fd2e26f426df540f1ed37def727a2571e3e28e3e50871dd28c57e3180a",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift": "d50e04bd9d322d42a95be2a8446943b5e1b4003b3a561801430c0290e03d5525",
+    ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests": "e0a62cd2950fc47f98833f4444f4bc76de678f5e9ca1a48e85f1ea97454eb7d8"
+  }
+}

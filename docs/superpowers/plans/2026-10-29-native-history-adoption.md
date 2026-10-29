@@ -24,3 +24,11 @@ Audit all association.contextKey consumers. Separate logical intent from frozen 
 - [ ] UI pt/en large text, stable tail and remaining acceptance gates.
 
 R4 native remains FAIL until actual host evidence. No expected failure removed in Task 1.
+
+## Task 2a — inspect legacy candidates before native activation
+
+Native NF03 prepares a replacement while the previous reader is displayed and checkpoints the old reader before installation. Candidate discovery must not activate ownership or rotate tokens. Add a read-only inventory on ReaderHistoryBindingStore returning every unowned Edition matching the raw key or its known current forward union. Return the original durable point when available, resolving its card's live/retired Edition; distinguish the active singleton candidate. Keep multiple candidates, deterministic ordering and no newest-Edition guess. Existing owned Editions are excluded. Strict snapshot/context validation must occur in the same read snapshot. No global-word subtraction. Native compatibility and ambiguity decisions remain at the host boundary.
+
+- [x] RED inventory tests: exact/forward, active card-authoritative candidate, multiple retained histories, exclusion of owned history/collision, stale snapshot, no ownership/activation/checkpoint mutation.
+- [x] Implement inventory, verify (32/0) and independent review. See docs/reviews/2026-10-29-f13-legacy-history-inventory.md.
+- [ ] Consume inventory in native root with handoff/ambiguity recovery.

@@ -1,5 +1,11 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — inventário antes de ativação, 2026-10-29
+
+Consulta somente leitura de todos os históricos raw/current-forward sem proprietário, com evidência de posição original resolvida pelo card e sem escolher automaticamente a Edition mais recente. Cobertura atual: **32 testes afetados, zero falhas**, revisão independente sem achados pendentes. Última suíte completa: 1829/um ignorado/0 no checkpoint anterior 589f3470. [Relatório](2026-10-29-f13-legacy-history-inventory.md).
+
+A consulta ainda não está consumida na composição nativa. Handoff NF03, recuperação de ambiguidades e R4/iOS permanecem pendentes.
+
 ## Atualização — adoção legada, 2026-10-29
 
 A adoção pode receber o checkpoint original e validar sua evidência durável na transação. A Edition real do card prevalece sobre a coluna inconsistente, preservando data/offset. Corrigida também falha de FK ao ativar card arquivado já retido no vínculo. Revisão independente concluída; suíte completa **1829 testes, um ignorado, zero falhas**. [Relatório](2026-10-29-f13-legacy-checkpoint-adoption.md).
