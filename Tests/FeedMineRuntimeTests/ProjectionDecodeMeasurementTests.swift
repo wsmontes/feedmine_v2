@@ -121,6 +121,28 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
             "as cartas acima da banda mantêm seus valores congelados com o bitmap liberado")
         XCTAssertTrue(restored.window.items[0].isImageBearing, "a residência nunca redefine o layout publicado")
         XCTAssertEqual(restored.window.items[0].mediaAspectRatio, bounded.window.items.last?.mediaAspectRatio)
+
+        // B05 navigation probe: the edition head stays reachable *without another Edition*.
+        // This proves local reconstruction after the viewport reaches history, not the
+        // stronger pre-admission readiness or physical no-jump requirement tested separately.
+        let firstPosition = ViewportObservation(anchor: .init(cardID: cards[0].id, placement: .top))
+        let rewoundValue = try await headSession.submitViewport(firstPosition)
+        let rewound = try XCTUnwrap(rewoundValue)
+        XCTAssertEqual(rewound.window.items.map(\.id), restored.window.items.map(\.id))
+        XCTAssertEqual(rewound.window.anchor.cardID, cards[0].id)
+        XCTAssertNotNil(rewound.window.items[0].image,
+            "A historical card is reconstructed from local media when navigation returns to it")
+        XCTAssertEqual(rewound.window.items.filter { $0.image != nil }.count, 17,
+            "Returning to the edition head should decode only its reachable forward band")
+        let savedPosition = ViewportObservation(anchor: .init(cardID: cards[durable].id, placement: .center))
+        let returnedValue = try await headSession.submitViewport(savedPosition)
+        let returned = try XCTUnwrap(returnedValue)
+        XCTAssertEqual(returned.window.items.map(\.id), restored.window.items.map(\.id))
+        XCTAssertEqual(returned.window.anchor.cardID, cards[durable].id)
+        XCTAssertNotNil(returned.window.items[durable].image)
+        XCTAssertEqual(returned.window.items.filter { $0.image != nil }.count, band,
+            "Rewinding must not force the session to keep every historical bitmap resident")
+
         // RED expected until B05's retained head and the 2026-10-17 readiness rule are reconciled.
         // Unlike the eviction scenario below, the local image file exists and decodes successfully:
         // geometry-only historical slots are still sent to FeedScreenStore as admitted cards.
