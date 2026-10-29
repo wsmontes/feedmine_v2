@@ -167,8 +167,12 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         XCTAssertEqual(retained?.window.items[0].image, initial.window.items[0].image, "Visible projection stays frozen")
         let reopened = FeedSession(publicationHistory: .init(database: database), imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"), heroMaxPixel: 300, thumbnailMaxPixel: 88))
         let missing = try await reopened.admitPresentation(.restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
-        XCTAssertNil(missing?.window.items[0].image)
-        XCTAssertEqual(missing?.window.items[0].mediaAspectRatio, initial.window.items[0].mediaAspectRatio)
-        XCTAssertEqual(missing?.window.items[0].id, initial.window.items[0].id)
+        // PO 2026-10-17: preserving frozen geometry does not make an undecoded hero render-ready.
+        // The caller may decline the restore, or present only cards that really have their final pixels.
+        // A hero containing nil decoded pixels must never cross the presentation admission boundary.
+        if let missing {
+            XCTAssertFalse(missing.window.items.contains { $0.isImageBearing && $0.image == nil },
+                "Restore admitted a hero without decoded pixels after its local asset was evicted")
+        }
     }
 }
