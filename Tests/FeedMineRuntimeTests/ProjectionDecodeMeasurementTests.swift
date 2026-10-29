@@ -213,8 +213,10 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         let growth = FeedSession(publicationHistory: history, imageDecoder: decoder)
         let forward = FeedSession(publicationHistory: history, imageDecoder: decoder)
         let bounds = FeedPresentationBounds(backwardCapacity: 0, forwardCapacity: 2)
-        let beforeGrowth = try XCTUnwrap(try await growth.admitPresentation(.initial(bounds)))
-        let beforeForward = try XCTUnwrap(try await forward.admitPresentation(.initial(bounds)))
+        let initialGrowth = try await growth.admitPresentation(.initial(bounds))
+        let initialForward = try await forward.admitPresentation(.initial(bounds))
+        let beforeGrowth = try XCTUnwrap(initialGrowth)
+        let beforeForward = try XCTUnwrap(initialForward)
         XCTAssertEqual(beforeGrowth.window.items.map(\.id), [first.id])
         XCTAssertEqual(beforeForward.window.items.first?.image?.cgImage.width, 300)
 
