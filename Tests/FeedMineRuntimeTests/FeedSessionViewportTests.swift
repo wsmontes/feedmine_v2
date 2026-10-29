@@ -168,7 +168,8 @@ final class FeedSessionViewportTests: XCTestCase {
                 XCTAssertTrue(String(describing: error).contains("unexpected exposure write"),
                     "The expected failure must come from the write tripwire, not another path")
             }
-            XCTAssertEqual(await session.currentPresentation()?.window.anchor.cardID, cards[4].id)
+            let unchangedAfterFailure = await session.currentPresentation()
+            XCTAssertEqual(unchangedAfterFailure?.window.anchor.cardID, cards[4].id)
             try database.write { db in
                 try db.execute(sql: "DROP TRIGGER fail_duplicate_seen_insert")
                 try db.execute(sql: "DROP TRIGGER fail_duplicate_seen_update")
