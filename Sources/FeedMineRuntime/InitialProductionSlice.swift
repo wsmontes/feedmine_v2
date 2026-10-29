@@ -54,6 +54,7 @@ public struct InitialProductionSlice: Sendable {
         public var sourceExclusions: ProductionSourceExclusions? = nil
         /// Effective words for this opportunity, independent of the frozen context identity.
         public var wordExclusions: ReaderWordExclusionSnapshot? = nil
+        public var bindingPublication: PublicationStore.BindingPublicationExpectation? = nil
         public let plan: FeedPlan
         public let policy: ResolvedSelectionPolicy
         public let examinedCapacity: Int
@@ -171,7 +172,7 @@ public struct InitialProductionSlice: Sendable {
             selectionSeed: request.selectionSeed, editionCreatedAt: request.editionCreatedAt,
             segmentID: request.segmentID, segmentSeed: request.segmentSeed,
             segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs,
-            expectedSourceExclusions: request.sourceExclusions?.snapshot, expectedWordExclusions: request.wordExclusions)
+            expectedSourceExclusions: request.sourceExclusions?.snapshot, expectedWordExclusions: request.wordExclusions, bindingPublication: request.bindingPublication)
         let publicationOutcome: PublicationOutcome
         do { publicationOutcome = try coordinator.createInitialEdition(.init(publication: publication,
             anchorPlacement: request.anchorPlacement, checkpointedAt: request.checkpointedAt)) }

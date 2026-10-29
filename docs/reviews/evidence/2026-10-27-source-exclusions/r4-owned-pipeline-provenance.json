@@ -1,0 +1,42 @@
+{
+  "base": "fdbd4c10",
+  "files_sha256": {
+    "Sources/FeedMinePublication/PublicationCoordinator.swift": "60627462c46fb37fa0dd71729d6c5961402cb006250d58908149f07b87601132",
+    "Sources/FeedMineRuntime/InitialProductionSlice.swift": "35b0a2dea2367a3f93e68b8062952fae5f7c30d0f2663e2c91106f1777648a2d",
+    "Sources/FeedMineRuntime/LocalProductionSlice.swift": "56e3691184226d77992eb5f989f9ec5fbddfe84d48867b30e3a9bb630789b942",
+    "Tests/FeedMinePublicationTests/PublicationCoordinatorTests.swift": "ee7cf28b742f19dcc47eea435132d7dcbe22747d81c6de85c5539986802f467d",
+    "Tests/FeedMineCompositionTests/SourceExclusionProductionTests.swift": "08b87cbfdc83e8192e7667726202c9ebde626b1a59cdb0c9693638fb3ca51b8f",
+    "Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift": "f084a0f5f6b7952296b60ad15b2901c38f5d268a406459342ebbd46c8c9baedb"
+  },
+  "test_executable_sha256": "9f90c560130e6ac6f12b7644aa8d53a3f70477c94cbeb7de5a7dfab5e1d7eafb",
+  "logs": {
+    "r4-owned-pipeline-full-final.log.gz": {
+      "uncompressed_sha256": "e89443f43deb2016af95c9952fbb28ace809e2421df7fa70908c91fdb8c92cdf",
+      "bytes": 536138
+    },
+    "r4-owned-pipeline-red.log.gz": {
+      "uncompressed_sha256": "31b8f7e383f43df147927597bf7c461f719c5edf721161eccb9df1b3b234d35e",
+      "bytes": 1897
+    },
+    "r4-owned-pipeline-schema-validation.log.gz": {
+      "uncompressed_sha256": "0e48d76d73348f9569cbbbe37b2b5ee26e84c2fb1116a8490b2264ca1ede1863",
+      "bytes": 17443
+    },
+    "r4-owned-pipeline-green.log.gz": {
+      "uncompressed_sha256": "c37a9ffa159a6926df7feff6a7360d90b222e8362639958e1f58ad21089771a5",
+      "bytes": 174459
+    },
+    "r4-owned-pipeline-full-package.log.gz": {
+      "uncompressed_sha256": "e87fc36f76c0ab776ccfad1c572a2b55b8f9103e6ddbe188e056f234841fb58c",
+      "bytes": 576790
+    }
+  },
+  "focused_tests": 28,
+  "schema_and_pipeline_tests": 40,
+  "full_package_tests": 1813,
+  "full_package_skipped": 1,
+  "full_package_failures": 0,
+  "independent_review": "no actionable transport/schema-oracle findings",
+  "native_binding_injection": false,
+  "R4_host_status": "FAIL"
+}

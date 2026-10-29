@@ -58,6 +58,7 @@ public struct PublicationCoordinator: Sendable {
         public let cardIDs: [PublicationCardID]
         public let expectedSourceExclusions: ReaderSourceExclusionSnapshot?
         public let expectedWordExclusions: ReaderWordExclusionSnapshot?
+        public let bindingPublication: PublicationStore.BindingPublicationExpectation?
 
         public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, publicationSchemaVersion: PublicationSchemaVersion, selectionSeed: UInt64, editionCreatedAt: Date, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID]) {
             self.init(selection: selection, drafts: drafts, editionID: editionID,
@@ -70,9 +71,11 @@ public struct PublicationCoordinator: Sendable {
             publicationSchemaVersion: PublicationSchemaVersion, selectionSeed: UInt64, editionCreatedAt: Date,
             segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
             expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-            expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) {
+            expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+            bindingPublication: PublicationStore.BindingPublicationExpectation? = nil) {
             self.expectedSourceExclusions = expectedSourceExclusions
             self.expectedWordExclusions = expectedWordExclusions
+            self.bindingPublication = bindingPublication
             self.selection = selection
             self.drafts = drafts
             self.editionID = editionID
@@ -113,6 +116,7 @@ public struct PublicationCoordinator: Sendable {
         public let operation: FeedReplenishmentOperationID?
         public let expectedSourceExclusions: ReaderSourceExclusionSnapshot?
         public let expectedWordExclusions: ReaderWordExclusionSnapshot?
+        public let bindingActivation: SessionStore.BindingActivation?
 
         public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
             originRecurrence: PublicationOriginRecurrence = .forbidden,
@@ -127,9 +131,11 @@ public struct PublicationCoordinator: Sendable {
             originRecurrence: PublicationOriginRecurrence = .forbidden,
             operation: FeedReplenishmentOperationID? = nil,
             expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-            expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) {
+            expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+            bindingActivation: SessionStore.BindingActivation? = nil) {
             self.expectedSourceExclusions = expectedSourceExclusions
             self.expectedWordExclusions = expectedWordExclusions
+            self.bindingActivation = bindingActivation
             self.operation = operation
             self.selection = selection
             self.drafts = drafts
@@ -145,7 +151,7 @@ public struct PublicationCoordinator: Sendable {
     public func createEdition(_ request: CreateRequest) throws -> PublicationOutcome {
         guard let records = try Self.firstPublication(request) else { return .nothingToPublish }
         try store.createEdition(records.0, firstSegment: records.1, cards: records.2,
-            expectedSourceExclusions: request.expectedSourceExclusions, expectedWordExclusions: request.expectedWordExclusions)
+            expectedSourceExclusions: request.expectedSourceExclusions, expectedWordExclusions: request.expectedWordExclusions, bindingPublication: request.bindingPublication)
         return .published(Self.initialReceipt(request))
     }
 
@@ -156,7 +162,7 @@ public struct PublicationCoordinator: Sendable {
             anchor: FeedWindowAnchor(cardID: publication.cardIDs[0], placement: request.anchorPlacement))
         try store.createInitialEdition(records.0, firstSegment: records.1, cards: records.2,
             initialCheckpoint: PublicationPersistenceMapping.checkpoint(cursor, updatedAt: request.checkpointedAt),
-            expectedSourceExclusions: publication.expectedSourceExclusions, expectedWordExclusions: publication.expectedWordExclusions)
+            expectedSourceExclusions: publication.expectedSourceExclusions, expectedWordExclusions: publication.expectedWordExclusions, bindingPublication: publication.bindingPublication)
         return .published(Self.initialReceipt(publication))
     }
 
@@ -213,11 +219,11 @@ public struct PublicationCoordinator: Sendable {
         }
         if let expectedTail {
             try store.appendSegment(records.0, cards: records.1, expectingTailCardID: expectedTail, recurrence: recurrence,
-                expectedSourceExclusions: request.expectedSourceExclusions, expectedWordExclusions: request.expectedWordExclusions)
+                expectedSourceExclusions: request.expectedSourceExclusions, expectedWordExclusions: request.expectedWordExclusions, bindingActivation: request.bindingActivation)
         } else {
             guard recurrence == .forbidden else { throw PublicationCoordinatorError.recurrenceRequiresTailExpectation }
             try store.appendSegment(records.0, cards: records.1,
-                expectedSourceExclusions: request.expectedSourceExclusions, expectedWordExclusions: request.expectedWordExclusions)
+                expectedSourceExclusions: request.expectedSourceExclusions, expectedWordExclusions: request.expectedWordExclusions, bindingActivation: request.bindingActivation)
         }
         let receipt = PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
             segmentOrdinal: ordinal, cardIDs: request.cardIDs)

@@ -1,5 +1,15 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — 2026-10-29
+
+O transporte de ownership pelo coordenador/Runtime foi implementado e revisado. A revisão independente pendente foi retomada: um P2 de limpeza após rollover foi reproduzido e corrigido em fdbd4c10; o revisor confirmou a resolução.
+
+Validação atual: suíte completa do pacote Swift em macOS Debug, **1813 testes, um ignorado e zero falhas**. O teste ignorado exige o catálogo de referência externo. A primeira execução completa revelou inventários de schema antigos; foram atualizados explicitamente, com igualdade exata e preservação das verificações anteriores.
+
+Relatório atual: [2026-10-29-f13-owned-publication-pipeline.md](2026-10-29-f13-owned-publication-pipeline.md). R4 no host continua FAIL; faltam restauração semântica, injeção nos owners/composição nativa, recuperação de históricos ambíguos e aceitação iOS/relaunch/UI. O PR permanece em rascunho.
+
+## Checkpoint original — 2026-10-28
+
 User requested publishing local progress. Branch: `product/nf04-tail-truth`; base: remote `main`. Publish the accumulated branch as a **draft**, preserving its history without merging it into main or rewriting remote commits.
 
 Recent progress:

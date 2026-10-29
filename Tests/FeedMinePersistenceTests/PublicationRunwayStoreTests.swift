@@ -274,7 +274,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
                  "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1",
                  "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
                  "publication-media-identity-v1", "continuity-relative-position-v1",
-                 "selection-supply-media-deferral-v1", "selection-supply-media-deferral-v2"])
+                 "selection-supply-media-deferral-v1", "selection-supply-media-deferral-v2",
+                 "reader-history-binding-v1", "reader-history-position-v1"])
         }
     }
 
@@ -516,6 +517,57 @@ extension PublicationRunwayStoreTests {
                 """,
                 "sqlite_autoindex_saved_media_availability_1:"
             ]
+            // F13: exact additive ownership/position definitions; old definitions and data remain checked above.
+            let readerHistoryObjects: Set<String> = [
+                """
+                reader_history_bindings:CREATE TABLE reader_history_bindings (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    logical_identity TEXT NOT NULL UNIQUE,
+                    logical_key_json BLOB NOT NULL,
+                    runtime_namespace TEXT NOT NULL UNIQUE,
+                    active_edition_id TEXT,
+                    FOREIGN KEY(id, active_edition_id)
+                        REFERENCES reader_history_editions(binding_id, edition_id)
+                        DEFERRABLE INITIALLY DEFERRED
+                )
+                """,
+                """
+                reader_history_editions:CREATE TABLE reader_history_editions (
+                    edition_id TEXT PRIMARY KEY NOT NULL REFERENCES feed_editions(id),
+                    binding_id TEXT NOT NULL REFERENCES reader_history_bindings(id),
+                    publication_key_json BLOB NOT NULL,
+                    adoption_kind TEXT NOT NULL CHECK(adoption_kind IN ('exact_context', 'legacy_words')),
+                    adoption_policy_json BLOB,
+                    UNIQUE(binding_id, edition_id)
+                )
+                """,
+                """
+                reader_history_checkpoints:CREATE TABLE reader_history_checkpoints (
+                    binding_id TEXT NOT NULL,
+                    edition_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    anchor_placement TEXT NOT NULL CHECK(anchor_placement IN ('top', 'center')),
+                    updated_at REAL NOT NULL,
+                    anchor_top_delta REAL,
+                    anchor_height REAL,
+                    PRIMARY KEY(binding_id, edition_id),
+                    FOREIGN KEY(binding_id, edition_id) REFERENCES reader_history_editions(binding_id, edition_id)
+                )
+                """,
+                """
+                session_reader_binding:CREATE TABLE session_reader_binding (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    binding_id TEXT NOT NULL REFERENCES reader_history_bindings(id),
+                    activation_token TEXT NOT NULL
+                )
+                """,
+                "sqlite_autoindex_reader_history_bindings_1:",
+                "sqlite_autoindex_reader_history_bindings_2:",
+                "sqlite_autoindex_reader_history_bindings_3:",
+                "sqlite_autoindex_reader_history_editions_1:",
+                "sqlite_autoindex_reader_history_editions_2:",
+                "sqlite_autoindex_reader_history_checkpoints_1:"
+            ]
             // D7-A: the V1 upgrade receipt, additive only. The two tables state what the upgrade carried and
             // every reported skip; nothing here rewrites a shipped row.
             let legacyUpgradeObjects: Set<String> = [
@@ -548,12 +600,12 @@ extension PublicationRunwayStoreTests {
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
                     .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
                     .union(savedAvailabilityObjects).union(legacyUpgradeObjects)
-                    .union(mediaDeferralObjects))
+                    .union(mediaDeferralObjects).union(readerHistoryObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
                     .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
                     .union(savedAvailabilityObjects).union(legacyUpgradeObjects)
-                    .union(mediaDeferralObjects))
+                    .union(mediaDeferralObjects).union(readerHistoryObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

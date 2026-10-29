@@ -59,22 +59,24 @@ final class PublicationCoordinatorTests: XCTestCase {
     private func create(_ candidates: [Candidate], drafts: [PublicationCardDraft]? = nil,
         ids: [PublicationCardID]? = nil, edition: Int = 900, segment: Int = 1000,
         report: SelectionSupplyReport? = nil, expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws -> Create {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingPublication: PublicationStore.BindingPublicationExpectation? = nil) throws -> Create {
         Create(selection: selection(candidates, report: report), drafts: try drafts ?? candidates.map { try draft($0) },
             editionID: FeedEditionID(rawValue: uuid(edition)), publicationSchemaVersion: PublicationSchemaVersion(rawValue: 17),
             selectionSeed: UInt64.max, editionCreatedAt: editionDate, segmentID: FeedSegmentID(rawValue: uuid(segment)),
             segmentSeed: 42, segmentCreatedAt: segmentDate,
             cardIDs: ids ?? candidates.indices.map { PublicationCardID(rawValue: uuid(2000 + $0)) },
-            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions, bindingPublication: bindingPublication)
     }
     private func append(_ candidates: [Candidate], target: FeedEditionID, segment: Int,
         ids: [PublicationCardID], drafts: [PublicationCardDraft]? = nil, revision: EditorialRevision? = nil,
         expectedSourceExclusions: ReaderSourceExclusionSnapshot? = nil,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws -> Append {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingActivation: SessionStore.BindingActivation? = nil) throws -> Append {
         Append(selection: selection(candidates, revision: revision), drafts: try drafts ?? candidates.map { try draft($0) },
             editionID: target, segmentID: FeedSegmentID(rawValue: uuid(segment)), segmentSeed: 77,
             segmentCreatedAt: segmentDate.addingTimeInterval(1), cardIDs: ids,
-            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions, bindingActivation: bindingActivation)
     }
     private func frozen(_ draft: PublicationCardDraft, id: PublicationCardID) throws -> PublishedCard {
         try XCTUnwrap(PublishedCard(id: id, origin: draft.origin, contentEntityID: draft.contentEntityID,
@@ -437,6 +439,67 @@ extension PublicationCoordinatorTests {
             }
             XCTAssertEqual(try PublicationStore(database: db).segments(editionID: first.editionID).count, 1)
             XCTAssertNil(try PublicationStore(database: db).card(id: nextID))
+        }
+    }
+}
+
+extension PublicationCoordinatorTests {
+    func testOwnedExpectationReachesFirstAndInitialWritersWithoutRetakingActivation() throws {
+        for initial in [false, true] {
+            for stale in [false, true] {
+                try withLocation { location in
+                    let db = try RuntimeDatabase(location: location), session = SessionStore(database: db)
+                    let bindings = ReaderHistoryBindingStore(database: db), key = ContextKey(request: .main)
+                    let binding = try bindings.resolve(logicalKey: key), activation = try session.activateBinding(binding.id)
+                    let request = try create([candidate(3)], bindingPublication: .init(activation: activation))
+                    if stale { _ = try session.activateBinding(binding.id) }
+                    let coordinator = PublicationCoordinator(database: db)
+                    let publish = {
+                        if initial { return try coordinator.createInitialEdition(.init(publication: request,
+                            anchorPlacement: .top, checkpointedAt: self.segmentDate)) }
+                        return try coordinator.createEdition(request)
+                    }
+                    if stale {
+                        XCTAssertThrowsError(try publish()) {
+                            XCTAssertEqual($0 as? SessionStoreError, .staleHistoryBinding)
+                        }
+                        XCTAssertNil(try PublicationStore(database: db).edition(id: request.editionID))
+                        XCTAssertNil(try bindings.binding(for: key)?.activeEditionID)
+                    } else {
+                        XCTAssertEqual(try receipt(publish()).editionID, request.editionID)
+                        XCTAssertEqual(try bindings.binding(for: key)?.activeEditionID, request.editionID)
+                        XCTAssertEqual(try session.checkpoint(bindingID: binding.id)?.editionID,
+                            initial ? request.editionID : nil)
+                    }
+                }
+            }
+        }
+    }
+
+    func testOwnedActivationReachesBothAppendWritersAndRejectsRetiredRequests() throws {
+        for tailChecked in [false, true] {
+            try withLocation { location in
+                let db = try RuntimeDatabase(location: location), session = SessionStore(database: db)
+                let binding = try ReaderHistoryBindingStore(database: db).resolve(logicalKey: ContextKey(request: .main))
+                let old = try session.activateBinding(binding.id), coordinator = PublicationCoordinator(database: db)
+                let first = try create([candidate(3)], bindingPublication: .init(activation: old))
+                _ = try coordinator.createInitialEdition(.init(publication: first, anchorPlacement: .top, checkpointedAt: segmentDate))
+                let checkpoint = try session.checkpoint(), current = try session.activateBinding(binding.id)
+                let nextID = PublicationCardID()
+                let stale = try append([candidate(4)], target: first.editionID, segment: 1100,
+                    ids: [nextID], bindingActivation: old)
+                let publish = { (request: Append) in
+                    if tailChecked { return try coordinator.append(request, expectingTailCardID: first.cardIDs[0]) }
+                    return try coordinator.append(request)
+                }
+                XCTAssertThrowsError(try publish(stale)) { XCTAssertEqual($0 as? SessionStoreError, .staleHistoryBinding) }
+                XCTAssertNil(try PublicationStore(database: db).card(id: nextID))
+                let fresh = try append([candidate(4)], target: first.editionID, segment: 1100,
+                    ids: [nextID], bindingActivation: current)
+                _ = try receipt(publish(fresh))
+                XCTAssertEqual(try PublicationStore(database: db).segments(editionID: first.editionID).count, 2)
+                XCTAssertEqual(try session.checkpoint(), checkpoint)
+            }
         }
     }
 }

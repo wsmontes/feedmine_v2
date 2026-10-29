@@ -423,3 +423,65 @@ extension SourceExclusionProductionTests {
         XCTAssertEqual(reoffer.count, 0)
     }
 }
+
+extension SourceExclusionProductionTests {
+    func testOwnedInitialAndAppendKeepTheCapturedActivationThroughPublication() throws {
+        let f = try ExclusionProductionFixture(self)
+        let session = SessionStore(database: f.database), store = PublicationStore(database: f.database)
+        let binding = try ReaderHistoryBindingStore(database: f.database).resolve(logicalKey: f.plan.context.key)
+        let activation = try session.activateBinding(binding.id)
+        _ = try f.admit(f.a, number: 1)
+        var first = try f.initial()
+        first.bindingPublication = .init(activation: activation)
+        guard case .published(_, let receipt) = try InitialProductionSlice(database: f.database)
+            .run(first, prepare: ExclusionProductionFixture.prepared) else { return XCTFail("owned first publication should commit") }
+        let frozen = try XCTUnwrap(store.card(id: receipt.cardIDs[0])), checkpoint = try session.checkpoint()
+        let b = try f.admit(f.b, number: 2)
+        var local = try f.local()
+        local.bindingActivation = activation
+        guard case .published(_, let appended) = try LocalProductionSlice(database: f.database)
+            .run(local, prepare: ExclusionProductionFixture.prepared) else { return XCTFail("owned append should commit") }
+        XCTAssertEqual(try store.card(id: appended.cardIDs[0])?.originRevisionID, b.id)
+        XCTAssertEqual(try store.card(id: frozen.id), frozen)
+        XCTAssertEqual(try session.checkpoint(bindingID: binding.id), checkpoint)
+    }
+
+    func testActivationChangeDuringPreparationRejectsOwnedFirstAndAppendWithoutStealingReader() throws {
+        for initial in [true, false] {
+            let f = try ExclusionProductionFixture(self)
+            let bindings = ReaderHistoryBindingStore(database: f.database), session = SessionStore(database: f.database)
+            let binding = try bindings.resolve(logicalKey: f.plan.context.key), activation = try session.activateBinding(binding.id)
+            _ = try f.admit(f.a, number: 1)
+            var first = try f.initial()
+            first.bindingPublication = .init(activation: activation)
+            if !initial {
+                _ = try InitialProductionSlice(database: f.database).run(first, prepare: ExclusionProductionFixture.prepared)
+                _ = try f.admit(f.b, number: 2)
+            }
+            let store = PublicationStore(database: f.database)
+            let before = initial ? [] : try store.segments(editionID: f.editionID)
+            let point = try session.checkpoint(bindingID: binding.id)
+            let other = try bindings.resolve(logicalKey: ContextKey(request: .source(f.b)))
+            var local = try f.local()
+            local.bindingActivation = activation
+            XCTAssertThrowsError(try {
+                if initial {
+                    _ = try InitialProductionSlice(database: f.database).run(first) { selection in
+                        _ = try session.activateBinding(other.id)
+                        return ExclusionProductionFixture.prepared(selection)
+                    }
+                } else {
+                    _ = try LocalProductionSlice(database: f.database).run(local) { selection in
+                        _ = try session.activateBinding(other.id)
+                        return ExclusionProductionFixture.prepared(selection)
+                    }
+                }
+            }()) { XCTAssertEqual($0 as? SessionStoreError, .staleHistoryBinding) }
+            XCTAssertNil(try session.checkpoint(), "the newer empty reader must remain the active reader")
+            XCTAssertEqual(try session.checkpoint(bindingID: binding.id), point)
+            if initial { XCTAssertNil(try store.edition(id: f.editionID)) }
+            else { XCTAssertEqual(try store.segments(editionID: f.editionID), before) }
+            XCTAssertNil(try bindings.binding(for: ContextKey(request: .source(f.b)))?.activeEditionID)
+        }
+    }
+}

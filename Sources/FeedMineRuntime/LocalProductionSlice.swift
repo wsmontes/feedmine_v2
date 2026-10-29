@@ -95,6 +95,7 @@ public struct LocalProductionSlice: Sendable {
         public var sourceExclusions: ProductionSourceExclusions? = nil
         /// Effective words for this opportunity, independent of the frozen context identity.
         public var wordExclusions: ReaderWordExclusionSnapshot? = nil
+        public var bindingActivation: SessionStore.BindingActivation? = nil
         public let plan: FeedPlan
         public let policy: ResolvedSelectionPolicy
         public let editionID: FeedEditionID
@@ -230,7 +231,7 @@ public struct LocalProductionSlice: Sendable {
             editionID: request.editionID, segmentID: request.segmentID, segmentSeed: request.segmentSeed,
             segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs,
             originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden,
-            operation: request.operation, expectedSourceExclusions: request.sourceExclusions?.snapshot, expectedWordExclusions: request.wordExclusions)
+            operation: request.operation, expectedSourceExclusions: request.sourceExclusions?.snapshot, expectedWordExclusions: request.wordExclusions, bindingActivation: request.bindingActivation)
         let publicationOutcome: PublicationOutcome
         do { publicationOutcome = try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) }
         catch PublicationStoreError.staleWordExclusions { throw LocalProductionSliceError.staleWordExclusions }
