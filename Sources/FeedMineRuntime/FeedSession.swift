@@ -465,7 +465,9 @@ public actor FeedSession {
                 } else {
                     // Fora da faixa: os valores congelados ficam, os pixels voltam.
                     let outside = PresentationCard(publishedCard: card)
-                    released.insert(outside.id)
+                    // Text-only cards never own decoded pixels: they cannot have
+                    // released-image residency to recover on a later reader movement.
+                    if outside.isImageBearing { released.insert(outside.id) }
                     items.append(outside)
                 }
             }
