@@ -9,6 +9,13 @@ import FeedMineDomain
 @testable import FeedMineMedia
 import FeedMineRuntime
 
+private final class ScrollDecodeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var decodes = 0
+    func increment() { lock.lock(); decodes += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return decodes }
+}
+
 /// T3 — the admitted boundary under a real reader: the admitted list is the frozen window around the
 /// reader's anchor (at most `backwardCapacity` cards before it and `forwardCapacity` after it), only
 /// genuine forward movement at the tail grows it, layout changes and backward navigation never do, and
@@ -78,7 +85,7 @@ final class ScrollAdmissionTests: XCTestCase {
 
     /// 30 published cards in two segments, every card carrying the same local image bytes.
     private func fixture(cards count: Int = 30, bounds: FeedPresentationBounds = .init(backwardCapacity: 2,
-        forwardCapacity: 4)) throws -> Fixture {
+        forwardCapacity: 4), onDecode: @escaping @Sendable () -> Void = {}) throws -> Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let bytes = try Self.pngBytes(width: 60, height: 40)
@@ -111,7 +118,7 @@ final class ScrollAdmissionTests: XCTestCase {
             anchor: .init(cardID: cards[0].id, placement: .top)), updatedAt: Date(timeIntervalSince1970: 40))
         let session = FeedSession(publicationHistory: .init(database: database),
             imageDecoder: PresentationImageDecoder(assetDirectory: directory.appendingPathComponent("Media"),
-                heroMaxPixel: 60, thumbnailMaxPixel: 30))
+                heroMaxPixel: 60, thumbnailMaxPixel: 30, onDecode: onDecode))
         return .init(database: database, directory: directory, edition: edition, cards: cards,
             session: session, bounds: bounds)
     }
@@ -222,14 +229,18 @@ final class ScrollAdmissionTests: XCTestCase {
     /// after an offline/eviction interval, an ordinary viewport observation must be able to rematerialize
     /// the same historical card; no new Edition, retry timer or session recreation is involved.
     func testFailedRedecodeRetainsReturnEligibilityAfterLocalAssetRecovers() async throws {
-        let f = try fixture(cards: 10, bounds: .init(backwardCapacity: 2, forwardCapacity: 4))
+        let decodes = ScrollDecodeCounter()
+        let f = try fixture(cards: 10, bounds: .init(backwardCapacity: 2, forwardCapacity: 4),
+            onDecode: { decodes.increment() })
         let installed = try await admitted(f.session, .initial(f.bounds))
+        XCTAssertEqual(decodes.value, 5, "Initial restore decodes the actual five-card window")
         XCTAssertEqual(installed.window.items.map(\.id), Array(f.ids[0...4]))
         XCTAssertNotNil(installed.window.items.first?.image)
 
         // Moving to P4 releases P0 and P1 but leaves the history and its IDs admitted.
         let atFour = try await recorded(f.session, observation(f.cards[4], placement: .top))
         XCTAssertNil(atFour.window.items.first?.image)
+        XCTAssertEqual(decodes.value, 5, "Releasing pixels must not trigger more decoding")
         let directory = f.directory.appendingPathComponent("Media/sha256")
         let asset = try XCTUnwrap(FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil).first)
@@ -242,10 +253,25 @@ final class ScrollAdmissionTests: XCTestCase {
         let unavailable = try await recorded(f.session, home)
         XCTAssertEqual(unavailable.window.items.map(\.id), installed.window.items.map(\.id))
         XCTAssertNil(unavailable.window.items.first?.image)
+        XCTAssertEqual(decodes.value, 7, "Only the two released images should be tried, not the whole band")
 
-        // Repeating the same viewport after the original local bytes return re-decodes the card.
+        // Repeated reports of the same card cannot be treated as a timer for disk retries.
+        // They must be exact no-ops even after bytes return, while a new reader movement
+        // can reconstruct the earlier region without a new Edition or session.
+        for _ in 0..<30 {
+            let unchanged = try await recorded(f.session, home)
+            XCTAssertEqual(unchanged, unavailable)
+        }
+        XCTAssertEqual(decodes.value, 7, "Missing local bytes cannot cause one decode per viewport tick")
         try bytes.write(to: asset)
+        for _ in 0..<30 {
+            let unchanged = try await recorded(f.session, home)
+            XCTAssertEqual(unchanged, unavailable, "Stationary media arrival must not change a held card")
+        }
+        XCTAssertEqual(decodes.value, 7, "Late asset arrival cannot upgrade a stationary presentation")
+        _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
         let recovered = try await recorded(f.session, home)
+        XCTAssertEqual(decodes.value, 9, "Re-entry decodes only the two released images")
         XCTAssertEqual(recovered.window.items.map(\.id), installed.window.items.map(\.id))
         XCTAssertNotNil(recovered.window.items[0].image,
             "Failed re-decode must remain eligible for the next local rematerialization")
