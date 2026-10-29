@@ -144,11 +144,22 @@ public struct SessionStore: Sendable {
         }
     }
 
-    public func clearActiveCheckpoint(bindingActivation: BindingActivation? = nil) throws {
+    /// Bound clears name both the activation and Edition: a same-binding revision rollover can
+    /// retain the activation while retiring callbacks that still refer to the previous Edition.
+    public func clearActiveCheckpoint(bindingActivation: BindingActivation? = nil,
+        expectedEditionID: FeedEditionID? = nil) throws {
         try database.write { db in
             try Self.requireActivation(bindingActivation, in: db)
+            if let bindingActivation {
+                guard let expectedEditionID else { throw SessionStoreError.staleHistoryBinding }
+                try Self.requireCheckpointOwner(editionID: expectedEditionID, activation: bindingActivation, in: db)
+            }
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
-                try Self.persistContext(Self.decode(row, in: db), in: db)
+                let checkpoint = try Self.decode(row, in: db)
+                if let expectedEditionID, checkpoint.editionID != expectedEditionID {
+                    throw SessionStoreError.staleHistoryBinding
+                }
+                try Self.persistContext(checkpoint, in: db)
             }
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
         }

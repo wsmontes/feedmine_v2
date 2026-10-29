@@ -118,7 +118,7 @@ final class ReaderHistoryCheckpointTests: XCTestCase {
         let a = edition(key()), ca = StorageFixture.card(), pa = point(a, ca)
         try store.createInitialEdition(a, firstSegment: StorageFixture.segment(a, [ca]), cards: [ca],
             initialCheckpoint: pa, expectedSourceExclusions: nil, bindingPublication: .init(activation: active))
-        try session.clearActiveCheckpoint(bindingActivation: active)
+        try session.clearActiveCheckpoint(bindingActivation: active, expectedEditionID: a.id)
         let b = edition(key()), cb = StorageFixture.card(), pb = point(b, cb, time: 20)
         XCTAssertThrowsError(try store.createInitialEdition(b, firstSegment: StorageFixture.segment(b, [cb]), cards: [cb],
             initialCheckpoint: pb, expectedSourceExclusions: nil, bindingPublication: .init(activation: active))) {
@@ -132,12 +132,23 @@ final class ReaderHistoryCheckpointTests: XCTestCase {
             bindingPublication: .init(activation: active, expectedActiveEditionID: a.id))
         XCTAssertEqual(try session.checkpoint(), pb)
         XCTAssertEqual(try history.binding(for: key())?.activeEditionID, b.id)
+        XCTAssertThrowsError(try session.clearActiveCheckpoint(bindingActivation: active),
+            "a delayed A clear must not erase B after same-binding rollover")
+        XCTAssertEqual(try session.checkpoint(), pb)
+        XCTAssertThrowsError(try session.clearActiveCheckpoint(bindingActivation: active, expectedEditionID: a.id)) {
+            XCTAssertEqual($0 as? SessionStoreError, .staleHistoryBinding)
+        }
+        XCTAssertEqual(try session.checkpoint(), pb)
         XCTAssertThrowsError(try session.saveCheckpoint(pa, bindingActivation: active),
             "the same activation cannot write a retired Edition after rollover")
         XCTAssertEqual(try db.read { try String.fetchOne($0,
             sql: "SELECT card_id FROM reader_history_checkpoints WHERE binding_id = ? AND edition_id = ?",
             arguments: [PersistenceValueCoding.uuid(binding.id), PersistenceValueCoding.uuid(a.id.rawValue)]) },
             PersistenceValueCoding.uuid(ca.id.rawValue))
+        try session.clearActiveCheckpoint(bindingActivation: active, expectedEditionID: b.id)
+        XCTAssertNil(try session.checkpoint(), "the current Edition can still clear its own singleton")
+        XCTAssertEqual(try session.checkpoint(bindingID: binding.id), pb,
+            "clearing the active singleton preserves the owned historical position")
     }
 
 }

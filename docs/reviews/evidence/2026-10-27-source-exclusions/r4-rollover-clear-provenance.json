@@ -1,0 +1,26 @@
+{
+  "base": "124edecc",
+  "files_sha256": {
+    "Sources/FeedMinePersistence/SessionStore.swift": "24c7144cfe075a71a80caab3a0a550236f63432a06a627a89cc1df6639bac07a",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryCheckpointTests.swift": "8e434cb255139638d9f47c0dced191756ec694c4b5f4239beb1a65b1f96ddfcf"
+  },
+  "test_executable_sha256": "da683c12abbb2144f6fde8ede0ec3c03be8da309d00f47cbbc7cdf266a5f1688",
+  "logs": {
+    "r4-rollover-clear-green.log.gz": {
+      "uncompressed_sha256": "002840e254fb89e6e0059dd4ff609c8447d6944c24a0c9a95814093666a78c5d",
+      "bytes": 252653
+    },
+    "r4-rollover-clear-red.log.gz": {
+      "uncompressed_sha256": "fa99284348a960153a871976ffe3b776840f65704fc85377b78908695b27b1da",
+      "bytes": 3615
+    },
+    "r4-rollover-clear-compatibility.log.gz": {
+      "uncompressed_sha256": "febc45e1138ee59f8bc4da1f65e8f00fe8d21cd90be265d57c0c95710b313066",
+      "bytes": 71072
+    }
+  },
+  "affected_tests": 243,
+  "failures": 0,
+  "independent_review": "P2 resolved; no new findings in correction",
+  "R4_native_host": "FAIL"
+}

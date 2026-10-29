@@ -21,7 +21,7 @@ Files: RuntimeMigrations.swift, SessionStore.swift, new SessionStore+HistoryBind
 Interfaces:
 - SessionStore.BindingActivation (readonly bindingID/token UUIDs); `activateBinding(_ bindingID: UUID) throws -> BindingActivation`, `checkpoint(bindingID:) throws -> CheckpointRecord?`.
 - `saveCheckpoint(_:bindingActivation:)` default nil; initial insert internal helper accepts same optional token.
-- Add SessionStoreError.missingHistoryBinding/staleHistoryBinding.
+- Add SessionStoreError.missingHistoryBinding/staleHistoryBinding. Bound clearActiveCheckpoint additionally requires expectedEditionID to fence same-activation rollover.
 - PublicationStore.BindingPublicationExpectation(activation:expectedActiveEditionID:), second value defaults nil.
 - Guarded first/initial writers add optional `bindingPublication`; guarded append writers add optional `bindingActivation`. Validate active token and expected current Edition, then attach new raw-context Edition and active pointer in the same transaction. Initial owned checkpoint is inserted after attachment in that transaction. Append requires actual Edition to be current and owned.
 - `reader_history_checkpoints`: primary key(binding_id,edition_id), composite ownership FK; same semantic checkpoint fields, no card FK so neighbour restore remains possible.
@@ -32,6 +32,6 @@ Interfaces:
 - [x] Write tests for first-publication atomic ownership/checkpoint, rollback after late invalid placement, legacy collision isolation, A→B→A and stale callbacks, guarded append, nil bypass rejection.
 - [x] Run RED; implement and run focused tests to GREEN.
 - [x] Existing binding/migration/publication/session and owner compatibility tests; diff check/evidence/local checkpoint.
-- [ ] Independent review: dispatched, unavailable due to reviewer usage limit; remains pending.
+- [x] Independent review resumed 2026-10-29: P2 clear-after-rollover reproduced and corrected; reviewer confirmed resolved. See docs/reviews/2026-10-29-f13-checkpoint-clear-rollover.md.
 
 Next: transport expectations through coordinator/runtime, restore semantic history by owned Edition without crossing bindings, native root wiring and ambiguity UI. R4 remains FAIL until actual host continuity and reopen proofs; no expected failures are removed by this task.

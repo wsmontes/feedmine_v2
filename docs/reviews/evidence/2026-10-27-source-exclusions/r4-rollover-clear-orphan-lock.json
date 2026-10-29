@@ -1,0 +1,8 @@
+{
+  "path": ".git/index.lock",
+  "bytes": 0,
+  "age_seconds": 25429.6,
+  "git_processes": "none; pgrep exit1",
+  "open_handles": "none; lsof exit1",
+  "action": "removed unchanged empty orphan lock; repository data untouched"
+}
