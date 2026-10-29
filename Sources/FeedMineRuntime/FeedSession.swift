@@ -163,9 +163,10 @@ public actor FeedSession {
         let items = current.presentation.window.items
         guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
         try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
-        let (bounded, residencyChanged) = try boundedResidency(items: items,
-            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         let anchorChanged = observation.anchor != current.presentation.window.anchor
+        let (bounded, residencyChanged) = try boundedResidency(items: items,
+            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds,
+            decodeReleased: observation.anchor.cardID != current.presentation.window.anchor.cardID)
         guard anchorChanged || residencyChanged else { return current.presentation }
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else { return current.presentation }
         let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
@@ -185,7 +186,8 @@ public actor FeedSession {
     /// so the cost grew with the session (reported on the device as stutter that gets worse the longer one reads).
     /// The unchanged cards keep their identity, which also keeps the feed's own diff small.
     private func boundedResidency(items: [PresentationCard], editionID: FeedEditionID,
-        around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds) throws -> ([PresentationCard], Bool) {
+        around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds,
+        decodeReleased: Bool = true) throws -> ([PresentationCard], Bool) {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return (items, false) }
         let first = max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
@@ -193,7 +195,10 @@ public actor FeedSession {
         // Cards that must hand their pixels back: outside the band, still holding an image.
         let leaving = items.indices.filter { !inside.contains($0) && items[$0].image != nil }
         // Cards that come back into the band having released theirs.
-        let returning = inside.filter { releasedImageCards.contains(items[$0].id) }
+        // A repeated observation of the same card is not another opportunity to repair its
+        // media. Retrying there causes disk reads on every viewport tick and changes a held card
+        // without any movement. Re-entry into this region remains a legitimate local opportunity.
+        let returning = decodeReleased ? inside.filter { releasedImageCards.contains(items[$0].id) } : []
         guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
         var next = items
         var changed = !leaving.isEmpty
@@ -206,9 +211,12 @@ public actor FeedSession {
             let published = try publicationHistory.window(editionID: editionID,
                 around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
                 backwardCapacity: 0, forwardCapacity: last - first)
-            let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
-                ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
-            })
+            let returningIDs = Set(returning.map { items[$0].id })
+            // A missing asset used to re-decode *every* card in the band on each failed
+            // return, including the cards whose pixels were already resident.
+            let decoded = Dictionary(uniqueKeysWithValues: published.cards
+                .filter { returningIDs.contains($0.id) }
+                .map { ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder)) })
             for index in returning {
                 // A missing/undecodable local asset is not restored residency. Keep the
                 // release fact so a later reader opportunity can reconstruct it from disk.
