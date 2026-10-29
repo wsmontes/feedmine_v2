@@ -218,6 +218,41 @@ final class ScrollAdmissionTests: XCTestCase {
         XCTAssertTrue(Set(reachable.window.items.map(\.id)).isDisjoint(with: future))
     }
 
+    /// A failed local re-decode is not a successful residency restore. When the exact asset returns
+    /// after an offline/eviction interval, an ordinary viewport observation must be able to rematerialize
+    /// the same historical card; no new Edition, retry timer or session recreation is involved.
+    func testFailedRedecondeRetainsReturnEligibilityAfterLocalAssetRecovers() async throws {
+        let f = try fixture(cards: 10, bounds: .init(backwardCapacity: 2, forwardCapacity: 4))
+        let installed = try await admitted(f.session, .initial(f.bounds))
+        XCTAssertEqual(installed.window.items.map(\.id), Array(f.ids[0...4]))
+        XCTAssertNotNil(installed.window.items.first?.image)
+
+        // Moving to P4 releases P0 and P1 but leaves the history and its IDs admitted.
+        let atFour = try await recorded(f.session, observation(f.cards[4], placement: .top))
+        XCTAssertNil(atFour.window.items.first?.image)
+        let directory = f.directory.appendingPathComponent("Media/sha256")
+        let asset = try XCTUnwrap(FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil).first)
+        let bytes = try Data(contentsOf: asset)
+        try FileManager.default.removeItem(at: asset)
+
+        // The return fails to decode because the asset has been evicted. This must not mark the
+        // released pixels as restored; the published identity and fixed visual contract remain.
+        let home = observation(f.cards[0], placement: .top)
+        let unavailable = try await recorded(f.session, home)
+        XCTAssertEqual(unavailable.window.items.map(\.id), installed.window.items.map(\.id))
+        XCTAssertNil(unavailable.window.items.first?.image)
+
+        // Repeating the same viewport after the original local bytes return re-decodes the card.
+        try bytes.write(to: asset)
+        let recovered = try await recorded(f.session, home)
+        XCTAssertEqual(recovered.window.items.map(\.id), installed.window.items.map(\.id))
+        XCTAssertNotNil(recovered.window.items[0].image,
+            "Failed re-decode must remain eligible for the next local rematerialization")
+        XCTAssertNotNil(recovered.window.items[1].image)
+        XCTAssertEqual(recovered.window.anchor.cardID, installed.window.anchor.cardID)
+    }
+
     /// Decoded pixels are bounded residency: far cards keep their frozen descriptor and release the
     /// bitmap; coming back re-decodes the same asset without changing geometry. The admitted list is the
     /// window around the anchor, so the pixels that stay resident are exactly the ones the window keeps.
