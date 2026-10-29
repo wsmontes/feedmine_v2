@@ -196,6 +196,7 @@ public actor FeedSession {
         let returning = inside.filter { releasedImageCards.contains(items[$0].id) }
         guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
         var next = items
+        var changed = !leaving.isEmpty
         for index in leaving {
             next[index] = next[index].releasingDecodedImage()
             releasedImageCards.insert(next[index].id)
@@ -209,12 +210,16 @@ public actor FeedSession {
                 ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
             })
             for index in returning {
-                guard let fresh = decoded[items[index].id] else { continue }
+                // A missing/undecodable local asset is not restored residency. Keep the
+                // release fact so a later reader opportunity can reconstruct it from disk.
+                // Never replace a released card with another value that still lacks pixels.
+                guard let fresh = decoded[items[index].id], fresh.image != nil else { continue }
                 next[index] = fresh
                 releasedImageCards.remove(items[index].id)
+                changed = true
             }
         }
-        return (next, true)
+        return (next, changed)
     }
 
     /// Extends the admitted prefix with already-published cards that follow the admitted tail.
