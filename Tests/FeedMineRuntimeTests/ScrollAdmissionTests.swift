@@ -43,6 +43,45 @@ final class ScrollAdmissionTests: XCTestCase {
         XCTAssertLessThanOrEqual(returned.window.items.count, 7)
     }
 
+    /// A historical card is still rendered in the borrowed window after the canonical
+    /// presentation has moved on. A failed exposure transaction must not partially install
+    /// its recovered window or consume the one-shot viewport evidence ordinal.
+    func testBorrowedViewportWriteFailurePreservesStateAndEvidenceForRetry() async throws {
+        let f = try fixture()
+        let first = try await admitted(f.session, .initial(f.bounds))
+        let oldReading = observation(f.cards[0], placement: .top)
+        let evidence = try XCTUnwrap(first.evidence(for: oldReading, ordinal: 1))
+        _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
+        let moved = try await admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
+        XCTAssertFalse(moved.window.items.contains { $0.id == f.cards[0].id })
+
+        try f.database.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER fail_borrowed_usage BEFORE UPDATE ON publication_card_usage
+                BEGIN SELECT RAISE(ABORT, 'borrowed viewport exposure failed'); END
+                """)
+        }
+        do {
+            _ = try await f.session.submitViewport(oldReading, from: evidence)
+            XCTFail("A real historical exposure must attempt the SQLite write")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("borrowed viewport exposure failed"))
+        }
+        let unchanged = await f.session.currentPresentation()
+        XCTAssertEqual(unchanged, moved, "Failed exposure must not install a recovered viewport")
+        try f.database.write { db in
+            try db.execute(sql: "DROP TRIGGER fail_borrowed_usage")
+        }
+        let retried = try await f.session.submitViewport(oldReading, from: evidence)
+        let returned = try XCTUnwrap(retried)
+        XCTAssertEqual(returned.window.anchor, oldReading.anchor)
+        XCTAssertTrue(returned.window.items.contains { $0.id == f.cards[0].id })
+        XCTAssertEqual(returned.provenance.position, moved.provenance.position + 1,
+            "Failed borrowed projection must not consume an extra provenance position")
+        let installedAfterRetry = await f.session.currentPresentation()
+        XCTAssertEqual(installedAfterRetry, returned)
+    }
+
     func testAnotherSessionCannotAuthorizeAReadingPosition() async throws {
         let f = try fixture()
         _ = try await admitted(f.session, .initial(f.bounds))
