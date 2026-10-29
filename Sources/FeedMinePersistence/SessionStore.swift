@@ -8,6 +8,7 @@ import GRDB
 import FeedMineDomain
 
 public enum SessionStoreError: Error, Equatable, Sendable {
+    case missingHistoryBinding, staleHistoryBinding
     case checkpointAlreadyExists
     case invalidPlacement
     case invalidMembership
@@ -16,7 +17,7 @@ public enum SessionStoreError: Error, Equatable, Sendable {
 }
 
 public struct SessionStore: Sendable {
-    private let database: RuntimeDatabase
+    let database: RuntimeDatabase
     public init(database: RuntimeDatabase) { self.database = database }
 
     public struct CheckpointRecord: Hashable, Sendable {
@@ -39,8 +40,9 @@ public struct SessionStore: Sendable {
         }
     }
 
-    public func saveCheckpoint(_ checkpoint: CheckpointRecord) throws {
+    public func saveCheckpoint(_ checkpoint: CheckpointRecord, bindingActivation: BindingActivation? = nil) throws {
         try database.write { db in
+            try Self.requireCheckpointOwner(editionID: checkpoint.editionID, activation: bindingActivation, in: db)
             guard ["top", "center"].contains(checkpoint.anchorPlacement) else { throw SessionStoreError.invalidPlacement }
             guard try Self.member(db, editionID: checkpoint.editionID, cardID: checkpoint.cardID) else { throw SessionStoreError.invalidMembership }
             let time: Double
@@ -63,7 +65,9 @@ public struct SessionStore: Sendable {
     }
 
     /// Inserts the first durable position inside the first-publication transaction.
-    static func insertInitialCheckpoint(_ checkpoint: CheckpointRecord, in db: Database) throws {
+    static func insertInitialCheckpoint(_ checkpoint: CheckpointRecord, in db: Database,
+        bindingActivation: BindingActivation? = nil) throws {
+        try requireCheckpointOwner(editionID: checkpoint.editionID, activation: bindingActivation, in: db)
         guard ["top", "center"].contains(checkpoint.anchorPlacement) else { throw SessionStoreError.invalidPlacement }
         guard try member(db, editionID: checkpoint.editionID, cardID: checkpoint.cardID) else { throw SessionStoreError.invalidMembership }
         let time: Double
@@ -100,7 +104,7 @@ public struct SessionStore: Sendable {
         }
     }
 
-    private static func checkpoint(_ row: Row) throws -> CheckpointRecord {
+    static func checkpoint(_ row: Row) throws -> CheckpointRecord {
         let fields = PublicationRecordFields(row)
         let edition = FeedEditionID(rawValue: try fields.uuid("edition_id"))
         let card = PublicationCardID(rawValue: try fields.uuid("card_id"))
@@ -124,6 +128,7 @@ public struct SessionStore: Sendable {
                 try Self.persistContext(Self.decode(row, in: db), in: db)
             }
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
+            try db.execute(sql: "DELETE FROM session_reader_binding WHERE singleton_id = 1")
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_identity = ?",
                 arguments: [key.canonicalIdentity]) {
                 let saved = try Self.decode(row, in: db)
@@ -139,8 +144,9 @@ public struct SessionStore: Sendable {
         }
     }
 
-    public func clearActiveCheckpoint() throws {
+    public func clearActiveCheckpoint(bindingActivation: BindingActivation? = nil) throws {
         try database.write { db in
+            try Self.requireActivation(bindingActivation, in: db)
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
                 try Self.persistContext(Self.decode(row, in: db), in: db)
             }
@@ -161,6 +167,10 @@ public struct SessionStore: Sendable {
     /// The saved position of a context identity, or nil when that identity never had one.
     public func checkpoint(for key: ContextKey) throws -> CheckpointRecord? {
         try database.read { db in
+            if let binding = try Row.fetchOne(db, sql: "SELECT id FROM reader_history_bindings WHERE logical_identity = ?",
+                arguments: [key.canonicalIdentity]) {
+                return try Self.ownedCheckpoint(bindingID: PublicationRecordFields(binding).uuid("id"), in: db)
+            }
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_identity = ?",
                 arguments: [key.canonicalIdentity]) else { return nil }
             return try Self.decode(row, in: db)
@@ -184,7 +194,12 @@ public struct SessionStore: Sendable {
         }
     }
 
-    private static func persistContext(_ checkpoint: CheckpointRecord, in db: Database) throws {
+    static func persistContext(_ checkpoint: CheckpointRecord, in db: Database) throws {
+        if let owner = try String.fetchOne(db, sql: "SELECT binding_id FROM reader_history_editions WHERE edition_id = ?",
+            arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue)]) {
+            try persistOwned(checkpoint, bindingID: PersistenceValueCoding.uuid(owner, field: "binding_id"), in: db)
+            return // Never overwrite another reader's legacy folded-key checkpoint.
+        }
         // The identity comes from the Edition (one implementation of it, in `ContextKey`); the reduced
         // `context_key` text is still written for one release so an older build can read this database.
         // A row without an identity cannot be filed: it is skipped rather than merged into another context.

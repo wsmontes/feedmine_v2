@@ -106,10 +106,31 @@ public struct ReaderHistoryBindingStore: Sendable {
                         try Self.encode(adoption.publicationKey), kind, provenance])
                 try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
                     arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue), PersistenceValueCoding.uuid(id)])
+                try SessionStore.seedBindingCheckpoint(bindingID: id, editionID: adoption.editionID, in: db)
             }
             guard let result = try Self.read(logicalKey, in: db) else { throw Failure.corruption }
             return result
         }
+    }
+
+    static func attachNewEdition(_ edition: PublicationStore.EditionRecord,
+        expectation: PublicationStore.BindingPublicationExpectation, in db: Database) throws {
+        try SessionStore.requireActivation(expectation.activation, in: db)
+        let id = PersistenceValueCoding.uuid(expectation.activation.bindingID)
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?", arguments: [id]) else {
+            throw SessionStoreError.missingHistoryBinding
+        }
+        let active = try PublicationRecordFields(row).optionalUUID("active_edition_id").map { FeedEditionID(rawValue: $0) }
+        guard active == expectation.expectedActiveEditionID else { throw SessionStoreError.staleHistoryBinding }
+        guard try Self.key(row, field: "logical_key_json") == edition.editorialRevision.contextKey else {
+            throw Failure.incompatibleAdoption
+        }
+        try db.execute(sql: """
+            INSERT INTO reader_history_editions(edition_id, binding_id, publication_key_json, adoption_kind)
+            VALUES (?, ?, ?, 'exact_context')
+            """, arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), id, try encode(edition.editorialRevision.contextKey)])
+        try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
+            arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), id])
     }
 
     private struct PolicyEvidence: Encodable {

@@ -1,0 +1,49 @@
+{
+  "base": "ed492b27",
+  "files_sha256": {
+    "Sources/FeedMinePersistence/SessionStore.swift": "7dd74d896cee2d1310440853c9b8b5b1b8cbc01c29eeeb3f426c471555bb7f11",
+    "Sources/FeedMinePersistence/SessionStore+HistoryBinding.swift": "c31a53de2c866cff36a6c477918d14ff059bc2f5ec086d762711040ff3468965",
+    "Sources/FeedMinePersistence/RuntimeMigrations.swift": "6005435f2c4fce6de5e7109d19854e246ec201e551b456fb5b332ceb4c4831e6",
+    "Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift": "b412bd0326ecf41a0462789b453dbd971c4a8aa455adbe7e8fbf90088de12f24",
+    "Sources/FeedMinePersistence/PublicationStore+Writing.swift": "0f24a71fe4b00e38138caa678c66d39e8b043b4e3180ec7758108f8de928de01",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryCheckpointTests.swift": "6f91a373b98adafb5de82369f337fd884265c0f224d07f6da70d10f02a3e584b"
+  },
+  "test_executable_sha256": "10cff56dbb2e2586b63c62c6a402c34f0bbc516e31c8c200d30953c0be7e8ca6",
+  "logs": {
+    "r4-owned-checkpoint-clear-green.log.gz": {
+      "uncompressed_sha256": "4e35965aa5b15efd671f0b8bd704ac277dbe938c5b946165457583559ec8e111",
+      "bytes": 252341
+    },
+    "r4-owned-checkpoint-clear-red.log.gz": {
+      "uncompressed_sha256": "b5542fab62e605e533271644bb0389da528cddffacfaa74770d9d1e413e7a6cf",
+      "bytes": 3289
+    },
+    "r4-owned-checkpoint-compile-fix.log.gz": {
+      "uncompressed_sha256": "ad83c634d96106c54e777883e60c60a1043c2628da343045a631847dcde0ec64",
+      "bytes": 828856
+    },
+    "r4-owned-checkpoint-final.log.gz": {
+      "uncompressed_sha256": "b349d01df3432e604694ef13e8d95c034299a3f874afd241c2859041f6d9318e",
+      "bytes": 16245
+    },
+    "r4-owned-checkpoint-green.log.gz": {
+      "uncompressed_sha256": "c623f2806d15a4a4aaddbbf3f913fbf053666e4c94df128da798082f56a52b0e",
+      "bytes": 4049
+    },
+    "r4-owned-checkpoint-publish-validation.log.gz": {
+      "uncompressed_sha256": "abca41b5d4452acdce61e5874945a239fa644b96d9184c08daf4aab80949fc58",
+      "bytes": 71072
+    },
+    "r4-owned-checkpoint-red.log.gz": {
+      "uncompressed_sha256": "32163308e60953cab994cfa7874718df8930cf964dcd1360b2453416e6e92733",
+      "bytes": 19965
+    }
+  },
+  "new_tests": 5,
+  "publication_checkpoint_migration_tests": 48,
+  "combined_affected_tests": 243,
+  "failures": 0,
+  "independent_review": "NOT_COMPLETED_USAGE_LIMIT",
+  "native_wiring": false,
+  "R4_host_status": "FAIL"
+}

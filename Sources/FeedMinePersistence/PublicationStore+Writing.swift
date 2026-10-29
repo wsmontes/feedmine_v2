@@ -10,17 +10,29 @@ import FeedMineDomain
 
 extension PublicationStore {
 
+    public struct BindingPublicationExpectation: Hashable, Sendable {
+        public let activation: SessionStore.BindingActivation
+        public let expectedActiveEditionID: FeedEditionID?
+        public init(activation: SessionStore.BindingActivation, expectedActiveEditionID: FeedEditionID? = nil) {
+            self.activation = activation
+            self.expectedActiveEditionID = expectedActiveEditionID
+        }
+    }
+
     public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord]) throws {
         try createEdition(edition, firstSegment: firstSegment, cards: cards, expectedSourceExclusions: nil)
     }
 
     public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord],
         expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingPublication: BindingPublicationExpectation? = nil) throws {
         try database.write { db in
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             try Self.requireWordExclusions(expectedWordExclusions, in: db)
+            try SessionStore.requireActivation(bindingPublication?.activation, in: db)
             try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
+            if let bindingPublication { try ReaderHistoryBindingStore.attachNewEdition(edition, expectation: bindingPublication, in: db) }
         }
     }
 
@@ -33,7 +45,8 @@ extension PublicationStore {
     public func createInitialEdition(_ edition: EditionRecord, firstSegment: SegmentRecord,
         cards: [CardRecord], initialCheckpoint: SessionStore.CheckpointRecord,
         expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingPublication: BindingPublicationExpectation? = nil) throws {
         try database.write { db in
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             try Self.requireWordExclusions(expectedWordExclusions, in: db)
@@ -42,8 +55,10 @@ extension PublicationStore {
                 firstSegment.cardIDs.contains(initialCheckpoint.cardID) else {
                 throw PublicationStoreError.invalidInitialCheckpoint
             }
+            try SessionStore.requireActivation(bindingPublication?.activation, in: db)
             try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
-            try SessionStore.insertInitialCheckpoint(initialCheckpoint, in: db)
+            if let bindingPublication { try ReaderHistoryBindingStore.attachNewEdition(edition, expectation: bindingPublication, in: db) }
+            try SessionStore.insertInitialCheckpoint(initialCheckpoint, in: db, bindingActivation: bindingPublication?.activation)
         }
     }
 
@@ -71,9 +86,11 @@ extension PublicationStore {
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
         expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingActivation: SessionStore.BindingActivation? = nil) throws {
         try appendSegment(segment, cards: cards, expectedTail: nil, recurrence: .forbidden,
-            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions,
+            bindingActivation: bindingActivation)
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
@@ -85,9 +102,11 @@ extension PublicationStore {
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
         expectingTailCardID: PublicationCardID, recurrence: OriginRecurrenceRecord = .forbidden,
         expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingActivation: SessionStore.BindingActivation? = nil) throws {
         try appendSegment(segment, cards: cards, expectedTail: expectingTailCardID, recurrence: recurrence,
-            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions)
+            expectedSourceExclusions: expectedSourceExclusions, expectedWordExclusions: expectedWordExclusions,
+            bindingActivation: bindingActivation)
     }
 
     private static func requireSourceExclusions(_ expected: ReaderSourceExclusionSnapshot?, in db: Database) throws {
@@ -142,8 +161,10 @@ extension PublicationStore {
     private func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
         expectedTail: PublicationCardID?, recurrence: OriginRecurrenceRecord,
         expectedSourceExclusions: ReaderSourceExclusionSnapshot?,
-        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil) throws {
+        expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
+        bindingActivation: SessionStore.BindingActivation? = nil) throws {
         try database.write { db in
+            try SessionStore.requireCheckpointOwner(editionID: segment.editionID, activation: bindingActivation, in: db)
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             try Self.requireWordExclusions(expectedWordExclusions, in: db)
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",

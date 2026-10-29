@@ -715,6 +715,31 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        migrator.registerMigration("reader-history-position-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_history_checkpoints (
+                    binding_id TEXT NOT NULL,
+                    edition_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    anchor_placement TEXT NOT NULL CHECK(anchor_placement IN ('top', 'center')),
+                    updated_at REAL NOT NULL,
+                    anchor_top_delta REAL,
+                    anchor_height REAL,
+                    PRIMARY KEY(binding_id, edition_id),
+                    FOREIGN KEY(binding_id, edition_id) REFERENCES reader_history_editions(binding_id, edition_id)
+                );
+                CREATE TABLE session_reader_binding (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    binding_id TEXT NOT NULL REFERENCES reader_history_bindings(id),
+                    activation_token TEXT NOT NULL
+                );
+                """)
+            for row in try Row.fetchAll(db, sql: "SELECT binding_id, edition_id FROM reader_history_editions") {
+                let fields = PublicationRecordFields(row)
+                try SessionStore.seedBindingCheckpoint(bindingID: fields.uuid("binding_id"),
+                    editionID: FeedEditionID(rawValue: fields.uuid("edition_id")), in: db)
+            }
+        }
         return migrator
     }
 
