@@ -221,7 +221,7 @@ final class ScrollAdmissionTests: XCTestCase {
     /// A failed local re-decode is not a successful residency restore. When the exact asset returns
     /// after an offline/eviction interval, an ordinary viewport observation must be able to rematerialize
     /// the same historical card; no new Edition, retry timer or session recreation is involved.
-    func testFailedRedecondeRetainsReturnEligibilityAfterLocalAssetRecovers() async throws {
+    func testFailedRedecodeRetainsReturnEligibilityAfterLocalAssetRecovers() async throws {
         let f = try fixture(cards: 10, bounds: .init(backwardCapacity: 2, forwardCapacity: 4))
         let installed = try await admitted(f.session, .initial(f.bounds))
         XCTAssertEqual(installed.window.items.map(\.id), Array(f.ids[0...4]))
