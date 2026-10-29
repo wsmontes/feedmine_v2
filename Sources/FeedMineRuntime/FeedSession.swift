@@ -162,7 +162,13 @@ public actor FeedSession {
         guard let current = state else { return nil }
         let items = current.presentation.window.items
         guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
-        try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
+        // Marking exposure is a persistence write, even when the high-water card does not move.
+        // Repeated viewport callbacks and placement-only changes on the same card must not
+        // refresh last_seen_at on every frame. A different card (including a return to an
+        // older one) remains a real reading observation and records its exposure.
+        if observation.anchor.cardID != original.presentation.window.anchor.cardID {
+            try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
+        }
         let anchorChanged = observation.anchor != current.presentation.window.anchor
         let (bounded, residencyChanged) = try boundedResidency(items: items,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds,
