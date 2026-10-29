@@ -162,7 +162,9 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         print("T7 CPU user=\(userCPU)s system=\(systemCPU)s processMaxRSS=\(after.ru_maxrss) bytes")
         print("T7 projection 100 refresh: ms=\((ProcessInfo.processInfo.systemUptime - started) * 1000), decode=\(counter.value), decodedBytes=\(300 * 200 * 4)")
         XCTAssertEqual(counter.value, 1, "Unchanged visible card must reuse its prepared image")
-        try FileManager.default.removeItem(at: localAssetURL(directory: directory, digest: digest))
+        let evictedAssetURL = localAssetURL(directory: directory, digest: digest)
+        let evictedBytes = try Data(contentsOf: evictedAssetURL)
+        try FileManager.default.removeItem(at: evictedAssetURL)
         let retained = try await session.admitPresentation(.forwardScroll(anchor))
         XCTAssertEqual(retained?.window.items[0].image, initial.window.items[0].image, "Visible projection stays frozen")
         let reopened = FeedSession(publicationHistory: .init(database: database), imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"), heroMaxPixel: 300, thumbnailMaxPixel: 88))
@@ -180,8 +182,7 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
             around: .init(cardID: card.id, placement: .center), backwardCapacity: 0, forwardCapacity: 0)
         XCTAssertEqual(retainedHistory.cards.map(\.id), [card.id],
             "Withholding an undecodable presentation must not remove its published history")
-        let recoveredDigest = try writeLocalAsset(directory: directory)
-        XCTAssertEqual(recoveredDigest, digest)
+        try evictedBytes.write(to: evictedAssetURL)
         let retry = try await reopened.admitPresentation(.restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
         XCTAssertEqual(retry?.window.items.map(\.id), [card.id])
         XCTAssertEqual(retry?.window.items.first?.image?.cgImage.width, 300,
