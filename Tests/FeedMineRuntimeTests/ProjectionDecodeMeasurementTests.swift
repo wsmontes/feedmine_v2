@@ -121,6 +121,11 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
             "as cartas acima da banda mantêm seus valores congelados com o bitmap liberado")
         XCTAssertTrue(restored.window.items[0].isImageBearing, "a residência nunca redefine o layout publicado")
         XCTAssertEqual(restored.window.items[0].mediaAspectRatio, bounded.window.items.last?.mediaAspectRatio)
+        // RED expected until B05's retained head and the 2026-10-17 readiness rule are reconciled.
+        // Unlike the eviction scenario below, the local image file exists and decodes successfully:
+        // geometry-only historical slots are still sent to FeedScreenStore as admitted cards.
+        XCTAssertFalse(restored.window.items.contains { $0.isImageBearing && $0.image == nil },
+            "A deep restore must not admit any undecoded image-bearing card as a drawable card")
     }
 
     func testRepeatedLocalRefreshMeasuresDecodeWork() async throws {
