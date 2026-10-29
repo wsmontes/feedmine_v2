@@ -16,7 +16,20 @@ extension SessionStore {
             guard let binding = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
                 arguments: [id]) else { throw SessionStoreError.missingHistoryBinding }
             if let current = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
-                try Self.persistContext(Self.checkpoint(current), in: db)
+                let point = try Self.checkpoint(current)
+                let retained = try Self.ownedCheckpoint(bindingID: bindingID, in: db)
+                let located = try PublicationStore.location(ofCard: point.cardID, in: db)
+                let corrected = located.map { location in
+                    CheckpointRecord(editionID: location.editionID, cardID: point.cardID,
+                        anchorPlacement: point.anchorPlacement, updatedAt: point.updatedAt,
+                        topDelta: point.topDelta, cardHeight: point.cardHeight)
+                }
+                // Explicit adoption may already retain this exact card-authoritative statement.
+                // Re-filing its inconsistent legacy Edition would fail for an archived card (or
+                // pollute an unrelated context). No source history needs rewriting in that case.
+                if corrected == nil || corrected != retained {
+                    try Self.persistContext(point, in: db)
+                }
             }
             if let editionID = try PublicationRecordFields(binding).optionalUUID("active_edition_id") {
                 try Self.seedBindingCheckpoint(bindingID: bindingID, editionID: FeedEditionID(rawValue: editionID), in: db)

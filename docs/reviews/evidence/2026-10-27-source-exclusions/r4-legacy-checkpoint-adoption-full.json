@@ -1,0 +1,22 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--skip-build",
+    "--scratch-path",
+    ".build/index-build",
+    "--disable-index-store",
+    "--jobs",
+    "1",
+    "-Xswiftc",
+    "-gnone"
+  ],
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "minimum_observed_free": 2552643584,
+  "free_before": 2751213568,
+  "free_after": 2720960512,
+  "reserved_free_floor": 314572800,
+  "elapsed_seconds": 117.96096708392724,
+  "scope": "full macOS Debug Swift package functional suite; not native iOS or benchmark acceptance"
+}

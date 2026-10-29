@@ -26,10 +26,14 @@ public struct ReaderHistoryBindingStore: Sendable {
         public let editionID: FeedEditionID
         public let publicationKey: ContextKey
         public let evidence: Evidence
-        public init(editionID: FeedEditionID, publicationKey: ContextKey, evidence: Evidence) {
+        /// Original durable statement, before card-authoritative Edition correction. Never a neighbour cursor.
+        public let checkpoint: SessionStore.CheckpointRecord?
+        public init(editionID: FeedEditionID, publicationKey: ContextKey, evidence: Evidence,
+            checkpoint: SessionStore.CheckpointRecord? = nil) {
             self.editionID = editionID
             self.publicationKey = publicationKey
             self.evidence = evidence
+            self.checkpoint = checkpoint
         }
     }
 
@@ -53,6 +57,7 @@ public struct ReaderHistoryBindingStore: Sendable {
                 // Established ownership is a fact, not a fresh policy inference. Do not replace its provenance.
                 return existing
             }
+            var adoptedPoint: SessionStore.CheckpointRecord?
             var provenance: Data?
             var kind = "exact_context"
             if let adoption {
@@ -76,6 +81,9 @@ public struct ReaderHistoryBindingStore: Sendable {
                     }
                     kind = "legacy_words"
                     provenance = try Self.encode(PolicyEvidence(snapshot))
+                }
+                if let original = adoption.checkpoint {
+                    adoptedPoint = try Self.validatedCheckpoint(original, editionID: adoption.editionID, in: db)
                 }
                 if let owner = try String.fetchOne(db,
                     sql: "SELECT binding_id FROM reader_history_editions WHERE edition_id = ?",
@@ -106,11 +114,33 @@ public struct ReaderHistoryBindingStore: Sendable {
                         try Self.encode(adoption.publicationKey), kind, provenance])
                 try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
                     arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue), PersistenceValueCoding.uuid(id)])
-                try SessionStore.seedBindingCheckpoint(bindingID: id, editionID: adoption.editionID, in: db)
+                if let adoptedPoint {
+                    try SessionStore.persistOwned(adoptedPoint, bindingID: id, in: db)
+                } else {
+                    try SessionStore.seedBindingCheckpoint(bindingID: id, editionID: adoption.editionID, in: db)
+                }
             }
             guard let result = try Self.read(logicalKey, in: db) else { throw Failure.corruption }
             return result
         }
+    }
+
+    private static func validatedCheckpoint(_ original: SessionStore.CheckpointRecord,
+        editionID: FeedEditionID, in db: Database) throws -> SessionStore.CheckpointRecord {
+        // Recheck the exact source statement in the ownership transaction. A caller cannot fabricate
+        // a position or silently substitute a resolved neighbour for the saved durable anchor.
+        let rows = try Row.fetchAll(db, sql: "SELECT * FROM session_checkpoint WHERE card_id = ?",
+            arguments: [PersistenceValueCoding.uuid(original.cardID.rawValue)])
+            + Row.fetchAll(db, sql: "SELECT * FROM context_checkpoints WHERE card_id = ?",
+                arguments: [PersistenceValueCoding.uuid(original.cardID.rawValue)])
+        guard try rows.contains(where: { try SessionStore.checkpoint($0) == original }) else {
+            throw Failure.incompatibleAdoption
+        }
+        let resolvedEdition = try PublicationStore.location(ofCard: original.cardID, in: db)?.editionID
+            ?? original.editionID
+        guard resolvedEdition == editionID else { throw Failure.incompatibleAdoption }
+        return .init(editionID: editionID, cardID: original.cardID, anchorPlacement: original.anchorPlacement,
+            updatedAt: original.updatedAt, topDelta: original.topDelta, cardHeight: original.cardHeight)
     }
 
     static func attachNewEdition(_ edition: PublicationStore.EditionRecord,

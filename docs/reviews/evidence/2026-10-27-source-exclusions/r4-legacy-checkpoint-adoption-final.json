@@ -1,0 +1,23 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--scratch-path",
+    ".build/index-build",
+    "--disable-index-store",
+    "--jobs",
+    "1",
+    "-Xswiftc",
+    "-gnone",
+    "--filter",
+    "ReaderHistoryBindingStoreTests|ReaderHistoryCheckpointTests|PublicationOwnedHistoryTests|DurableAnchorRestoreTests"
+  ],
+  "exit_code": 1,
+  "stopped_for_disk_budget": false,
+  "minimum_observed_free": 2781081600,
+  "free_before": 2781548544,
+  "free_after": 2781409280,
+  "reserved_free_floor": 314572800,
+  "elapsed_seconds": 3.0185685420874506,
+  "scope": "filtered macOS Debug reader history binding/adoption tests; not benchmark or R4 host acceptance"
+}

@@ -1,0 +1,38 @@
+{
+  "logs": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-adoption-final.log.gz": {
+      "sha256_uncompressed": "922d6ae4933a1b6bffaad7e0586a1da599f1a4f66a1a1efa8805ea245a02af93",
+      "bytes": 1229
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-adoption-full.log.gz": {
+      "sha256_uncompressed": "420c7b235848a388392f6e79e594b6de071fb2517efcd116d4f956179c8a33e7",
+      "bytes": 541284
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-adoption-green.log.gz": {
+      "sha256_uncompressed": "aa5b10a9980198297279f6323c48619980f16f847592b6a689572f93c9ba8ffc",
+      "bytes": 10432
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-adoption-red.log.gz": {
+      "sha256_uncompressed": "96803bb35396a5452dab2fd695670b79166f638b829a7bdfb5b2de4ff4b1ecb2",
+      "bytes": 1601
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-adoption-verified.log.gz": {
+      "sha256_uncompressed": "1612991c177135c959835258ed305d60b1d293330ccdaad0f18f1fb81af180b4",
+      "bytes": 10272
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-archived-authority-green.log.gz": {
+      "sha256_uncompressed": "2ea361b253c7ec6f65700656373a2187e33b715ea5531a255ae1fa73de5a2413",
+      "bytes": 10259
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-legacy-checkpoint-archived-authority-red.log.gz": {
+      "sha256_uncompressed": "58d4c8e0f727834274acdd630ff887b9fc29dc92d59dcb1675f59384470708ea",
+      "bytes": 10510
+    }
+  },
+  "files": {
+    "Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift": "2da02119420104506d57302ce49c5815c6e5d10f8c09e4d9106578bd4e8c40df",
+    "Sources/FeedMinePersistence/SessionStore+HistoryBinding.swift": "ed8b2f880af9b94b7fd2eacd3b6700ed9d025cb45743c93317a785225e97f3df",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift": "b56c8cf7fd69bd36f0ca2ee2fd47ffbe1e01db09d6951e62cca91f127bc3607c",
+    ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests": "fb5aebbf7546e1ee1b24882a0926e3f42f4689abb8d7227c2a6c6d1834682470"
+  }
+}

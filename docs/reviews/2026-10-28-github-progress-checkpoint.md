@@ -1,5 +1,11 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — adoção legada, 2026-10-29
+
+A adoção pode receber o checkpoint original e validar sua evidência durável na transação. A Edition real do card prevalece sobre a coluna inconsistente, preservando data/offset. Corrigida também falha de FK ao ativar card arquivado já retido no vínculo. Revisão independente concluída; suíte completa **1829 testes, um ignorado, zero falhas**. [Relatório](2026-10-29-f13-legacy-checkpoint-adoption.md).
+
+A composição nativa ainda não usa este novo caminho. R4 permanece FAIL; recuperação de ambiguidades e aceitação iOS continuam pendentes.
+
 ## Atualização — histórico semântico, 2026-10-29
 
 Restauração/salvamento por ownership e transporte pelos owners frio/ativo implementados e revisados. Suíte completa: **1824 testes, um ignorado, zero falhas**; foco final: 145/0. Migração aditiva preserva anchors arquivados/desconhecidos e limpeza explícita, sem remover FKs. [Relatório](2026-10-29-f13-owned-semantic-history.md).
