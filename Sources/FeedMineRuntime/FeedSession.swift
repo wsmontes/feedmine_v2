@@ -134,17 +134,16 @@ public actor FeedSession {
     /// publish or acquire content. Ordinary admission remains an explicit operation.
     public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil) throws -> FeedPresentationSnapshot? {
         guard let original = state else { return nil }
+        var recoveredWindow: FeedWindowSnapshot?
         if let evidence {
             guard evidence.observation == observation, evidence.belongs(to: original.presentation),
                 evidence.ordinal > lastRenderedViewportOrdinal else { return nil }
-            lastRenderedViewportOrdinal = evidence.ordinal
             if !original.presentation.window.items.contains(where: { $0.id == observation.anchor.cardID }) {
-                // The reader is still looking at a previous presentation from this same association.
-                // Re-read only locally published IDs already admitted by one of these two values.
+                // A borrowed rendered window may refer to already-admitted cards that the
+                // canonical window cut. Read them locally, but do not install their projection
+                // before exposure succeeds: a failed SQLite write must leave the whole session
+                // (including its evidence ordinal and projection provenance) unchanged.
                 let allowed = Set(original.presentation.window.items.map(\.id) + evidence.admittedIDs)
-                // Com a cabeça mantida, a releitura tem de alcançar **toda** carta já admitida; com a regra do
-                // arquiteto basta a capacidade congelada. O filtro abaixo continua mantendo exatamente as
-                // identidades admitidas, então alargar a leitura não admite nada de novo.
                 let kept = original.bounds.keepsAdmittedHead ? allowed.count : original.bounds.backwardCapacity
                 let history = try publicationHistory.window(editionID: original.presentation.editionID,
                     around: FeedWindowAnchor(cardID: observation.anchor.cardID, placement: .center),
@@ -153,32 +152,37 @@ public actor FeedSession {
                 let cards = history.cards.filter { allowed.contains($0.id) }
                     .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
                 guard let window = FeedWindowSnapshot(items: cards, anchor: observation.anchor) else { return nil }
-                let restored = try projectWindow(contextKey: original.presentation.contextKey,
-                    editionID: original.presentation.editionID, window: window)
-                state = FeedSessionState(editorialRevisionID: original.editorialRevisionID,
-                    presentation: restored, bounds: original.bounds)
+                recoveredWindow = window
             }
         }
-        guard let current = state else { return nil }
-        let items = current.presentation.window.items
-        guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
-        // Marking exposure is a persistence write, even when the high-water card does not move.
-        // Repeated viewport callbacks and placement-only changes on the same card must not
-        // refresh last_seen_at on every frame. A different card (including a return to an
-        // older one) remains a real reading observation and records its exposure.
-        if observation.anchor.cardID != original.presentation.window.anchor.cardID {
-            try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
+
+        let items = recoveredWindow?.items ?? original.presentation.window.items
+        guard items.contains(where: { $0.id == observation.anchor.cardID }) else {
+            if let evidence { lastRenderedViewportOrdinal = evidence.ordinal }
+            return original.presentation
         }
-        let anchorChanged = observation.anchor != current.presentation.window.anchor
+        // Marking exposure is a persistence write, even when the high-water card does not move.
+        // Repeated callbacks and placement-only changes on the same card are not new exposure.
+        // A different card (including a return to an older one) remains a real observation.
+        if observation.anchor.cardID != original.presentation.window.anchor.cardID {
+            try publicationHistory.markSeen(editionID: original.presentation.editionID, cardID: observation.anchor.cardID)
+        }
+        let anchorChanged = observation.anchor != original.presentation.window.anchor
         let (bounded, residencyChanged) = try boundedResidency(items: items,
-            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds,
-            decodeReleased: observation.anchor.cardID != current.presentation.window.anchor.cardID)
-        guard anchorChanged || residencyChanged else { return current.presentation }
-        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else { return current.presentation }
-        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
-            editionID: current.presentation.editionID, window: window)
-        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
-            bounds: current.bounds)
+            editionID: original.presentation.editionID, around: observation.anchor.cardID, bounds: original.bounds,
+            decodeReleased: recoveredWindow == nil && observation.anchor.cardID != original.presentation.window.anchor.cardID)
+        guard anchorChanged || residencyChanged || recoveredWindow != nil else {
+            if let evidence { lastRenderedViewportOrdinal = evidence.ordinal }
+            return original.presentation
+        }
+        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
+            return original.presentation
+        }
+        let snapshot = try projectWindow(contextKey: original.presentation.contextKey,
+            editionID: original.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: original.editorialRevisionID, presentation: snapshot,
+            bounds: original.bounds)
+        if let evidence { lastRenderedViewportOrdinal = evidence.ordinal }
         return snapshot
     }
 
