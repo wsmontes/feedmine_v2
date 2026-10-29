@@ -10,8 +10,12 @@ import FeedMineDomain
 
 extension PublicationStore {
 
-    public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID, at date: Date = Date()) throws {
-        try database.write { try Self.markSeen(editionID: editionID, cardID: cardID, at: date, in: $0) }
+    public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID, at date: Date = Date(),
+        bindingActivation: SessionStore.BindingActivation? = nil) throws {
+        try database.write { db in
+            try SessionStore.requireCheckpointOwner(editionID: editionID, activation: bindingActivation, in: db)
+            try Self.markSeen(editionID: editionID, cardID: cardID, at: date, in: db)
+        }
     }
     static func markSeen(editionID: FeedEditionID, cardID: PublicationCardID, at date: Date = Date(), in db: Database) throws {
         let key = PersistenceValueCoding.uuid(editionID.rawValue)

@@ -63,14 +63,16 @@ public struct RestoredPublication: Hashable, Sendable {
 public struct PublicationHistory: Sendable {
     private let publicationStore: PublicationStore
     private let sessionStore: SessionStore
+    private let bindingActivation: SessionStore.BindingActivation?
 
-    public init(database: RuntimeDatabase) {
+    public init(database: RuntimeDatabase, bindingActivation: SessionStore.BindingActivation? = nil) {
         publicationStore = PublicationStore(database: database)
         sessionStore = SessionStore(database: database)
+        self.bindingActivation = bindingActivation
     }
 
     public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID) throws {
-        try publicationStore.markSeen(editionID: editionID, cardID: cardID)
+        try publicationStore.markSeen(editionID: editionID, cardID: cardID, bindingActivation: bindingActivation)
     }
 
     /// Committed ready-ahead history, independent of presentation window capacities.
@@ -145,9 +147,10 @@ public struct PublicationHistory: Sendable {
 
     private func restore(contextKey: ContextKey?,
         read: (FeedEdition, FeedWindowAnchor) throws -> [PublicationStore.CardRecord]) throws -> RestoredPublication? {
-        let saved = try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
+        let saved = try readCheckpoint(contextKey: contextKey)
         guard let checkpoint = saved else { return nil }
         let (cursor, position) = try resolved(try PublicationPersistenceMapping.cursor(checkpoint))
+        try validateBinding(editionID: cursor.editionID)
         guard let record = try publicationStore.edition(id: cursor.editionID) else {
             throw PublicationHistoryError.missingEdition
         }
@@ -160,6 +163,7 @@ public struct PublicationHistory: Sendable {
             position: position) else {
             throw PublicationHistoryError.inconsistentRestore
         }
+        try validateBinding(editionID: restored.edition.id)
         return restored
     }
 
@@ -216,7 +220,8 @@ public struct PublicationHistory: Sendable {
 
     /// Persists a logical cursor for an explicit session checkpoint milestone.
     public func saveCursor(_ cursor: SessionCursor, updatedAt: Date) throws {
-        try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt))
+        try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt),
+            bindingActivation: bindingActivation)
     }
 
     /// The durable cursor a restore would read for this identity — nothing more: no Edition lookup, no window and no
@@ -224,9 +229,20 @@ public struct PublicationHistory: Sendable {
     /// (`FeedSession`), so what that rule protects is exactly what a reopen would honour.
     /// Nil means no saved session. Storage and mapping failures propagate unchanged.
     public func savedCursor(contextKey: ContextKey? = nil) throws -> SessionCursor? {
-        guard let checkpoint = try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
+        guard let checkpoint = try readCheckpoint(contextKey: contextKey)
         else { return nil }
         return try PublicationPersistenceMapping.cursor(checkpoint)
+    }
+
+    private func readCheckpoint(contextKey: ContextKey?) throws -> SessionStore.CheckpointRecord? {
+        if let bindingActivation {
+            return try sessionStore.checkpoint(bindingActivation: bindingActivation, contextKey: contextKey)
+        }
+        return try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
+    }
+
+    private func validateBinding(editionID: FeedEditionID) throws {
+        if let bindingActivation { try sessionStore.validateBinding(bindingActivation, editionID: editionID) }
     }
 
     /// Materializes another immutable projection without changing the durable checkpoint.
@@ -237,12 +253,14 @@ public struct PublicationHistory: Sendable {
         backwardCapacity: Int,
         forwardCapacity: Int
     ) throws -> FeedWindow {
+        try validateBinding(editionID: editionID)
         let records = try publicationStore.cards(editionID: editionID, around: anchor.cardID,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
         let cards = try records.map(PublicationPersistenceMapping.card)
         guard let window = FeedWindow(editionID: editionID, cards: cards, anchor: anchor) else {
             throw PublicationHistoryError.invalidWindow
         }
+        try validateBinding(editionID: editionID)
         return window
     }
 }

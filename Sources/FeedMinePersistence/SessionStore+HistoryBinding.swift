@@ -21,20 +21,23 @@ extension SessionStore {
             if let editionID = try PublicationRecordFields(binding).optionalUUID("active_edition_id") {
                 try Self.seedBindingCheckpoint(bindingID: bindingID, editionID: FeedEditionID(rawValue: editionID), in: db)
             }
+            try Self.reconcileOwnedEdition(bindingID: bindingID, in: db)
+            let restoredPoint = try Self.ownedCheckpoint(bindingID: bindingID, in: db)
             let active = BindingActivation(bindingID: bindingID, token: UUID())
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
             try db.execute(sql: """
-                INSERT INTO session_reader_binding(singleton_id, binding_id, activation_token) VALUES (1, ?, ?)
+                INSERT INTO session_reader_binding(singleton_id, binding_id, activation_token, checkpoint_present) VALUES (1, ?, ?, ?)
                 ON CONFLICT(singleton_id) DO UPDATE SET binding_id = excluded.binding_id,
-                    activation_token = excluded.activation_token
-                """, arguments: [id, PersistenceValueCoding.uuid(active.token)])
-            // Decode before copying: corrupt owned state must not become a blank unrestricted session.
-            _ = try Self.ownedCheckpoint(bindingID: bindingID, in: db)
+                    activation_token = excluded.activation_token, checkpoint_present = excluded.checkpoint_present
+                """, arguments: [id, PersistenceValueCoding.uuid(active.token), restoredPoint == nil ? 0 : 1])
+            // Retained archived/unknown anchors stay in owned history; only live cards fit the legacy FK.
             try db.execute(sql: """
                 INSERT INTO session_checkpoint(singleton_id, edition_id, card_id, anchor_placement, updated_at, anchor_top_delta, anchor_height)
                 SELECT 1, c.edition_id, c.card_id, c.anchor_placement, c.updated_at, c.anchor_top_delta, c.anchor_height
                 FROM reader_history_checkpoints c JOIN reader_history_bindings b
-                    ON b.id = c.binding_id AND b.active_edition_id = c.edition_id WHERE b.id = ?
+                    ON b.id = c.binding_id AND b.active_edition_id = c.edition_id
+                JOIN published_cards p ON p.id = c.card_id JOIN feed_segments s ON s.id = p.segment_id AND s.edition_id = c.edition_id
+                WHERE b.id = ?
                 """, arguments: [id])
             return active
         }
@@ -42,6 +45,50 @@ extension SessionStore {
 
     public func checkpoint(bindingID: UUID) throws -> CheckpointRecord? {
         try database.read { try Self.ownedCheckpoint(bindingID: bindingID, in: $0) }
+    }
+
+    /// An active reader handle never falls back to another context's singleton.
+    public func checkpoint(bindingActivation: BindingActivation, contextKey: ContextKey? = nil) throws -> CheckpointRecord? {
+        try database.read { db in
+            try Self.requireActivation(bindingActivation, in: db)
+            if let contextKey {
+                guard let row = try Row.fetchOne(db, sql: """
+                    SELECT b.logical_identity, e.context_identity AS publication_identity
+                    FROM reader_history_bindings b LEFT JOIN feed_editions e ON e.id = b.active_edition_id WHERE b.id = ?
+                    """, arguments: [PersistenceValueCoding.uuid(bindingActivation.bindingID)]) else {
+                    throw SessionStoreError.missingHistoryBinding
+                }
+                let fields = PublicationRecordFields(row)
+                guard try fields.string("logical_identity") == contextKey.canonicalIdentity
+                    || fields.optionalString("publication_identity") == contextKey.canonicalIdentity else {
+                    throw SessionStoreError.staleHistoryBinding
+                }
+            }
+            guard try Bool.fetchOne(db, sql: "SELECT checkpoint_present FROM session_reader_binding WHERE singleton_id = 1") == true else { return nil }
+            return try Self.ownedCheckpoint(bindingID: bindingActivation.bindingID, in: db)
+        }
+    }
+
+    public func validateBinding(_ activation: BindingActivation, editionID: FeedEditionID) throws {
+        try database.read { try Self.requireCheckpointOwner(editionID: editionID, activation: activation, in: $0) }
+    }
+
+    /// A card's actual Edition is authoritative only inside this already-established reader owner.
+    /// This runs during explicit activation, not as an implicit side effect of a history read.
+    private static func reconcileOwnedEdition(bindingID: UUID, in db: Database) throws {
+        guard let saved = try ownedCheckpoint(bindingID: bindingID, in: db),
+            let located = try PublicationStore.location(ofCard: saved.cardID, in: db) else { return }
+        guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_editions WHERE binding_id = ? AND edition_id = ?)",
+            arguments: [PersistenceValueCoding.uuid(bindingID), PersistenceValueCoding.uuid(located.editionID.rawValue)]) == true else {
+            throw SessionStoreError.invalidMembership
+        }
+        guard saved.editionID != located.editionID else { return }
+        let corrected = CheckpointRecord(editionID: located.editionID, cardID: saved.cardID,
+            anchorPlacement: saved.anchorPlacement, updatedAt: saved.updatedAt,
+            topDelta: saved.topDelta, cardHeight: saved.cardHeight)
+        try persistOwned(corrected, bindingID: bindingID, in: db)
+        try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
+            arguments: [PersistenceValueCoding.uuid(located.editionID.rawValue), PersistenceValueCoding.uuid(bindingID)])
     }
 
     static func ownedCheckpoint(bindingID: UUID, in db: Database) throws -> CheckpointRecord? {

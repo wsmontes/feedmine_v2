@@ -275,7 +275,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
                  "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
                  "publication-media-identity-v1", "continuity-relative-position-v1",
                  "selection-supply-media-deferral-v1", "selection-supply-media-deferral-v2",
-                 "reader-history-binding-v1", "reader-history-position-v1"])
+                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1"])
         }
     }
 
@@ -375,7 +375,12 @@ extension PublicationRunwayStoreTests {
             try db.execute(sql: "INSERT INTO session_checkpoint VALUES (1, ?, ?, 'center', 1234)",
                 arguments: [editionKey, cardsBefore[5000].id.rawValue.uuidString.lowercased()])
         }
-        let checkpointBefore = try XCTUnwrap(SessionStore(database: database).checkpoint())
+        // Decode the pre-context row directly: this fixture deliberately has no modern binding tables.
+        // The public current-schema read below still verifies every checkpoint field after migration.
+        let checkpointBefore = try XCTUnwrap(database.read { db -> SessionStore.CheckpointRecord? in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") else { return nil }
+            return try SessionStore.checkpoint(row)
+        })
         let schemaBefore = try database.read { try String.fetchAll($0,sql: "SELECT name || ':' || COALESCE(sql,'') FROM sqlite_master ORDER BY name") }
         let upgraded = try RuntimeDatabase(location: location)
         let upgradedStore = PublicationStore(database: upgraded)
@@ -559,7 +564,7 @@ extension PublicationRunwayStoreTests {
                     singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
                     binding_id TEXT NOT NULL REFERENCES reader_history_bindings(id),
                     activation_token TEXT NOT NULL
-                )
+                , checkpoint_present INTEGER NOT NULL DEFAULT 0 CHECK(checkpoint_present IN (0, 1)))
                 """,
                 "sqlite_autoindex_reader_history_bindings_1:",
                 "sqlite_autoindex_reader_history_bindings_2:",

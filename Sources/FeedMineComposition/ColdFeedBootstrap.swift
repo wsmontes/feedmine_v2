@@ -139,6 +139,7 @@ public struct ColdFeedBootstrap: Sendable {
     private let coordinator: AcquisitionCoordinator
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
     private let wordPolicy: ReaderWordExclusionPolicy?
+    private let bindingPublication: InitialProductionSlice.PublicationBinding?
     private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let evidence: (@Sendable (ColdFeedEvidence) async -> Void)?
@@ -164,7 +165,8 @@ public struct ColdFeedBootstrap: Sendable {
         // the same durable fact this bootstrap uses to reopen its own examination; the composition states it to the
         // driver so the walk the first drive declared exhausted can be reopened by supply that arrived later.
         onDurableSupply: (@Sendable () async -> Void)? = nil,
-        wordPolicy: ReaderWordExclusionPolicy? = nil) throws {
+        wordPolicy: ReaderWordExclusionPolicy? = nil,
+        bindingPublication: InitialProductionSlice.PublicationBinding? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
@@ -179,6 +181,7 @@ public struct ColdFeedBootstrap: Sendable {
             reoffer: reoffer, trace: trace, publicationLimit: publicationLimit)
         self.prepare = prepare
         self.wordPolicy = wordPolicy
+        self.bindingPublication = bindingPublication
     }
 
     public func run(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
@@ -331,6 +334,7 @@ public struct ColdFeedBootstrap: Sendable {
             anchorPlacement: identity.anchorPlacement, checkpointedAt: identity.checkpointedAt, after: after)
         request.sourceExclusions = try ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
         request.wordExclusions = wordExclusions
+        request.useBinding(bindingPublication)
         return request
     }
 

@@ -114,7 +114,8 @@ final class FeedRunwayDriverTests: XCTestCase {
     private func fixture(historyCount:Int = 1,checkpoint:Bool = true,seedLocal:Bool = false,registrations:Bool = true,
         paused:Bool = false,otherPaused:Bool = false,error:URLError? = nil,context:FeedContext? = nil,driverContext:FeedContext? = nil,
         differentRevision:Bool = false,prepareFailure:Bool = false,cancelPrepare:Bool = false,
-        wordPolicyEnabled: Bool = false, wordChangeDuringPrepare: Bool = false) throws -> Fixture {
+        wordPolicyEnabled: Bool = false, wordChangeDuringPrepare: Bool = false,
+        bindingEnabled: Bool = false) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at:root) }
         let db = try RuntimeDatabase(location:.init(directory:root))
@@ -156,7 +157,13 @@ final class FeedRunwayDriverTests: XCTestCase {
         let regs = registrations ? [SyndicationTargetRegistration(targetID:target.id,targetGeneration:1,endpoint:http.url,bindings:[binding])!,
             SyndicationTargetRegistration(targetID:otherTarget.id,targetGeneration:1,endpoint:otherHTTP.url,bindings:[otherBinding])!] : []
         let acquisition = try SyndicationAcquisitionSnapshot(database:db,registrations:regs,session:transport,redirectCapacity:0,now:{ Date(timeIntervalSince1970:5) })
-        let session = FeedSession(publicationHistory:.init(database:db)),clock = DriverClock()
+        let bindingActivation: SessionStore.BindingActivation?
+        if bindingEnabled {
+            let binding = try ReaderHistoryBindingStore(database: db).resolve(logicalKey: p.context.key,
+                adopting: .init(editionID: edition, publicationKey: p.context.key, evidence: .exactContext))
+            bindingActivation = try SessionStore(database: db).activateBinding(binding.id)
+        } else { bindingActivation = nil }
+        let session = FeedSession(publicationHistory:.init(database:db, bindingActivation: bindingActivation)),clock = DriverClock()
         let runway = RunwayController(configuration:.init(policyInputs:.init(safetyFactor:1,releaseMarginSeconds:0)!,consumptionSampleLimit:4,replenishmentSampleLimit:4)!)
         let driverPlan = differentRevision ? plan(p.context) : driverContext.map { plan($0) } ?? p
         let coordinator = acquisition.makeCoordinator()
@@ -172,7 +179,8 @@ final class FeedRunwayDriverTests: XCTestCase {
                 }
                 return Self.prepared(selection)
             }, onPublication: { receipt in publications.append(receipt) },
-            wordPolicy: wordPolicyEnabled ? ReaderWordExclusionPolicy(database: db, templates: []) : nil)
+            wordPolicy: wordPolicyEnabled ? ReaderWordExclusionPolicy(database: db, templates: []) : nil,
+            bindingActivation: bindingActivation)
         // The association's close order, in the fixture: stop new starts and the late-opportunity drain, cancel and
         // await every authorized pull, and only then let the registered transport invalidation run. Registered
         // after that block, this teardown runs before it (LIFO), so no escaped task can call
@@ -1878,5 +1886,31 @@ extension FeedRunwayDriverTests {
         XCTAssertEqual(current?.editionID, before.editionID)
         XCTAssertEqual(current?.window.anchor, before.window.anchor)
         XCTAssertEqual(try prefs.load()?.settings.contentFilterRules, ["late"])
+    }
+}
+
+extension FeedRunwayDriverTests {
+    func testBoundLiveOwnerAppendsAndPreservesTheOwnedReaderPosition() async throws {
+        let f = try fixture(registrations: false, bindingEnabled: true)
+        let before = try await restore(f)
+        let point = try SessionStore(database: f.database).checkpoint()
+        let revision = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        _ = try await tail(f, before)
+        _ = try await f.driver.drive(resources: resources())
+        for _ in 0..<200_000 {
+            if !f.publications.values.isEmpty { break }
+            await Task.yield()
+        }
+        XCTAssertEqual(f.publications.values.count, 1)
+        let store = PublicationStore(database: f.database), ids = try store.segments(editionID: f.edition).flatMap(\.cardIDs)
+        XCTAssertEqual(ids.count, f.cards.count + 1)
+        XCTAssertEqual(try store.card(id: try XCTUnwrap(ids.last))?.originRevisionID, revision)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), point)
+        let current = await f.session.currentPresentation()
+        XCTAssertEqual(current?.editionID, before.editionID)
+        XCTAssertEqual(current?.window.anchor, before.window.anchor)
+        let wrote = try await f.session.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 900))
+        XCTAssertTrue(wrote)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.cardID, before.window.anchor.cardID)
     }
 }

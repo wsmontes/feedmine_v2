@@ -1,0 +1,79 @@
+{
+  "logs": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-active-position-green.log.gz": {
+      "sha256_uncompressed": "ac2ab2dcdd6822e0b3576a446f382bd2afa545c4259948c01ed72576fe11fc00",
+      "bytes": 7277
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-final-verification.log.gz": {
+      "sha256_uncompressed": "b3b266ee0c971d8fe08ace9ccf8725fd5c277816d1abee1abec5e2de11cf5474",
+      "bytes": 14808
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-final.log.gz": {
+      "sha256_uncompressed": "e050d4712c8e1baf660ed71762052368738bedf88e534ee82c260e3a0545c4c9",
+      "bytes": 6557
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-full-final.log.gz": {
+      "sha256_uncompressed": "9b206d9068d5bdc62ce86cf637d1a90175fc35d870674f32c2eb458c3f6f6081",
+      "bytes": 539725
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-full-package.log.gz": {
+      "sha256_uncompressed": "aac69136af9fb098e397e00b11cbc1666c55bed5431cb7285ba3080410d8b52d",
+      "bytes": 539985
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-green.log.gz": {
+      "sha256_uncompressed": "516541c24c28c185ea4fb348f64c48f09c9a2fd784e1f72b100d70ccfb1c761c",
+      "bytes": 300774
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-migration-validation.log.gz": {
+      "sha256_uncompressed": "1d2a3a2ab03383d1c4ea01e7711e6805c9118f46a2707825d14ae424e515d35e",
+      "bytes": 12649
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-neighbours.log.gz": {
+      "sha256_uncompressed": "21a407455ac6e98c1c63147fc1fc103d75e311701e947592d14ba4b367af6e5e",
+      "bytes": 1683
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-owner-green.log.gz": {
+      "sha256_uncompressed": "7116d43c0aba64ef0c6562381dfc4f2d336f81e9b64149890becfe9cdfec5b7f",
+      "bytes": 351918
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-owner-red.log.gz": {
+      "sha256_uncompressed": "a349b5251417d97f41adb1b13dbd98268dd3568fcbac2926dcbe47a10f00b043",
+      "bytes": 10541
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-red.log.gz": {
+      "sha256_uncompressed": "00bc95991fbdfa6cf44d73b6d392ea1c861d53828ac48c8aeea169259b8de017",
+      "bytes": 2779
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-retained-anchor-red.log.gz": {
+      "sha256_uncompressed": "a435153d6469ae5421f6f048340987080d576c8dc81ec1b93a4d78dd98f701c6",
+      "bytes": 6319
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-runtime-boundary.log.gz": {
+      "sha256_uncompressed": "2b9b6b1055c8c7020f0c441fcb9fb39b646853c786ff6efbc49eac5c992c9588",
+      "bytes": 437624
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-owned-history-schema-final.log.gz": {
+      "sha256_uncompressed": "34ab811064ce24e3f649a5c2d90261995345778c33ca6f6414534004ed7b72ca",
+      "bytes": 15324
+    }
+  },
+  "files": {
+    "Sources/FeedMineComposition/ColdFeedBootstrap.swift": "b602e2c53a580d8d4e1e317d129b4be0a81249943f56f4a47efa2316dc384b55",
+    "Sources/FeedMineComposition/FeedRunwayDriver.swift": "8ce143d1142da63900dfe8e78c62631150402796d66ee3a90e76cef7a06cdc93",
+    "Sources/FeedMinePersistence/PublicationStore+History.swift": "79e604af4706e0a42356281dfc592258e0e90ba8faf603fac14e79b049af1640",
+    "Sources/FeedMinePersistence/PublicationStore+Presentation.swift": "64c5e2b0c7409f112a321a001d3d5c3bd8767a56968ec7b38ab0de06b98ee720",
+    "Sources/FeedMinePersistence/RuntimeMigrations.swift": "021b9e5b72bc4a7b4071b4769da031f1333c78d0a96970affdb5c69e6b642664",
+    "Sources/FeedMinePersistence/SessionStore+HistoryBinding.swift": "f5342d4014fe381c9838b481f28be7bef431ca3a9154bb19a954849cf3fbe706",
+    "Sources/FeedMinePersistence/SessionStore.swift": "27d2bb319cea7611054113cb44904b142d8af361a966989e746cb245fd2bda12",
+    "Sources/FeedMinePublication/PublicationHistory.swift": "bd1185b66aec90d2d7e13d1cef3aafaab6b1f5a38394b75337a586173ab58cbb",
+    "Sources/FeedMineRuntime/InitialProductionSlice.swift": "4eccc053cdd728171c29346d7a5d5f633c73b34c2ae606cc9a020e320acaaf62",
+    "Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift": "2f99a9b0a5b214d4af610dfa104de2ccf75ba55046fabe3e405fe67f27f6940d",
+    "Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift": "cc4beae64cdc5bfb844c20636e12788b7444ee66fecd1218cee95de36f7d28fe",
+    "Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift": "83529d00907ad0a446269847b16d7a41834b9283f194a6949ca36efb7a351f75",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryCheckpointTests.swift": "9b55b9823d5807851162b3141a0459d8973f53ee0122634fb250d8fa9e22800d",
+    "Tests/FeedMineRuntimeTests/DurableAnchorRestoreTests.swift": "1b65765c8448af8fd703c84e1040f27e235d5b007ed6c979d3cf7fda30606c8b",
+    "docs/reviews/2026-10-28-github-progress-checkpoint.md": "d6a0a939d3b068337dc783fbbea076f50ec094a946c2c5c0764117fe99ddaf57",
+    "Tests/FeedMinePublicationTests/PublicationOwnedHistoryTests.swift": "f3e1225d6eb77a0354a12ce48be1144eab066ce334b9277d4e5eec63135e2803",
+    ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests": "4e477ff51c35ab64aa85dad064be17dd36c8b1cf5c60e8d0b88bb4d0fc1a6c72"
+  }
+}

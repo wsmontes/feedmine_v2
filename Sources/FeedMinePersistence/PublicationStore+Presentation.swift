@@ -274,24 +274,26 @@ extension PublicationStore {
 
     /// The card's Edition and position, live or archived. Nil means this database has never published the card.
     public func location(ofCard cardID: PublicationCardID) throws -> CardLocation? {
-        try database.read { db in
-            let key = PersistenceValueCoding.uuid(cardID.rawValue)
-            if let row = try Row.fetchOne(db, sql: """
-                SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
-                    s.ordinal AS segment_ordinal, s.edition_id AS edition_id
-                FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
-                WHERE c.id = ?
-                """, arguments: [key]) {
-                return try Self.location(row, live: true)
-            }
-            guard let row = try Row.fetchOne(db, sql: """
-                SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
-                    s.ordinal AS segment_ordinal, s.edition_id AS edition_id
-                FROM retired_published_cards c JOIN retired_feed_segments s ON s.id = c.segment_id
-                WHERE c.id = ?
-                """, arguments: [key]) else { return nil }
-            return try Self.location(row, live: false)
+        try database.read { try Self.location(ofCard: cardID, in: $0) }
+    }
+
+    static func location(ofCard cardID: PublicationCardID, in db: Database) throws -> CardLocation? {
+        let key = PersistenceValueCoding.uuid(cardID.rawValue)
+        if let row = try Row.fetchOne(db, sql: """
+            SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
+                s.ordinal AS segment_ordinal, s.edition_id AS edition_id
+            FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+            WHERE c.id = ?
+            """, arguments: [key]) {
+            return try Self.location(row, live: true)
         }
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
+                s.ordinal AS segment_ordinal, s.edition_id AS edition_id
+            FROM retired_published_cards c JOIN retired_feed_segments s ON s.id = c.segment_id
+            WHERE c.id = ?
+            """, arguments: [key]) else { return nil }
+        return try Self.location(row, live: false)
     }
 
     /// The nearest card of an Edition that can still be drawn **before** a position, else that Edition's first

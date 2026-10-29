@@ -60,6 +60,7 @@ public struct SessionStore: Sendable {
                     PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time,
                     checkpoint.topDelta, checkpoint.cardHeight])
             try Self.persistContext(checkpoint, in: db)
+            if bindingActivation != nil { try db.execute(sql: "UPDATE session_reader_binding SET checkpoint_present = 1 WHERE singleton_id = 1") }
             try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
         }
     }
@@ -73,6 +74,10 @@ public struct SessionStore: Sendable {
         let time: Double
         do { time = try PersistenceValueCoding.date(checkpoint.updatedAt, field: "updated_at") }
         catch { throw SessionStoreError.invalidRepresentation("updated_at") }
+        if bindingActivation != nil,
+            try Bool.fetchOne(db, sql: "SELECT checkpoint_present FROM session_reader_binding WHERE singleton_id = 1") == true {
+            throw SessionStoreError.checkpointAlreadyExists
+        }
         guard try Int.fetchOne(db, sql: "SELECT count(*) FROM session_checkpoint") == 0 else {
             throw SessionStoreError.checkpointAlreadyExists
         }
@@ -84,6 +89,7 @@ public struct SessionStore: Sendable {
                 PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time,
                 checkpoint.topDelta, checkpoint.cardHeight])
         try persistContext(checkpoint, in: db)
+        if bindingActivation != nil { try db.execute(sql: "UPDATE session_reader_binding SET checkpoint_present = 1 WHERE singleton_id = 1") }
         try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
     }
 
@@ -95,6 +101,11 @@ public struct SessionStore: Sendable {
     /// the top. Only a record that cannot be read at all (placement, representation) is corruption.
     public func checkpoint() throws -> CheckpointRecord? {
         try database.read { db in
+            if let active = try Row.fetchOne(db, sql: "SELECT * FROM session_reader_binding WHERE singleton_id = 1") {
+                let fields = PublicationRecordFields(active)
+                guard try fields.integer("checkpoint_present") == 1 else { return nil }
+                return try Self.ownedCheckpoint(bindingID: fields.uuid("binding_id"), in: db)
+            }
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") else { return nil }
             do {
                 return try Self.checkpoint(row)
@@ -162,6 +173,7 @@ public struct SessionStore: Sendable {
                 try Self.persistContext(checkpoint, in: db)
             }
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
+            if bindingActivation != nil { try db.execute(sql: "UPDATE session_reader_binding SET checkpoint_present = 0 WHERE singleton_id = 1") }
         }
     }
 

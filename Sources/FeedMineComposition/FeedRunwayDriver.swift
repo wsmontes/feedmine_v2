@@ -98,6 +98,7 @@ public actor FeedRunwayDriver {
     private let selectedSourceCoverage: AcquisitionDemand?
     private var traversalSourceExclusions: ProductionSourceExclusions?
     private let wordPolicy: ReaderWordExclusionPolicy?
+    private let bindingActivation: SessionStore.BindingActivation?
     private var traversalWordExclusions: ReaderContentExclusions?
     private let candidateProvider: CandidateProvider
     /// Optional evidence of the replenishment attempts this driver executes; nil records nothing.
@@ -161,7 +162,8 @@ public actor FeedRunwayDriver {
         // uncapped behavior; a capped slice that leaves ready candidates behind reports the walk it started from,
         // so the next opportunity publishes the following block instead of the walk passing cards nobody published.
         publicationLimit: Int? = nil,
-        wordPolicy: ReaderWordExclusionPolicy? = nil) throws {
+        wordPolicy: ReaderWordExclusionPolicy? = nil,
+        bindingActivation: SessionStore.BindingActivation? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         if let demand = selectedSourceCoverage {
             guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
@@ -172,11 +174,12 @@ public actor FeedRunwayDriver {
         self.selectedSourceCoverage = selectedSourceCoverage
         traversalSourceExclusions = try? ReaderSourceExclusionPolicy.capture(in: acquisition.runtimeDatabase)
         self.wordPolicy = wordPolicy
+        self.bindingActivation = bindingActivation
         traversalWordExclusions = (try? wordPolicy?.capture())?.exclusions
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         self.reoffer = reoffer
-        publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
+        publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase, bindingActivation: bindingActivation)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
             reoffer: reoffer, trace: trace, publicationLimit: publicationLimit)
         acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator, trace: trace)
@@ -885,6 +888,7 @@ public actor FeedRunwayDriver {
                         operation: intent.operation)
                     request.sourceExclusions = exclusions
                     request.wordExclusions = words
+                    request.bindingActivation = bindingActivation
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     do {
                         try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())

@@ -151,4 +151,98 @@ final class ReaderHistoryCheckpointTests: XCTestCase {
             "clearing the active singleton preserves the owned historical position")
     }
 
+    func testActivationRepairsEditionColumnOnlyInsideItsEstablishedOwner() throws {
+        let db = try StorageFixture.database(self), bindings = ReaderHistoryBindingStore(database: db)
+        let session = SessionStore(database: db), store = PublicationStore(database: db)
+        let binding = try bindings.resolve(logicalKey: key()), active = try session.activateBinding(binding.id)
+        let a = edition(key()), ca = StorageFixture.card()
+        try store.createInitialEdition(a, firstSegment: StorageFixture.segment(a, [ca]), cards: [ca],
+            initialCheckpoint: point(a, ca), expectedSourceExclusions: nil, bindingPublication: .init(activation: active))
+        try session.clearActiveCheckpoint(bindingActivation: active, expectedEditionID: a.id)
+        let b = edition(key()), cb = StorageFixture.card()
+        try store.createInitialEdition(b, firstSegment: StorageFixture.segment(b, [cb]), cards: [cb],
+            initialCheckpoint: point(b, cb, time: 20), expectedSourceExclusions: nil,
+            bindingPublication: .init(activation: active, expectedActiveEditionID: a.id))
+        try db.write { db in
+            try db.execute(sql: "UPDATE reader_history_checkpoints SET card_id = ? WHERE binding_id = ? AND edition_id = ?",
+                arguments: [PersistenceValueCoding.uuid(ca.id.rawValue), PersistenceValueCoding.uuid(binding.id), PersistenceValueCoding.uuid(b.id.rawValue)])
+            try db.execute(sql: "UPDATE session_checkpoint SET card_id = ? WHERE edition_id = ?",
+                arguments: [PersistenceValueCoding.uuid(ca.id.rawValue), PersistenceValueCoding.uuid(b.id.rawValue)])
+        }
+        let repaired = try session.activateBinding(binding.id)
+        XCTAssertEqual(try bindings.binding(for: key())?.activeEditionID, a.id)
+        let saved = try XCTUnwrap(session.checkpoint(bindingActivation: repaired))
+        XCTAssertEqual(saved.editionID, a.id)
+        XCTAssertEqual(saved.cardID, ca.id)
+        XCTAssertEqual(saved.updatedAt, Date(timeIntervalSince1970: 20))
+        XCTAssertEqual(saved.topDelta, 12)
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM reader_history_checkpoints") }, 2)
+    }
+
+    func testCrossOwnerCardInCheckpointRejectsActivationWithoutRetiringCurrentReader() throws {
+        let db = try StorageFixture.database(self), bindings = ReaderHistoryBindingStore(database: db)
+        let session = SessionStore(database: db), store = PublicationStore(database: db)
+        let unowned = edition(key()), unownedCard = StorageFixture.card()
+        try store.createEdition(unowned, firstSegment: StorageFixture.segment(unowned, [unownedCard]), cards: [unownedCard])
+        let ba = try bindings.resolve(logicalKey: key()), activeA = try session.activateBinding(ba.id)
+        let a = edition(key()), ca = StorageFixture.card()
+        try store.createInitialEdition(a, firstSegment: StorageFixture.segment(a, [ca]), cards: [ca],
+            initialCheckpoint: point(a, ca), expectedSourceExclusions: nil, bindingPublication: .init(activation: activeA))
+        let otherKey = ContextKey(request: .source(SourceID()))
+        let bb = try bindings.resolve(logicalKey: otherKey), activeB = try session.activateBinding(bb.id)
+        let b = edition(otherKey), cb = StorageFixture.card(), pb = point(b, cb, time: 20)
+        try store.createInitialEdition(b, firstSegment: StorageFixture.segment(b, [cb]), cards: [cb],
+            initialCheckpoint: pb, expectedSourceExclusions: nil, bindingPublication: .init(activation: activeB))
+        try db.write { db in
+            try db.execute(sql: "UPDATE reader_history_checkpoints SET card_id = ? WHERE binding_id = ?",
+                arguments: [PersistenceValueCoding.uuid(cb.id.rawValue), PersistenceValueCoding.uuid(ba.id)])
+        }
+        XCTAssertThrowsError(try session.activateBinding(ba.id))
+        XCTAssertEqual(try session.checkpoint(bindingActivation: activeB), pb)
+        try session.saveCheckpoint(pb, bindingActivation: activeB)
+        XCTAssertEqual(try bindings.binding(for: key())?.activeEditionID, a.id)
+        try db.write { db in
+            try db.execute(sql: "UPDATE reader_history_checkpoints SET card_id = ? WHERE binding_id = ?",
+                arguments: [PersistenceValueCoding.uuid(unownedCard.id.rawValue), PersistenceValueCoding.uuid(ba.id)])
+        }
+        XCTAssertThrowsError(try session.activateBinding(ba.id), "matching context text never authorizes an unowned Edition")
+        XCTAssertEqual(try session.checkpoint(bindingActivation: activeB), pb)
+        XCTAssertEqual(try db.read { try Int.fetchOne($0,
+            sql: "SELECT count(*) FROM reader_history_editions WHERE edition_id = ?",
+            arguments: [PersistenceValueCoding.uuid(unowned.id.rawValue)]) }, 0)
+    }
+
+    func testActivePositionMigrationPreservesPresentAndClearedOwnedStatements() throws {
+        for cleared in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            let location = RuntimeDatabaseLocation(directory: directory)
+            let bindingID: UUID, active: SessionStore.BindingActivation, saved: SessionStore.CheckpointRecord
+            do {
+                let db = try RuntimeDatabase(location: location), session = SessionStore(database: db)
+                let binding = try ReaderHistoryBindingStore(database: db).resolve(logicalKey: key())
+                bindingID = binding.id
+                active = try session.activateBinding(binding.id)
+                let e = edition(key()), c = StorageFixture.card()
+                saved = point(e, c)
+                try PublicationStore(database: db).createInitialEdition(e,
+                    firstSegment: StorageFixture.segment(e, [c]), cards: [c], initialCheckpoint: saved,
+                    expectedSourceExclusions: nil, bindingPublication: .init(activation: active))
+                if cleared { try session.clearActiveCheckpoint(bindingActivation: active, expectedEditionID: e.id) }
+                // Reconstruct the immediately preceding schema only in this disposable fixture.
+                try db.write { db in
+                    try db.execute(sql: "ALTER TABLE session_reader_binding DROP COLUMN checkpoint_present")
+                    try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'reader-history-active-position-v1'")
+                }
+            }
+            let reopened = try RuntimeDatabase(location: location), session = SessionStore(database: reopened)
+            XCTAssertEqual(try session.checkpoint(), cleared ? nil : saved)
+            XCTAssertEqual(try session.checkpoint(bindingActivation: active), cleared ? nil : saved)
+            XCTAssertEqual(try session.checkpoint(bindingID: bindingID), saved,
+                "the migration must retain the Edition's position even when it is not active")
+            XCTAssertEqual(try reopened.read { try String.fetchOne($0, sql: "PRAGMA integrity_check") }, "ok")
+            XCTAssertEqual(try reopened.read { try Row.fetchAll($0, sql: "PRAGMA foreign_key_check").count }, 0)
+        }
+    }
+
 }

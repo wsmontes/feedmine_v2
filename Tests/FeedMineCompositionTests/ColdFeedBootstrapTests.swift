@@ -1217,3 +1217,25 @@ extension ColdFeedBootstrapTests {
             "a changed word policy must rewind the partial walk to the masked head")
     }
 }
+
+extension ColdFeedBootstrapTests {
+    func testBoundColdOwnerPublishesRestoresAndCheckpointsThroughTheSameActivation() async throws {
+        let f = try fixture(registrations: false)
+        try Self.seed(f.database, source: f.source)
+        let checkpoints = SessionStore(database: f.database)
+        let binding = try ReaderHistoryBindingStore(database: f.database).resolve(logicalKey: f.plan.context.key)
+        let active = try checkpoints.activateBinding(binding.id)
+        let reader = FeedSession(publicationHistory: PublicationHistory(database: f.database, bindingActivation: active))
+        let bootstrap = try ColdFeedBootstrap(session: reader, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            bindingPublication: .init(activation: active))
+        let id = identity()
+        let snapshot = try published(await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 8))
+        XCTAssertEqual(snapshot.editionID, id.editionID)
+        let wrote = try await reader.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 1000))
+        XCTAssertTrue(wrote)
+        XCTAssertEqual(try checkpoints.checkpoint(bindingID: binding.id)?.cardID, snapshot.window.anchor.cardID)
+        XCTAssertEqual(try checkpoints.checkpoint()?.updatedAt, Date(timeIntervalSince1970: 1000))
+        XCTAssertEqual(f.http.calls, 0)
+    }
+}

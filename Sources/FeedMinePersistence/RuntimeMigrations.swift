@@ -740,6 +740,16 @@ public enum RuntimeMigrations {
                     editionID: FeedEditionID(rawValue: fields.uuid("edition_id")), in: db)
             }
         }
+        // A retained anchor may be archived/unknown and cannot satisfy the legacy singleton's card FK.
+        // Presence is therefore explicit; old rows infer it from the former representable singleton.
+        migrator.registerMigration("reader-history-active-position-v1") { db in
+            try db.execute(sql: "ALTER TABLE session_reader_binding ADD COLUMN checkpoint_present INTEGER NOT NULL DEFAULT 0 CHECK(checkpoint_present IN (0, 1))")
+            try db.execute(sql: """
+                UPDATE session_reader_binding SET checkpoint_present = EXISTS(
+                    SELECT 1 FROM session_checkpoint c JOIN reader_history_bindings b ON b.active_edition_id = c.edition_id
+                    WHERE b.id = session_reader_binding.binding_id)
+                """)
+        }
         return migrator
     }
 

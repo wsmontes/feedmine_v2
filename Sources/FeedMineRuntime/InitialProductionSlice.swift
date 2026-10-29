@@ -21,6 +21,14 @@ public enum InitialProductionSliceError: Error, Equatable, Sendable {
 }
 
 public struct InitialProductionSlice: Sendable {
+    /// Opaque owner metadata for finite bootstrap composition. Only Runtime unwraps the writer expectation.
+    public struct PublicationBinding: Hashable, Sendable {
+        fileprivate let expectation: PublicationStore.BindingPublicationExpectation
+        public init(activation: SessionStore.BindingActivation, expectedActiveEditionID: FeedEditionID? = nil) {
+            expectation = .init(activation: activation, expectedActiveEditionID: expectedActiveEditionID)
+        }
+    }
+
     private let candidateProvider: CandidateProvider
     private let selectionEngine: SelectionEngine
     private let coordinator: PublicationCoordinator
@@ -55,6 +63,9 @@ public struct InitialProductionSlice: Sendable {
         /// Effective words for this opportunity, independent of the frozen context identity.
         public var wordExclusions: ReaderWordExclusionSnapshot? = nil
         public var bindingPublication: PublicationStore.BindingPublicationExpectation? = nil
+        public mutating func useBinding(_ binding: PublicationBinding?) {
+            bindingPublication = binding?.expectation
+        }
         public let plan: FeedPlan
         public let policy: ResolvedSelectionPolicy
         public let examinedCapacity: Int

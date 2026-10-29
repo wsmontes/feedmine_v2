@@ -176,3 +176,40 @@ final class DurableAnchorRestoreTests: XCTestCase {
             "uma carta que este banco nunca publicou não tem localização")
     }
 }
+
+extension DurableAnchorRestoreTests {
+    func testOwnedFeedSessionRestoresAndCheckpointsThenRejectsRetiredMilestone() async throws {
+        try await withLocation { location in
+            let db = try RuntimeDatabase(location: location), store = PublicationStore(database: db)
+            let edition = makeEdition(revision(contextKey: ContextKey(request: .main)), seed: 4)
+            let cards = try makeCards(3, prefix: "owned")
+            try publish(edition, cards: cards, in: store)
+            let cursor = SessionCursor(editionID: edition.id, anchor: .init(cardID: cards[1].id, placement: .top),
+                progress: try XCTUnwrap(CardTopOffset(topDelta: -25, height: 300)))
+            try PublicationHistory(database: db).saveCursor(cursor, updatedAt: savedAt)
+            let bindings = ReaderHistoryBindingStore(database: db), checkpoints = SessionStore(database: db)
+            let binding = try bindings.resolve(logicalKey: edition.editorialRevision.contextKey,
+                adopting: .init(editionID: edition.id, publicationKey: edition.editorialRevision.contextKey, evidence: .exactContext))
+            let active = try checkpoints.activateBinding(binding.id)
+            let reader = FeedSession(publicationHistory: PublicationHistory(database: db, bindingActivation: active))
+            let result = try await reader.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 1,
+                contextKey: edition.editorialRevision.contextKey, keepsAdmittedHead: true)))
+            let snapshot = try XCTUnwrap(result)
+            XCTAssertEqual(snapshot.editionID, edition.id)
+            XCTAssertEqual(snapshot.window.items.map(\.id), cards.map(\.id))
+            XCTAssertEqual(snapshot.window.anchor, PresentationAnchor(cardID: cursor.anchor.cardID, placement: .top))
+            let wrote = try await reader.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 600))
+            XCTAssertTrue(wrote)
+            let saved = try checkpoints.checkpoint(bindingID: binding.id)
+            XCTAssertEqual(saved?.cardID, cursor.anchor.cardID)
+            let other = try bindings.resolve(logicalKey: ContextKey(request: .source(SourceID())))
+            _ = try checkpoints.activateBinding(other.id)
+            do {
+                _ = try await reader.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 700))
+                XCTFail("a retired FeedSession must not checkpoint over the new reader")
+            } catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
+            XCTAssertNil(try checkpoints.checkpoint())
+            XCTAssertEqual(try checkpoints.checkpoint(bindingID: binding.id), saved)
+        }
+    }
+}

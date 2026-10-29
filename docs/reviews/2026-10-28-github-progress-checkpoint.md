@@ -1,5 +1,11 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — histórico semântico, 2026-10-29
+
+Restauração/salvamento por ownership e transporte pelos owners frio/ativo implementados e revisados. Suíte completa: **1824 testes, um ignorado, zero falhas**; foco final: 145/0. Migração aditiva preserva anchors arquivados/desconhecidos e limpeza explícita, sem remover FKs. [Relatório](2026-10-29-f13-owned-semantic-history.md).
+
+R4 nativo continua FAIL. Injeção na composição nativa, recuperação de históricos ambíguos e aceitação iOS/relaunch/UI permanecem pendentes. PR em rascunho.
+
 ## Atualização — 2026-10-29
 
 O transporte de ownership pelo coordenador/Runtime foi implementado e revisado. A revisão independente pendente foi retomada: um P2 de limpeza após rollover foi reproduzido e corrigido em fdbd4c10; o revisor confirmou a resolução.
