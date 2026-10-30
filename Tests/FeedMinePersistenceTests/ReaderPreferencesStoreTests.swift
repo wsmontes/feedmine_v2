@@ -88,6 +88,30 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertEqual(try ReaderLibraryStore(database: db).sourceLinks()["new"]?.authority, "catalog")
     }
 
+    /// Resolution and context selection are calculated from one durable version.
+    /// If an external source manager commits a newer version before the atomic
+    /// transition starts, reject the stale context with no additional writes.
+    func testSourceTransitionRejectsStaleVersionWithoutOverwritingExternalSelection() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let initial = try preferences.initialize(sourceKeys: ["a", "b", "c"])
+        let external = try preferences.changeSources(removing: ["b"])
+        let staleKey = ContextKey(request: .source(SourceID()))
+        XCTAssertThrowsError(try preferences.commitSourceTransition(
+            removing: ["a"], context: staleKey,
+            resolvedSources: [(key: "c", authority: "catalog")],
+            expectedSelectionVersion: initial.selectionVersion)) { error in
+            guard case ReaderPreferencesError.selectionConflict = error else {
+                return XCTFail("Expected version fence, got \(error)")
+            }
+        }
+        XCTAssertEqual(try preferences.load(), external)
+        XCTAssertNil(try ReaderLibraryStore(database: database).sourceLinks()["c"],
+            "A rejected stale transition must not register an identity")
+    }
+
     func testPD10B2RejectedIncrementalMutationIsAtomic() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
