@@ -4525,6 +4525,44 @@ final class FeedFrameBudgetTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// A source manager can commit *after* the toggle's SQLite transaction,
+    /// while its new association is still launching. The toggle must queue an
+    /// adoption turn so the final active session reflects the newer durable set.
+    func testSourceToggleReconcilesExternalEditCommittedAfterLaunch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let choices = threeSourceFixture()
+        let composition = root(directory: directory, feeds: choices)
+        await composition.launch()
+        try await composition.searchSources("")
+        let preferences = ReaderPreferencesStore(database:
+            try RuntimeDatabase(location: .init(directory: directory)))
+        let initial = try XCTUnwrap(preferences.load())
+        var injections = 0
+        composition.sourceToggleDidLaunch = {
+            injections += 1
+            _ = try preferences.changeSources(removing: [choices[1].principal])
+        }
+        defer { composition.sourceToggleDidLaunch = nil }
+
+        try await composition.toggleSource(choices[0].sourceID)
+        XCTAssertEqual(injections, 1)
+        let committed = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(committed.sourceKeys, [choices[2].principal])
+        XCTAssertEqual(committed.selectionVersion, initial.selectionVersion + 2)
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.sourceAdoptionContinuationCompletions == 0,
+            ProcessInfo.processInfo.systemUptime < deadline { await Task.yield() }
+        XCTAssertEqual(composition.sourceAdoptionContinuationSchedules, 1)
+        XCTAssertEqual(composition.sourceAdoptionContinuationCompletions, 1)
+        XCTAssertEqual(composition.currentContextKey, committed.activeContextKey)
+        XCTAssertEqual(composition.feeds.map(\.principal), committed.sourceKeys)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertTrue(active.active)
+        XCTAssertEqual(active.feeds.map(\.principal), committed.sourceKeys)
+        await active.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
