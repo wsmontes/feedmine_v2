@@ -205,15 +205,10 @@ final class ReadingSurfaceUITests: XCTestCase {
 
         // Move away from the opening position; a test that reopens the first card cannot exercise
         // window growth or the restoration of a lazy cell that was scrolled into view.
-        var tracked: XCUIElement?
-        for _ in 0..<12 {
-            scroll.swipeUp(velocity: .fast)
-            if let candidate = visibleCard(app), candidate.identifier != firstID {
-                tracked = candidate
-                break
-            }
-        }
-        guard let card = tracked else {
+        // Eight real gestures, rather than stopping as soon as any other card is seen: the test
+        // must cross multiple viewport windows and exercise the long-history presentation.
+        for _ in 0..<8 { scroll.swipeUp(velocity: .fast) }
+        guard let card = visibleCard(app), card.identifier != firstID else {
             return XCTFail("the reader must reach a card past the initial viewport")
         }
         let identity = card.identifier
