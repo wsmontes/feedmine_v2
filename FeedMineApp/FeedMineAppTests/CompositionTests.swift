@@ -239,17 +239,34 @@ final class DiscoveryGate: @unchecked Sendable {
         }
     }
 
+    private struct ReadWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Read, Error>
+    }
+    enum ReadWaitError: Error { case timedOut }
+
     private let lock = NSLock()
     private var arrived: [Read] = []
-    private var waiting: [CheckedContinuation<Read, Never>] = []
+    private var waiting: [ReadWaiter] = []
+
+    private func failWaitingRead(_ id: UUID, error: any Error) {
+        var parked: CheckedContinuation<Read, Error>?
+        lock.withLock {
+            if let index = waiting.firstIndex(where: { $0.id == id }) {
+                parked = waiting.remove(at: index).continuation
+            }
+        }
+        parked?.resume(throwing: error)
+    }
 
     /// The composition's replacement query.
     var query: AppComposition.DiscoveryQuery {
         { [self] profile, _ in
             let read = Read(profile: profile)
-            var parked: CheckedContinuation<Read, Never>?
+            var parked: CheckedContinuation<Read, Error>?
             lock.withLock {
-                if waiting.isEmpty { arrived.append(read) } else { parked = waiting.removeFirst() }
+                if waiting.isEmpty { arrived.append(read) }
+                else { parked = waiting.removeFirst().continuation }
             }
             parked?.resume(returning: read)
             let answer = await read.take()
@@ -257,14 +274,35 @@ final class DiscoveryGate: @unchecked Sendable {
         }
     }
 
-    /// The next read the composition started, in the order it happened.
-    func nextRead() async -> Read {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Read, Never>) in
-            var available: Read?
-            lock.withLock {
-                if arrived.isEmpty { waiting.append(continuation) } else { available = arrived.removeFirst() }
+    /// Unlike an unchecked continuation, a missing discovery query cannot hang
+    /// XCTest indefinitely: cancellation and a bounded diagnostic timeout remove
+    /// the pending waiter atomically. Late arrivals remain available for later reads.
+    func nextRead(timeout: Duration = .seconds(10)) async throws -> Read {
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Read, Error>) in
+                var available: Read?
+                var queued = false
+                lock.withLock {
+                    if !arrived.isEmpty { available = arrived.removeFirst() }
+                    else if !Task.isCancelled {
+                        waiting.append(ReadWaiter(id: id, continuation: continuation))
+                        queued = true
+                    }
+                }
+                if let available {
+                    continuation.resume(returning: available)
+                } else if !queued {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    Task { [weak self] in
+                        try? await Task.sleep(for: timeout)
+                        self?.failWaitingRead(id, error: ReadWaitError.timedOut)
+                    }
+                }
             }
-            if let available { continuation.resume(returning: available) }
+        } onCancel: {
+            failWaitingRead(id, error: CancellationError())
         }
     }
 
@@ -306,7 +344,7 @@ final class CompositionTests: XCTestCase {
         settings.discoveryProfile = .neutral(languages: ["en"])
         _ = try preferences.setSettings(settings)
         let launching = Task { await composition.launch() }
-        let initialRead = await gate.nextRead()
+        let initialRead = try await gate.nextRead()
         gate.answer(initialRead, entries: [], subjects: [:])
         await launching.value
     }
@@ -3093,7 +3131,7 @@ final class CompositionTests: XCTestCase {
         // The reader's window is what the host is drawing, and this launch's own read is out — it concludes only
         // when the test says.
         let launching = Task { await warm.launch() }
-        let read = await gate.nextRead()
+        let read = try await gate.nextRead()
         XCTAssertEqual(read.profile.topicNodeKeys, [walkFirst],
             "the read answers for the profile this session is on")
         // **The revocation happens while the read is out.**
@@ -3157,7 +3195,7 @@ final class CompositionTests: XCTestCase {
         let shared = entries.first
 
         let launching = Task { await warm.launch() }
-        let readOfA = await gate.nextRead()
+        let readOfA = try await gate.nextRead()
         XCTAssertEqual(readOfA.profile.topicNodeKeys, ["04-technology-science"])
         let a = try XCTUnwrap(warm.association)
 
@@ -3165,7 +3203,7 @@ final class CompositionTests: XCTestCase {
         // rebuilt around it — B, on B's own profile.
         await warm.voteOnTopic(nodeKey: "90_countries/brazil", level: .more)
         let replacing = Task { try await warm.replaceSession() }
-        let readOfB = await gate.nextRead()
+        let readOfB = try await gate.nextRead()
         XCTAssertNotEqual(readOfB.profile, readOfA.profile, "B reads its own profile, not the one A was reading")
         gate.answer(readOfB, entries: [shared],
             subjects: [shared.source.id: .init(nodeKey: "smoke/b", name: "Assunto B")])
@@ -3557,7 +3595,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         // Force a new uncached profile. The constructor now waits at the real
         // discovery boundary until the test answers, not at an arbitrary delay.
         let rebuilding = Task { try await composition.replaceSession() }
-        let read = await gate.nextRead()
+        let read = try await gate.nextRead()
         let filterRequest = Task {
             try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
         }
@@ -3617,7 +3655,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         _ = try preferences.setSettings(settings)
 
         let rebuilding = Task { try await composition.replaceSession() }
-        let suspended = await gate.nextRead()
+        let suspended = try await gate.nextRead()
         var completed: [ReaderMood] = []
         let first = Task { @MainActor in
             try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
@@ -3682,7 +3720,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         _ = try preferences.setSettings(settings)
 
         let rebuilding = Task { try await composition.replaceSession() }
-        let suspended = await gate.nextRead()
+        let suspended = try await gate.nextRead()
         let cancelled = Task {
             try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
         }
@@ -3743,7 +3781,7 @@ final class FeedFrameBudgetTests: XCTestCase {
 
         // The real constructor is suspended on a new profile's discovery query.
         let rebuilding = Task { try await composition.replaceSession() }
-        let suspended = await gate.nextRead()
+        let suspended = try await gate.nextRead()
         var completed: [String] = []
         let presetKey = ContextKey(request: .main, preset: .lastClicked)
         let preset = Task { @MainActor in
@@ -3841,7 +3879,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         _ = try preferences.setSettings(settings)
 
         let rebuilding = Task { try await composition.replaceSession() }
-        let heldRead = await gate.nextRead()
+        let heldRead = try await gate.nextRead()
         var completed: [String] = []
         let toggle = Task { @MainActor in
             try await composition.toggleSource(removed.sourceID)
@@ -4007,7 +4045,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         _ = try preferences.setSettings(settings)
 
         let rebuilding = Task { try await composition.replaceSession() }
-        let heldRead = await gate.nextRead()
+        let heldRead = try await gate.nextRead()
         let first = try preferences.changeSources(removing: [originalFeeds[0].principal])
         let adopting = Task { await composition.adoptSelectionChange() }
         let deadline = ProcessInfo.processInfo.systemUptime + 5
@@ -4069,7 +4107,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let adoption = Task { await composition.adoptSelectionChange() }
         // The first adoption uses a new discovery profile and cannot build its
         // replacement before this held read has been answered.
-        let held = await gate.nextRead()
+        let held = try await gate.nextRead()
         XCTAssertEqual(try preferences.load()?.selectionVersion, first.selectionVersion)
         let second = try preferences.changeSources(removing: [originalFeeds[1].principal])
         XCTAssertEqual(second.selectionVersion, first.selectionVersion + 1)
@@ -4130,7 +4168,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         defer { composition.sourceAdoptionDidRebuild = nil }
 
         let adoption = Task { await composition.adoptSelectionChange() }
-        let suspended = await gate.nextRead()
+        let suspended = try await gate.nextRead()
         let readerIntent = Task { @MainActor in
             try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
             readerIntentFinished = true
@@ -4207,7 +4245,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         defer { composition.sourceAdoptionDidRebuild = nil }
 
         let firstAdoption = Task { await composition.adoptSelectionChange() }
-        let held = await gate.nextRead()
+        let held = try await gate.nextRead()
         var readerCompleted = false
         let reader = Task { @MainActor in
             try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
