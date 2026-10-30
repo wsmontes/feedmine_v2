@@ -4555,8 +4555,11 @@ final class FeedFrameBudgetTests: XCTestCase {
             ProcessInfo.processInfo.systemUptime < deadline { await Task.yield() }
         XCTAssertEqual(composition.sourceAdoptionContinuationSchedules, 1)
         XCTAssertEqual(composition.sourceAdoptionContinuationCompletions, 1)
-        XCTAssertEqual(composition.currentContextKey, committed.activeContextKey)
-        XCTAssertEqual(composition.feeds.map(\.principal), committed.sourceKeys)
+        let reconciled = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(reconciled.selectionVersion, committed.selectionVersion)
+        XCTAssertEqual(reconciled.activeContextKey.request, .source(choices[2].sourceID))
+        XCTAssertEqual(composition.currentContextKey, reconciled.activeContextKey)
+        XCTAssertEqual(composition.feeds.map(\.principal), reconciled.sourceKeys)
         let active = try XCTUnwrap(composition.association)
         XCTAssertTrue(active.active)
         XCTAssertEqual(active.feeds.map(\.principal), committed.sourceKeys)
