@@ -3290,6 +3290,46 @@ final class FeedFrameBudgetTests: XCTestCase {
         XCTAssertEqual(onOneTwenty["worst_ms"], "235.6")
     }
 
+    /// F1 regression: a checkpoint error must not detach the active association.
+    /// The old replaceSession implementation set association=nil before this throw.
+    func testReplaceSessionCheckpointFailureRetainsLiveAssociation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let previous = try XCTUnwrap(composition.association)
+        let snapshot = try XCTUnwrap(previous.store.state.presentation)
+        let previousKey = composition.currentContextKey
+        let url = RuntimeDatabaseLocation(directory: directory).databaseURL
+
+        // This is an unconditional SQLite failure at FeedSession.checkpointCurrentPosition.
+        // There is no production debug switch or forced network error.
+        try executeTransitionTestSQL("""
+            CREATE TRIGGER feedmine_test_fail_checkpoint
+            BEFORE INSERT ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'injected checkpoint failure'); END
+            """, at: url)
+        do {
+            try await composition.replaceSession()
+            XCTFail("Expected checkpointCurrentPosition to fail before association retirement")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("injected checkpoint failure"),
+                "The injected SQLite checkpoint failure must be the observed cause: \(error)")
+        }
+        XCTAssertTrue(composition.association === previous,
+            "A failed checkpoint must not detach the still-active association")
+        XCTAssertTrue(previous.active)
+        XCTAssertEqual(composition.currentContextKey, previousKey)
+        XCTAssertEqual(composition.association?.store.state.presentation?.editionID, snapshot.editionID)
+
+        try executeTransitionTestSQL("DROP TRIGGER feedmine_test_fail_checkpoint", at: url)
+        try await composition.replaceSession()
+        let recovered = try XCTUnwrap(composition.association?.store.state.presentation)
+        XCTAssertEqual(recovered.editionID, snapshot.editionID)
+        XCTAssertEqual(recovered.window.anchor, snapshot.window.anchor)
+        await composition.association?.close()
+    }
+
     /// Red regression for a failed B construction after SessionStore.activateContext(B)
     /// has committed, but PublicationStore.setVisibility(B) aborts. A failed user transition
     /// must leave A usable and must not persist B as the reader's completed selection.
