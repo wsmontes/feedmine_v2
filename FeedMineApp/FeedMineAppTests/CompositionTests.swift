@@ -3424,6 +3424,91 @@ final class FeedFrameBudgetTests: XCTestCase {
         XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.activeContextKey, firstKey)
     }
 
+    /// A one-shot failure after FeedAssociation.init has committed its separate
+    /// persistence writes must not strand the reader when replaceSession throws.
+    func testReplaceSessionLateConstructionFailureRestoresPreviousEdition() async throws {
+        enum InjectedConstructionFailure: Error { case afterPersistence }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let previous = try XCTUnwrap(composition.association)
+        let before = try XCTUnwrap(previous.store.state.presentation)
+        let key = composition.currentContextKey
+        var failuresRemaining = 1
+        composition.associationConstructionFault = {
+            guard failuresRemaining > 0 else { return }
+            failuresRemaining -= 1
+            throw InjectedConstructionFailure.afterPersistence
+        }
+        defer { composition.associationConstructionFault = nil }
+
+        do {
+            try await composition.replaceSession()
+            XCTFail("Expected the post-constructor fault")
+        } catch InjectedConstructionFailure.afterPersistence {
+            // Recovery must re-enter construction, which now succeeds.
+        }
+
+        XCTAssertEqual(failuresRemaining, 0, "A second failure would make the test ambiguous")
+        let recovered = try XCTUnwrap(composition.association)
+        XCTAssertTrue(recovered.active)
+        XCTAssertFalse(recovered === previous)
+        let restored = try XCTUnwrap(recovered.store.state.presentation)
+        XCTAssertEqual(restored.editionID, before.editionID)
+        XCTAssertEqual(restored.window.anchor, before.window.anchor)
+        XCTAssertEqual(composition.currentContextKey, key)
+        XCTAssertNil(composition.startupFailure)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.activeContextKey, key)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, before.editionID)
+
+        // No fault remains: the next normal rebuild must still work.
+        try await composition.replaceSession()
+        XCTAssertTrue(composition.association?.active == true)
+        XCTAssertEqual(composition.association?.store.state.presentation?.editionID, before.editionID)
+        await composition.association?.close()
+    }
+
+    /// applyFilter has already persisted the proposed identity before it enters
+    /// replaceSession. A failed construction must restore the original raw key
+    /// and the filter-expiry record, not merely display a previous Edition.
+    func testFailedFilterRebuildRestoresPreviousSelectionAndExpiry() async throws {
+        enum InjectedConstructionFailure: Error { case afterPersistence }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let original = try XCTUnwrap(composition.association?.store.state.presentation)
+        let key = composition.currentContextKey
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let expiry = try XCTUnwrap(preferences.load()).filterExpiry
+
+        var failuresRemaining = 1
+        composition.associationConstructionFault = {
+            guard failuresRemaining > 0 else { return }
+            failuresRemaining -= 1
+            throw InjectedConstructionFailure.afterPersistence
+        }
+        defer { composition.associationConstructionFault = nil }
+        do {
+            try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+            XCTFail("Expected failure after filter-context activation")
+        } catch InjectedConstructionFailure.afterPersistence {
+            // Both logical identity and expiration must be restored.
+        }
+
+        XCTAssertEqual(failuresRemaining, 0)
+        XCTAssertTrue(composition.association?.active == true)
+        XCTAssertEqual(composition.currentContextKey, key)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, key)
+        XCTAssertEqual(try preferences.load()?.filterExpiry, expiry)
+        XCTAssertEqual(composition.association?.store.state.presentation?.editionID, original.editionID)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, original.editionID)
+        await composition.association?.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
