@@ -349,6 +349,12 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertTrue(viewport.contains("capture.interaction.end()"))
         XCTAssertTrue(viewport.contains("capture.interruptTransientMotion()"),
             "disappearance must clear any gesture or animation that did not deliver an idle callback")
+        let phaseBlock = try XCTUnwrap(viewport.components(separatedBy: ".onScrollPhaseChange").dropFirst().first?
+            .components(separatedBy: ".onScrollGeometryChange").first)
+        let guardPosition = try XCTUnwrap(phaseBlock.range(of: "guard matchesScope else { return }")?.lowerBound)
+        let animationPosition = try XCTUnwrap(phaseBlock.range(of: "capture.motion.animating = phase == .animating")?.lowerBound)
+        XCTAssertLessThan(guardPosition, animationPosition,
+            "stale scroll-phase callbacks must not mutate the next presentation's animation latch")
         XCTAssertTrue(viewport.contains("capture.nativeScrollOffset.cancel()"))
         // Lifecycle cleanup is visual only. The general forbidden list still excludes all execution.
         FeedViewportCaptureTests.assertVisualBoundary()
