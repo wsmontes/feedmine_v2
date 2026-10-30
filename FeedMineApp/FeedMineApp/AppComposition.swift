@@ -650,8 +650,10 @@ final class AppComposition {
     }
 
     func toggleSource(_ sourceID: SourceID) async throws {
-        guard !replacingSession else { return }
-        replacingSession = true
+        // A reader's explicit toggle must not disappear just because discovery or
+        // another navigation is constructing a session. Evaluate the toggle against
+        // the selection that exists when this intent actually acquires the gate.
+        try await acquireFilterTransition()
         defer { releaseSessionTransition() }
         guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }
         var next = selectedFeeds
@@ -688,14 +690,15 @@ final class AppComposition {
     }
 
     func selectContext(_ request: FeedContextRequest) async throws {
+        // Wait for the active transition before resolving validity or no-op status:
+        // the reader may have changed the available sources while we were queued.
+        try await acquireFilterTransition()
+        defer { releaseSessionTransition() }
         if case .source(let sourceID) = request, !feeds.contains(where: { $0.sourceID == sourceID }) {
             throw ReaderPreferencesError.invalidSelection
         }
-        guard !replacingSession else { return }
-        if request == currentContext, association != nil,
+        if request == currentContext, association?.active == true,
             currentContextKey.filter.isUnrestricted, currentContextKey.preset == .everything { return }
-        replacingSession = true
-        defer { releaseSessionTransition() }
         let previousKey = currentContextKey
         // A failed checkpoint leaves the previous association alive: do not close it
         // until its current reading position has actually been made durable.
