@@ -118,6 +118,52 @@ final class ReaderHostTests: XCTestCase {
             "the reader must stay opaque even though the feed remains mounted")
     }
 
+    /// UIKit integration, separate from the end-to-end FeedScreen UI assertion: the exact
+    /// ReaderHost controller really presents above an existing native scroll view.
+    /// The viewport must remain attached to its window for the entire overlay lifetime.
+    func testActualUIKitOverlayKeepsUnderlyingNativeScrollMounted() async throws {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            throw XCTSkip("No window scene to exercise a UIKit modal presentation")
+        }
+        let previousKeyWindow = scene.windows.first(where: { $0.isKeyWindow })
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        let presenter = UIViewController()
+        presenter.view.backgroundColor = .systemBackground
+        let scroll = UIScrollView(frame: window.bounds)
+        scroll.contentSize = CGSize(width: window.bounds.width, height: 3_000)
+        presenter.view.addSubview(scroll)
+        window.rootViewController = presenter
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            previousKeyWindow?.makeKeyAndVisible()
+        }
+        scroll.setContentOffset(CGPoint(x: 0, y: 615), animated: false)
+        XCTAssertTrue(scroll.window === window, "the reference scroll is mounted before the reader opens")
+
+        let platform = PlatformDouble()
+        let coordinator = coordinator(platform, Recorder())
+        coordinator.show(.site(Self.url))
+        await waitUntil { platform.up != nil }
+        let reader = try XCTUnwrap(platform.up)
+        XCTAssertEqual(reader.modalPresentationStyle, .overFullScreen)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            presenter.present(reader, animated: false) { continuation.resume() }
+        }
+        XCTAssertTrue(scroll.window === window,
+            "presenting the reader must not detach the native viewport")
+        XCTAssertEqual(scroll.contentOffset.y, 615, accuracy: 1,
+            "presentation must not change the reader's native content offset")
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            presenter.dismiss(animated: false) { continuation.resume() }
+        }
+        XCTAssertTrue(scroll.window === window, "the original native viewport survives dismissal")
+        XCTAssertEqual(scroll.contentOffset.y, 615, accuracy: 1,
+            "dismissal must not reconstruct a different scroll position")
+    }
+
     /// The reader is one presentation. A page its own chrome asks for — the site, from the text the app holds —
     /// changes what that one presentation draws; it is never presented as a second one, which would leave the
     /// controller underneath outliving the app state that put it there.
