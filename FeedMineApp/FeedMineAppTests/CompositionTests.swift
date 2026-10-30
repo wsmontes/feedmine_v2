@@ -4710,6 +4710,59 @@ final class FeedFrameBudgetTests: XCTestCase {
         await recovered.close()
     }
 
+    /// Both the post-commit constructor and its compensation fail, but a pending
+    /// editorial rebuild still gets its own attempt. This path must neither mask
+    /// the original explicit error nor strand a stale selection/version.
+    func testFailedToggleRecoveryAllowsPendingEditorialRebuildToRecover() async throws {
+        enum InjectedFailure: Error { case constructor }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory, feeds: threeSourceFixture())
+        await composition.launch()
+        try await composition.searchSources("")
+        let prior = try XCTUnwrap(composition.association)
+        let candidate = try XCTUnwrap(composition.feeds.first)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let before = try XCTUnwrap(preferences.load())
+        var constructions = 0
+        composition.sourceToggleBeforeCommit = { _ in
+            try await composition.replaceSession()
+        }
+        composition.associationConstructionFault = {
+            constructions += 1
+            if constructions <= 2 { throw InjectedFailure.constructor }
+        }
+        defer {
+            composition.sourceToggleBeforeCommit = nil
+            composition.associationConstructionFault = nil
+        }
+
+        do {
+            try await composition.toggleSource(candidate.sourceID)
+            XCTFail("The first constructor failure must reach the toggle caller")
+        } catch InjectedFailure.constructor {}
+
+        XCTAssertEqual(constructions, 3,
+            "First construction, failed compensation, then queued editorial retry")
+        let committed = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(committed.selectionVersion, before.selectionVersion + 1)
+        XCTAssertEqual(committed.sourceKeys, before.sourceKeys.filter { $0 != candidate.principal })
+        XCTAssertEqual(composition.currentContextKey, committed.activeContextKey)
+        XCTAssertFalse(prior.active)
+        let final = try XCTUnwrap(composition.association)
+        XCTAssertTrue(final.active)
+        XCTAssertEqual(final.feeds.map(\.principal), committed.sourceKeys)
+        XCTAssertEqual(final.policy.userSelectionVersion.rawValue, committed.selectionVersion)
+        XCTAssertNil(composition.startupFailure,
+            "Successful editorial retry should clear the earlier recovery diagnostic")
+        if let presentation = final.store.state.presentation {
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID,
+                presentation.editionID)
+        }
+        await final.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
