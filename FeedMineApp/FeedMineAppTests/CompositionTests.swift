@@ -248,6 +248,7 @@ final class DiscoveryGate: @unchecked Sendable {
     private let lock = NSLock()
     private var arrived: [Read] = []
     private var waiting: [ReadWaiter] = []
+    var pendingReadCount: Int { lock.withLock { waiting.count } }
 
     private func failWaitingRead(_ id: UUID, error: any Error) {
         var parked: CheckedContinuation<Read, Error>?
@@ -347,6 +348,51 @@ final class CompositionTests: XCTestCase {
         let initialRead = try await gate.nextRead()
         gate.answer(initialRead, entries: [], subjects: [:])
         await launching.value
+    }
+
+    /// A missing injected discovery read must fail promptly and leave no stale
+    /// waiter. The next real query must still reach the caller in FIFO order.
+    func testDiscoveryGateTimeoutAndSubsequentQuery() async throws {
+        let gate = DiscoveryGate()
+        do {
+            _ = try await gate.nextRead(timeout: .milliseconds(50))
+            XCTFail("A missing discovery query must time out")
+        } catch DiscoveryGate.ReadWaitError.timedOut {
+            // This is a failure of the fixture, not a hung XCTest process.
+        }
+        XCTAssertEqual(gate.pendingReadCount, 0)
+        let fetching = Task { await gate.query(ReaderDiscoveryProfile(languages: ["en"]), nil) }
+        let arrived = try await gate.nextRead(timeout: .seconds(2))
+        XCTAssertEqual(arrived.profile.languages, ["en"])
+        gate.answer(arrived, entries: [], subjects: [:])
+        let response = await fetching.value
+        XCTAssertTrue(response.0.isEmpty)
+        XCTAssertTrue(response.1.isEmpty)
+        XCTAssertEqual(gate.pendingReadCount, 0)
+    }
+
+    /// Cancellation must remove a parked continuation without consuming the
+    /// next legitimate discovery read or blocking another waiter.
+    func testDiscoveryGateCancellationDoesNotConsumeLaterRead() async throws {
+        let gate = DiscoveryGate()
+        let cancelled = Task { try await gate.nextRead(timeout: .seconds(5)) }
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        while gate.pendingReadCount == 0,
+            ProcessInfo.processInfo.systemUptime < deadline { await Task.yield() }
+        XCTAssertEqual(gate.pendingReadCount, 1)
+        cancelled.cancel()
+        do {
+            _ = try await cancelled.value
+            XCTFail("The cancelled waiter must not receive a read")
+        } catch is CancellationError {}
+        XCTAssertEqual(gate.pendingReadCount, 0)
+
+        let fetching = Task { await gate.query(ReaderDiscoveryProfile(languages: ["fr"]), nil) }
+        let arrived = try await gate.nextRead(timeout: .seconds(2))
+        XCTAssertEqual(arrived.profile.languages, ["fr"])
+        gate.answer(arrived, entries: [], subjects: [:])
+        _ = await fetching.value
+        XCTAssertEqual(gate.pendingReadCount, 0)
     }
 
     private func launched() async throws -> (AppComposition, FeedAssociation) {
