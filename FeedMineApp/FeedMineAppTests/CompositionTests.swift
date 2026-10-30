@@ -4382,6 +4382,81 @@ final class FeedFrameBudgetTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// A source-management write lands after the toggle has resolved its proposal
+    /// but before its transaction commits. Retry the *toggle*, not the stale
+    /// add/remove operation, and keep the unrelated external removal intact.
+    func testToggleRetriesOneSelectionConflictFromLatestDurableSources() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let choices = threeSourceFixture()
+        let composition = root(directory: directory, feeds: choices)
+        await composition.launch()
+        try await composition.searchSources("")
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let original = try XCTUnwrap(preferences.load())
+        var seenAttempts: [Int] = []
+        composition.sourceToggleBeforeCommit = { attempt in
+            seenAttempts.append(attempt)
+            if attempt == 1 {
+                _ = try preferences.changeSources(removing: [choices[1].principal])
+            }
+        }
+        defer { composition.sourceToggleBeforeCommit = nil }
+
+        try await composition.toggleSource(choices[0].sourceID)
+        XCTAssertEqual(seenAttempts, [1, 2])
+        let saved = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(saved.sourceKeys, [choices[2].principal])
+        XCTAssertEqual(saved.selectionVersion, original.selectionVersion + 2,
+            "The source manager and the reader each commit exactly one change")
+        XCTAssertEqual(saved.activeContextKey.request, .source(choices[2].sourceID))
+        XCTAssertEqual(composition.currentContextKey, saved.activeContextKey)
+        XCTAssertEqual(composition.association?.feeds.map(\.principal), [choices[2].principal])
+        XCTAssertTrue(composition.association?.active == true)
+        await composition.association?.close()
+    }
+
+    /// A source manager that changes the durable version at every proposal must
+    /// not occupy the transition gate indefinitely. Exhaust retries without
+    /// committing the requested toggle or retiring the reader's active session.
+    func testToggleRepeatedSelectionConflictsExhaustBoundAndKeepLiveReader() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let choices = threeSourceFixture()
+        let composition = root(directory: directory, feeds: choices)
+        await composition.launch()
+        try await composition.searchSources("")
+        let previous = try XCTUnwrap(composition.association)
+        let originalKey = composition.currentContextKey
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let original = try XCTUnwrap(preferences.load())
+        var seenAttempts: [Int] = []
+        composition.sourceToggleBeforeCommit = { attempt in
+            seenAttempts.append(attempt)
+            _ = try preferences.changeSources(adding: ["external-\\(attempt)"])
+        }
+        defer { composition.sourceToggleBeforeCommit = nil }
+
+        do {
+            try await composition.toggleSource(choices[0].sourceID)
+            XCTFail("A continuously changing selection must exhaust the bounded retry")
+        } catch ReaderPreferencesError.selectionConflict {
+            // This is an explicit retry-exhausted result, not a successful toggle.
+        }
+        XCTAssertEqual(seenAttempts, [1, 2, 3])
+        let saved = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(saved.selectionVersion, original.selectionVersion + 3)
+        XCTAssertTrue(saved.sourceKeys.contains(choices[0].principal),
+            "The failed toggle must not remove the requested source")
+        XCTAssertEqual(saved.activeContextKey, originalKey)
+        XCTAssertTrue(composition.association === previous)
+        XCTAssertTrue(previous.active)
+        XCTAssertEqual(composition.currentContextKey, originalKey)
+        await previous.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
