@@ -361,7 +361,7 @@ final class CompositionTests: XCTestCase {
             // This is a failure of the fixture, not a hung XCTest process.
         }
         XCTAssertEqual(gate.pendingReadCount, 0)
-        let fetching = Task { await gate.query(ReaderDiscoveryProfile(languages: ["en"]), nil) }
+        let fetching = Task { await gate.query(ReaderDiscoveryProfile(languages: ["en"]), URL(fileURLWithPath: "/unused-test-catalog.sqlite")) }
         let arrived = try await gate.nextRead(timeout: .seconds(2))
         XCTAssertEqual(arrived.profile.languages, ["en"])
         gate.answer(arrived, entries: [], subjects: [:])
@@ -387,7 +387,7 @@ final class CompositionTests: XCTestCase {
         } catch is CancellationError {}
         XCTAssertEqual(gate.pendingReadCount, 0)
 
-        let fetching = Task { await gate.query(ReaderDiscoveryProfile(languages: ["fr"]), nil) }
+        let fetching = Task { await gate.query(ReaderDiscoveryProfile(languages: ["fr"]), URL(fileURLWithPath: "/unused-test-catalog.sqlite")) }
         let arrived = try await gate.nextRead(timeout: .seconds(2))
         XCTAssertEqual(arrived.profile.languages, ["fr"])
         gate.answer(arrived, entries: [], subjects: [:])
