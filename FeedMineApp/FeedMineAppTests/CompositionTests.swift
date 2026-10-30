@@ -4566,6 +4566,47 @@ final class FeedFrameBudgetTests: XCTestCase {
         await active.close()
     }
 
+    /// An editorial action can request a replacement while toggleSource still
+    /// owns the gate. replaceSession must register a deferred rebuild, and the
+    /// toggle must actually perform it before reporting completion to the reader.
+    func testToggleDrainsEditorialRebuildRequestedDuringLaunch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory, feeds: threeSourceFixture())
+        await composition.launch()
+        try await composition.searchSources("")
+        XCTAssertNil(composition.startupFailure)
+        let original = try XCTUnwrap(composition.association)
+        let source = try XCTUnwrap(composition.feeds.first)
+        var associationWhenRequested: FeedAssociation?
+        var requests = 0
+        composition.sourceToggleDidLaunch = {
+            requests += 1
+            associationWhenRequested = composition.association
+            XCTAssertTrue(associationWhenRequested?.active == true)
+            // This call returns early and sets pendingRebuild while toggleSource
+            // holds the transition gate. Without an explicit drain it is lost.
+            try await composition.replaceSession()
+        }
+        defer { composition.sourceToggleDidLaunch = nil }
+
+        try await composition.toggleSource(source.sourceID)
+        XCTAssertEqual(requests, 1)
+        let mid = try XCTUnwrap(associationWhenRequested)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertFalse(original.active)
+        XCTAssertFalse(mid.active, "The deferred editorial rebuild must retire the toggle's first session")
+        XCTAssertFalse(active === mid, "The toggle must not return while the rebuild is still pending")
+        XCTAssertTrue(active.active)
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        let saved = try XCTUnwrap(ReaderPreferencesStore(database: db).load())
+        XCTAssertEqual(composition.currentContextKey, saved.activeContextKey)
+        XCTAssertEqual(active.feeds.map(\.principal), saved.sourceKeys)
+        XCTAssertEqual(active.policy.userSelectionVersion.rawValue, saved.selectionVersion)
+        XCTAssertNil(composition.startupFailure)
+        await active.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
