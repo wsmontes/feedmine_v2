@@ -287,11 +287,18 @@ final class CompositionTests: XCTestCase {
             feeds: feeds, transportConfiguration: configuration)
     }
 
-    /// A cold launch also consults the injected discovery query. Answer its first
-    /// read before awaiting launch, otherwise a DiscoveryGate test deadlocks before
-    /// reaching the intentionally held replacement.
+    /// A discovery query is only issued for a nonempty profile. Give the first
+    /// launch an explicit English profile, answer that query, and let each test
+    /// change the profile to Portuguese before deliberately holding a rebuild.
+    /// Without this preparation, nextRead() could wait for a query the app never
+    /// issues (the fresh reader's default discovery profile is empty).
     private func launchAnsweringInitialDiscovery(_ composition: AppComposition,
-        gate: DiscoveryGate) async {
+        gate: DiscoveryGate, directory: URL) async throws {
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["en"])
+        _ = try preferences.setSettings(settings)
         let launching = Task { await composition.launch() }
         let initialRead = await gate.nextRead()
         gate.answer(initialRead, entries: [], subjects: [:])
@@ -3531,7 +3538,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let gate = DiscoveryGate()
         let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration, discoveryQuery: gate.query)
-        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
         let original = try XCTUnwrap(composition.association?.store.state.presentation)
         let initialKey = composition.currentContextKey
@@ -3587,7 +3594,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let gate = DiscoveryGate()
         let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration, discoveryQuery: gate.query)
-        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         let initialKey = composition.currentContextKey
         let firstEdition = try XCTUnwrap(composition.association?.store.state.presentation?.editionID)
         let database = try RuntimeDatabase(location: .init(directory: directory))
@@ -3653,7 +3660,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let gate = DiscoveryGate()
         let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration, discoveryQuery: gate.query)
-        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         let initialKey = composition.currentContextKey
         let database = try RuntimeDatabase(location: .init(directory: directory))
         let preferences = ReaderPreferencesStore(database: database)
@@ -3706,7 +3713,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let gate = DiscoveryGate()
         let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration, discoveryQuery: gate.query)
-        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
         let originalAssociation = try XCTUnwrap(composition.association)
         let initial = composition.currentContextKey
@@ -3806,7 +3813,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let gate = DiscoveryGate()
         let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration, discoveryQuery: gate.query)
-        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
         try await composition.searchSources("")
         let initiallySelected = composition.feeds
@@ -3973,7 +3980,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let gate = DiscoveryGate()
         let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration, discoveryQuery: gate.query)
-        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
         let originalFeeds = composition.feeds
         XCTAssertGreaterThanOrEqual(originalFeeds.count, 3)
