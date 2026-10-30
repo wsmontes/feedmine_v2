@@ -4457,6 +4457,74 @@ final class FeedFrameBudgetTests: XCTestCase {
         await previous.close()
     }
 
+    /// The user removes A; the source manager removes A as the first proposal is
+    /// about to commit. Recomputing "toggle" from version N+1 would ADD A back.
+    /// The retry must preserve the reader's original desired state (A absent).
+    func testToggleRetryDoesNotReaddSourceRemovedByExternalWriter() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let choices = threeSourceFixture()
+        let composition = root(directory: directory, feeds: choices)
+        await composition.launch()
+        try await composition.searchSources("")
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let initial = try XCTUnwrap(preferences.load())
+        var attempts: [Int] = []
+        composition.sourceToggleBeforeCommit = { attempt in
+            attempts.append(attempt)
+            if attempt == 1 {
+                _ = try preferences.changeSources(removing: [choices[0].principal])
+            }
+        }
+        defer { composition.sourceToggleBeforeCommit = nil }
+
+        try await composition.toggleSource(choices[0].sourceID)
+        XCTAssertEqual(attempts, [1, 2])
+        let saved = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(saved.sourceKeys, choices.dropFirst().map(\.principal))
+        XCTAssertEqual(saved.selectionVersion, initial.selectionVersion + 1,
+            "The external removal already satisfied the toggle; do not bump the version again")
+        XCTAssertEqual(composition.feeds.map(\.principal), saved.sourceKeys)
+        XCTAssertEqual(composition.currentContextKey, saved.activeContextKey)
+        XCTAssertTrue(composition.association?.active == true)
+        await composition.association?.close()
+    }
+
+    /// Source A is no longer selected when the user requests adding it. Another
+    /// writer adds A before the first commit. The retry must keep A selected,
+    /// rather than interpreting the latest snapshot as a request to remove A.
+    func testToggleRetryDoesNotRemoveSourceAddedByExternalWriter() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let choices = threeSourceFixture()
+        let composition = root(directory: directory, feeds: choices)
+        await composition.launch()
+        try await composition.searchSources("")
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let reduced = try preferences.changeSources(removing: [choices[0].principal])
+        var attempts: [Int] = []
+        composition.sourceToggleBeforeCommit = { attempt in
+            attempts.append(attempt)
+            if attempt == 1 {
+                _ = try preferences.changeSources(adding: [choices[0].principal])
+            }
+        }
+        defer { composition.sourceToggleBeforeCommit = nil }
+
+        try await composition.toggleSource(choices[0].sourceID)
+        XCTAssertEqual(attempts, [1, 2])
+        let saved = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(saved.sourceKeys, [choices[1].principal, choices[2].principal, choices[0].principal])
+        XCTAssertEqual(saved.selectionVersion, reduced.selectionVersion + 1,
+            "External addition already satisfied the toggle without another version bump")
+        XCTAssertEqual(composition.feeds.map(\.principal), saved.sourceKeys)
+        XCTAssertEqual(composition.currentContextKey, saved.activeContextKey)
+        XCTAssertTrue(composition.association?.active == true)
+        await composition.association?.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
