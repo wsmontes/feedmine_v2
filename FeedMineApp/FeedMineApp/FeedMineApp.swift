@@ -787,7 +787,10 @@ struct FeedMineApp: App {
                     return
                 }
                 let controller = UIHostingController(rootView: content)
-                controller.modalPresentationStyle = .fullScreen
+                // Keep the presenting SwiftUI feed hierarchy mounted behind the opaque reader.
+                // UIKit normally removes it for .fullScreen; reattaching the native scroll view
+                // on dismissal can lose the precise visual card/offset.
+                controller.modalPresentationStyle = .overFullScreen
                 controller.view.backgroundColor = .systemBackground
                 // UI-READABILITY-01: the reader is the app's second presentation root, and this controller is
                 // where its appearance is declared. The window content's `.preferredColorScheme(.light)` reaches
