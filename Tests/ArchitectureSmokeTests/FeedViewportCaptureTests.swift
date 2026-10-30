@@ -167,6 +167,43 @@ final class FeedViewportCaptureTests: XCTestCase {
     /// O repouso semântico do desenho: nenhum gesto, nenhum hold emprestado, nenhuma animação programática. É ele
     /// que deixa uma posição **distinta** do viewport virar durável na hora — e uma animação do sistema não é
     /// repouso, por mais que o leitor não esteja tocando a tela.
+    func testInterruptedNativeMotionDropsStaleSignalsWithoutLosingPosition() {
+        let id = PublicationCardID()
+        for wasAnimating in [false, true] {
+            var capture = FeedVisualCapture()
+            capture.positionID = id
+            capture.motion.readerCardID = id
+            capture.motion.presentedTop = id
+            capture.motion.publishedPresentedTop = id
+            capture.motion.acknowledgedPresentedTop = id
+            capture.reading = !wasAnimating
+            capture.motion.animating = wasAnimating
+            capture.motion.direction = .forward
+            capture.motion.lastEmission = FeedVisualEvent(
+                observation: .init(anchor: .init(cardID: id, placement: .center)), activity: .forward)
+            capture.motion.geometry = .init(offset: 120, extent: 2_000, height: 800)
+            capture.motion.visibleProof = .init(cardID: id,
+                frame: .init(x: 0, y: 0, width: 400, height: 200), offset: 120, height: 800)
+            capture.motion.velocityUnverified = true
+
+            capture.interruptTransientMotion()
+
+            XCTAssertFalse(capture.reading)
+            XCTAssertFalse(capture.motion.animating)
+            XCTAssertNil(capture.motion.direction, "a future gesture must prove its own direction")
+            XCTAssertNil(capture.motion.lastEmission, "a future gesture must not reuse a pre-dismissal event")
+            XCTAssertNil(capture.motion.geometry, "the returning screen must provide fresh geometry")
+            XCTAssertNil(capture.motion.visibleProof, "a stale card sample is not evidence after return")
+            XCTAssertFalse(capture.motion.velocityUnverified)
+            XCTAssertEqual(capture.positionID, id, "a modal must not reset the visible scroll target")
+            XCTAssertEqual(capture.motion.readerCardID, id)
+            XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: id, placement: .top))
+            var repeated: [(PresentationAnchor, Bool)] = []
+            capture.reportPresentedPosition { repeated.append(($0, $1)) }
+            XCTAssertTrue(repeated.isEmpty, "an already acknowledged position is not checkpointed again")
+        }
+    }
+
     func testTheRenderingIsAtRestOnlyWithoutAGestureOrAProgrammaticAnimation() {
         var capture = FeedVisualCapture()
         XCTAssertTrue(capture.isRenderingAtRest)
