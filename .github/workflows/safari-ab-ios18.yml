@@ -94,7 +94,15 @@ jobs:
             test -f "$worktree/FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj"
             dd="${RUNNER_TEMP}/feedmine-derived-$arm"
             log="$REPORT_DIR/$arm/build.log"
-            echo "Building $arm at $(git rev-parse HEAD)"
+            expected_sha=$(cat "$REPORT_DIR/$arm.sha")
+            actual_sha=$(git -C "$worktree" rev-parse HEAD)
+            printf 'arm=%s expected=%s actual=%s\n' "$arm" "$expected_sha" "$actual_sha" > "$REPORT_DIR/$arm/source-identity.txt"
+            if [[ "$expected_sha" != "$actual_sha" ]]; then
+              echo "Frozen build source mismatch for $arm" | tee -a "$log"
+              printf '%s\tfail-source-mismatch\n' "$arm" >> "$REPORT_DIR/builds.tsv"
+              continue
+            fi
+            echo "Building $arm at $actual_sha"
             if xcodebuild build-for-testing \
               -project "$worktree/FeedMineApp/FeedMineApp.xcodeproj" \
               -scheme FeedMine -configuration Debug \
