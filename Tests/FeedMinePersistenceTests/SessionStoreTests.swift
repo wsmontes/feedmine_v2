@@ -99,4 +99,71 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertNotNil(try store.card(id: a.id))
     }
 
+
+    /// An app transition composes separate GRDB writes: activating the new context and then
+    /// changing its edition visibility. A failure in the latter does not roll back the former.
+    /// This is a fault-injection characterization test, not a claim that AppComposition recovers.
+    func testContextSwitchRollbackBoundaryUnderInjectedSQLiteFailures() throws {
+        let db = try StorageFixture.database(self)
+        let publication = PublicationStore(database: db)
+        let sessions = SessionStore(database: db)
+        let main = StorageFixture.edition()
+        let source = SourceID()
+        let revision = main.editorialRevision
+        let sourceRevision = EditorialRevision(id: EditorialRevisionID(),
+            contextKey: .init(request: .source(source)),
+            catalogGeneration: revision.catalogGeneration, userSelectionVersion: revision.userSelectionVersion,
+            eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
+            scoringPolicyVersion: revision.scoringPolicyVersion,
+            sequencingPolicyVersion: revision.sequencingPolicyVersion,
+            exposurePolicyVersion: revision.exposurePolicyVersion,
+            selectionSchemaVersion: revision.selectionSchemaVersion)
+        let other = StorageFixture.edition(revision: sourceRevision)
+        let firstCard = StorageFixture.card(), secondCard = StorageFixture.card()
+        for (edition, card) in [(main, firstCard), (other, secondCard)] {
+            try publication.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
+        }
+        let first = SessionStore.CheckpointRecord(editionID: main.id, cardID: firstCard.id,
+            anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 10))
+        let second = SessionStore.CheckpointRecord(editionID: other.id, cardID: secondCard.id,
+            anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 20))
+        try sessions.saveCheckpoint(first)
+        try sessions.activateContext(.source(source))
+        try sessions.saveCheckpoint(second)
+        try sessions.activateContext(.main)
+        XCTAssertEqual(try sessions.checkpoint(), first)
+
+        // F1: a failure inside activateContext must roll back its own write transaction.
+        try db.write { database in
+            try database.execute(sql: """
+                CREATE TRIGGER feedmine_test_fail_activation
+                BEFORE DELETE ON session_checkpoint
+                BEGIN SELECT RAISE(ABORT, 'injected activation failure'); END
+                """)
+        }
+        XCTAssertThrowsError(try sessions.activateContext(.source(source)))
+        XCTAssertEqual(try sessions.checkpoint(), first)
+        try db.write { database in
+            try database.execute(sql: "DROP TRIGGER feedmine_test_fail_activation")
+        }
+
+        // F2: construction's next independent write fails AFTER activation committed.
+        try db.write { database in
+            try database.execute(sql: """
+                CREATE TRIGGER feedmine_test_fail_visibility
+                BEFORE UPDATE OF visible ON edition_reading_state
+                BEGIN SELECT RAISE(ABORT, 'injected visibility failure'); END
+                """)
+        }
+        try sessions.activateContext(.source(source))
+        XCTAssertThrowsError(try publication.setVisibility(editionID: other.id, visible: true))
+        XCTAssertEqual(try sessions.checkpoint(), second,
+            "A later failure cannot undo the already committed activation")
+        XCTAssertEqual(try sessions.checkpoint(for: .main), first,
+            "The previous context is archived, but is no longer the active cursor")
+        try db.write { database in
+            try database.execute(sql: "DROP TRIGGER feedmine_test_fail_visibility")
+        }
+    }
+
 }
