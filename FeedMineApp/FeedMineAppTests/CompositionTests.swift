@@ -3751,6 +3751,39 @@ final class FeedFrameBudgetTests: XCTestCase {
         await active.close()
     }
 
+    /// A collection retains its ContextKey when membership changes. Reopening it must
+    /// reconstruct the effective sources instead of short-circuiting on key equality.
+    func testReopeningSameCollectionReflectsChangedMembership() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let initial = try XCTUnwrap(composition.association)
+        let selected = composition.feeds
+        XCTAssertGreaterThanOrEqual(selected.count, 2)
+        let first = selected[0], second = selected[1]
+        let library = ReaderLibraryCoordinator(database: initial.database)
+        let collection = try XCTUnwrap(library.collectSources(named: "Mutable collection",
+            sourceKeys: [first.principal, second.principal]))
+        try await composition.openCollectionFeed(id: collection.id)
+        let originalKey = composition.currentContextKey
+        XCTAssertEqual(Set(composition.feeds.map(\.principal)),
+            Set([first.principal, second.principal]))
+
+        try library.setCollectionMembership(sourceKey: second.principal,
+            collectionID: collection.id, included: false)
+        try await composition.openCollectionFeed(id: collection.id)
+        XCTAssertEqual(composition.currentContextKey, originalKey,
+            "Membership changes do not change the collection's identity")
+        XCTAssertEqual(composition.feeds.map(\.principal), [first.principal],
+            "Reopening the same identity must read updated library membership")
+        XCTAssertEqual(composition.association?.feeds.map(\.principal), [first.principal])
+        let preferences = ReaderPreferencesStore(database: initial.database)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, selected.map(\.principal),
+            "Collection membership edits do not change the reader's selection")
+        await composition.association?.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
