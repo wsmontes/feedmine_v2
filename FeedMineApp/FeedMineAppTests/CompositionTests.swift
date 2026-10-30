@@ -3509,6 +3509,64 @@ final class FeedFrameBudgetTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// A filter selected while a replacement is suspended on discovery must wait,
+    /// then become the actual active session. Merely recording pendingRebuild and
+    /// returning would let preferences claim the filter while no matching session ran.
+    func testFilterRequestedDuringRebuildWaitsAndActivatesMatchingSession() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        await composition.launch()
+        XCTAssertNil(composition.startupFailure)
+        let original = try XCTUnwrap(composition.association?.store.state.presentation)
+        let initialKey = composition.currentContextKey
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        // Force a new uncached profile. The constructor now waits at the real
+        // discovery boundary until the test answers, not at an arbitrary delay.
+        let rebuilding = Task { try await composition.replaceSession() }
+        let read = await gate.nextRead()
+        let filterRequest = Task {
+            try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+        }
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions == 0,
+            ProcessInfo.processInfo.systemUptime < deadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1,
+            "A filter request must wait while another transition owns the session")
+        XCTAssertEqual(composition.currentContextKey, initialKey,
+            "A waiting filter request cannot overwrite the active context")
+        XCTAssertEqual(try preferences.load()?.activeContextKey, initialKey,
+            "A waiting filter request cannot commit preferences before it owns the gate")
+
+        gate.answer(read, entries: [], subjects: [:])
+        try await rebuilding.value
+        try await filterRequest.value
+
+        let expected = ContextKey(request: initialKey.request, preset: .everything,
+            filter: ReaderFilter(mood: .fun), searchScope: initialKey.searchScope)
+        XCTAssertEqual(composition.currentContextKey, expected)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, expected)
+        let current = try XCTUnwrap(composition.association)
+        XCTAssertTrue(current.active)
+        XCTAssertEqual(current.contextKey.filter.mood, .fun,
+            "The active session must actually use the deferred filter intent")
+        let presented = try XCTUnwrap(current.store.state.presentation)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, presented.editionID)
+        XCTAssertNotNil(try SessionStore(database: database).checkpoint(for: initialKey),
+            "The earlier context remains recoverable")
+        XCTAssertEqual(original.contextKey, initialKey)
+        await current.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
