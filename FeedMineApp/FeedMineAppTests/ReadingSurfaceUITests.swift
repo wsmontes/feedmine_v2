@@ -304,6 +304,17 @@ final class ReadingSurfaceUITests: XCTestCase {
             "browser close must preserve the card's vertical position")
         XCTAssertEqual(after.maxY, before.maxY, accuracy: 1.0,
             "browser close must preserve the card's height and trailing edge")
+        // Persist the numeric evidence for each CI repetition, not only screenshots
+        // and a pass/fail flag. The two A/B arms use byte-identical assertions.
+        let result = XCTAttachment(string: [
+            "cardUUID=\(identity)",
+            "beforeMinY=\(before.minY)", "afterMinY=\(after.minY)",
+            "beforeMaxY=\(before.maxY)", "afterMaxY=\(after.maxY)",
+            "deltaMinY=\(after.minY - before.minY)"
+        ].joined(separator: "\n"))
+        result.name = "browser-return-position-metrics"
+        result.lifetime = .keepAlways
+        add(result)
         attach(app, "browser-close-deep-history-same-card")
     }
 
