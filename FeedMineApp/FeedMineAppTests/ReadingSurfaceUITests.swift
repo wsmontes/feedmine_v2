@@ -258,7 +258,9 @@ final class ReadingSurfaceUITests: XCTestCase {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 180))
         XCTAssertTrue(waitForAVisibleCard(app, within: 180))
-        let diagnostic = app.otherElements["native-viewport-diagnosis"].firstMatch
+        // The UIKit accessibility node's XCTest element type is an
+        // implementation detail. Query the stable identifier across all types.
+        let diagnostic = byIdentifier(app, "native-viewport-diagnosis")
         guard diagnostic.waitForExistence(timeout: 20) else {
             attach(app, "safari-diagnosis-probe-missing-at-start")
             return XCTFail("debug diagnostic must be accessible")
