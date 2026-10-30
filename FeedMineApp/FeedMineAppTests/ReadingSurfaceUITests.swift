@@ -284,16 +284,21 @@ final class ReadingSurfaceUITests: XCTestCase {
             return diagnostic.value as? String ?? "diagnostic-unavailable"
         }
         let initial = diagnosticSample()
+        guard initial != "diagnostic-missing" && initial != "diagnostic-unavailable" else {
+            attachDiagnosticAccessibilityTree(app, stage: "initial-value")
+            attach(app, "safari-diagnosis-invalid-initial-value")
+            return XCTFail("native diagnostic must provide a readable initial value")
+        }
         for _ in 0..<8 { scroll.swipeUp(velocity: .fast) }
         guard let tracked = settledVisibleCard(app, within: 30) else {
             attach(app, "safari-diagnosis-setup-unsettled")
             return XCTFail("no stable card after the eight reader gestures")
         }
         let before = diagnosticSample()
-        guard before != "diagnostic-missing" else {
+        guard before != "diagnostic-missing" && before != "diagnostic-unavailable" else {
             attachDiagnosticAccessibilityTree(app, stage: "before-safari")
-            attach(app, "safari-diagnosis-probe-lost-during-scroll")
-            return XCTFail("native diagnostic disappeared before opening Safari")
+            attach(app, "safari-diagnosis-unreadable-before-safari")
+            return XCTFail("native diagnostic must remain readable before opening Safari")
         }
         let card = byIdentifier(app, tracked.identity)
         XCTAssertTrue(card.exists && card.isHittable)
@@ -317,7 +322,8 @@ final class ReadingSurfaceUITests: XCTestCase {
         attachment.name = "safari-native-window-anchor-diagnosis"
         attachment.lifetime = .keepAlways
         add(attachment)
-        if immediatelyAfter == "diagnostic-missing" || after == "diagnostic-missing" {
+        let unusable = ["diagnostic-missing", "diagnostic-unavailable"]
+        if unusable.contains(immediatelyAfter) || unusable.contains(after) {
             attachDiagnosticAccessibilityTree(app, stage: "after-safari")
         }
         attach(app, "safari-native-window-anchor-diagnosis")
