@@ -53,9 +53,11 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
                 anchorPlacement: "top", updatedAt: Date()))
 
         let history = PublicationHistory(database: database)
-        let decoder = PresentationImageDecoder(
+        // The decoder factory is failable. Do not allow a nil decoder to
+        // masquerade as a missing-media admission failure.
+        let decoder = try XCTUnwrap(PresentationImageDecoder(
             assetDirectory: directory.appendingPathComponent("Media"),
-            heroMaxPixel: 300, thumbnailMaxPixel: 88)
+            heroMaxPixel: 300, thumbnailMaxPixel: 88))
         let bounds = FeedPresentationBounds(backwardCapacity: 8, forwardCapacity: 16)
 
         let session = FeedSession(publicationHistory: history, imageDecoder: decoder)
