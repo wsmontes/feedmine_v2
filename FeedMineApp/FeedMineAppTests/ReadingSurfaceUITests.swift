@@ -80,6 +80,32 @@ final class ReadingSurfaceUITests: XCTestCase {
         return nil
     }
 
+    /// Browser dismissal is asynchronous. Read the returned card only after its frame
+    /// settles, without scrolling to find it: a card in the wrong place still fails.
+    private func settledFrame(of card: XCUIElement, within seconds: TimeInterval) -> CGRect? {
+        let deadline = Date().addingTimeInterval(seconds)
+        var previous: CGRect?
+        var matches = 0
+        while Date() < deadline {
+            if card.exists, card.frame.height > 40 {
+                let current = card.frame
+                if let previous, abs(previous.minY - current.minY) <= 1,
+                    abs(previous.maxY - current.maxY) <= 1 {
+                    matches += 1
+                } else {
+                    matches = 1
+                }
+                if matches >= 3 { return current }
+                previous = current
+            } else {
+                previous = nil
+                matches = 0
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return nil
+    }
+
     /// The card's own *open* control. It carries `card.open`: measured on the device
     /// (`docs/reviews/2026-10-11-article-reading-diagnosis.md` §3), the card's tree had the bookmark control with
     /// an identifier and the opening label with **none**, so a test had to guess ("the first button with an empty
@@ -262,18 +288,21 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(waitForAddress(app, showing: "example.test", within: 20),
             "the browser navigated to the fixture card's original URL")
         app.buttons["Close"].tap()
+        XCTAssertTrue(app.buttons["Close"].waitForNonExistence(timeout: 20),
+            "the browser must actually finish dismissal before measuring the underlying feed")
 
-        // No scroll, search or recovery gesture is allowed before these assertions. Looking for the
-        // missing identity by swiping would mask the very jump this regression is designed to catch.
+        // No scroll, search or recovery gesture is allowed after closing. Let the native
+        // frame settle, but never scroll the missing card back into the viewport.
         let returned = byIdentifier(app, identity)
-        XCTAssertTrue(returned.waitForExistence(timeout: 20),
-            "browser close must restore the same card, not merely show a different feed card")
-        guard returned.exists else { return }
-        XCTAssertTrue(returned.frame.intersects(scroll.frame),
+        guard let after = settledFrame(of: returned, within: 20) else {
+            attach(app, "browser-close-return-card-missing-or-moving")
+            return XCTFail("browser close did not restore a stable instance of the original card")
+        }
+        XCTAssertTrue(after.intersects(scroll.frame),
             "the same card must still intersect the feed viewport without a recovery scroll")
-        XCTAssertEqual(returned.frame.minY, before.minY, accuracy: 1.0,
+        XCTAssertEqual(after.minY, before.minY, accuracy: 1.0,
             "browser close must preserve the card's vertical position")
-        XCTAssertEqual(returned.frame.maxY, before.maxY, accuracy: 1.0,
+        XCTAssertEqual(after.maxY, before.maxY, accuracy: 1.0,
             "browser close must preserve the card's height and trailing edge")
         attach(app, "browser-close-deep-history-same-card")
     }
