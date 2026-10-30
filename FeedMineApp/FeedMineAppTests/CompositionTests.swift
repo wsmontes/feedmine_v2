@@ -4169,6 +4169,84 @@ final class FeedFrameBudgetTests: XCTestCase {
         await active.close()
     }
 
+    /// A second external adoption call can reach its own two-rebuild limit while
+    /// the first continuation is already queued. A single pending continuation
+    /// must serve the latest durable version; cancelled waiters must not retain
+    /// ownership of the transition gate.
+    func testExternalAdoptionCoalescesContinuationsAndDrainsCancelledWaiter() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
+        let sources = composition.feeds
+        XCTAssertGreaterThanOrEqual(sources.count, 3)
+        let first = sources[0], second = sources[1]
+        let preferences = ReaderPreferencesStore(database:
+            try RuntimeDatabase(location: .init(directory: directory)))
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let versionOne = try preferences.changeSources(removing: [first.principal]).selectionVersion
+        var applied: [UInt64] = []
+        composition.sourceAdoptionDidRebuild = { version in
+            applied.append(version)
+            switch applied.count {
+            case 1: _ = try preferences.changeSources(removing: [second.principal])
+            case 2: _ = try preferences.changeSources(adding: [first.principal])
+            case 3: _ = try preferences.changeSources(adding: [second.principal])
+            case 4: _ = try preferences.changeSources(removing: [first.principal])
+            case 5: break
+            default: XCTFail("A stable durable version must not trigger more rebuilding")
+            }
+        }
+        defer { composition.sourceAdoptionDidRebuild = nil }
+
+        let firstAdoption = Task { await composition.adoptSelectionChange() }
+        let held = await gate.nextRead()
+        var readerCompleted = false
+        let reader = Task { @MainActor in
+            try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+            readerCompleted = true
+        }
+        let secondaryAdoption = Task { await composition.adoptSelectionChange() }
+        let cancelledAdoption = Task { await composition.adoptSelectionChange() }
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions < 3,
+            ProcessInfo.processInfo.systemUptime < deadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 3)
+        cancelledAdoption.cancel()
+        await cancelledAdoption.value
+        XCTAssertEqual(composition.waitingFilterTransitions, 2)
+
+        gate.answer(held, entries: [], subjects: [:])
+        await firstAdoption.value
+        try await reader.value
+        await secondaryAdoption.value
+        let finished = ProcessInfo.processInfo.systemUptime + 5
+        while (applied.count != 5 || composition.hasPendingSourceAdoptionContinuation),
+            ProcessInfo.processInfo.systemUptime < finished { await Task.yield() }
+
+        XCTAssertTrue(readerCompleted)
+        XCTAssertEqual(applied, (0..<5).map { versionOne + UInt64($0) })
+        XCTAssertEqual(composition.sourceAdoptionContinuationSchedules, 1,
+            "A second bounded adoption must not schedule a duplicate continuation")
+        XCTAssertFalse(composition.hasPendingSourceAdoptionContinuation)
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        let latest = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(latest.selectionVersion, versionOne + 4)
+        XCTAssertEqual(latest.sourceKeys, sources.dropFirst(2).map(\.principal) + [second.principal])
+        XCTAssertEqual(composition.feeds.map(\.principal), latest.sourceKeys)
+        XCTAssertEqual(composition.currentContextKey.filter.mood, .fun)
+        XCTAssertEqual(latest.activeContextKey, composition.currentContextKey)
+        XCTAssertTrue(composition.association?.active == true)
+        await composition.association?.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
