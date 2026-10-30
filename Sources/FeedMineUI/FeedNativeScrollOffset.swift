@@ -264,7 +264,9 @@ private struct FeedViewportDiagnosticReadout: UIViewRepresentable {
     final class Probe: UIView {
         var access: FeedNativeScrollOffset?
         var store: FeedScreenStore?
-        var readCapture: (() -> FeedVisualCapture)?
+        // FeedVisualCapture is @MainActor; preserve that isolation in the
+        // escaping accessibility callback instead of erasing its actor contract.
+        var readCapture: (@MainActor () -> FeedVisualCapture)?
         init() {
             super.init(frame: .zero)
             isUserInteractionEnabled = false
