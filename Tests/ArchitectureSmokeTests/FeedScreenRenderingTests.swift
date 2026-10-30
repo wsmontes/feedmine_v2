@@ -347,6 +347,8 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertTrue(viewport.contains("onScrollPhaseChange"))
         XCTAssertTrue(viewport.contains("store.submitViewport(event.observation, activity: event.activity, rendered:"))
         XCTAssertTrue(viewport.contains("capture.interaction.end()"))
+        XCTAssertTrue(viewport.contains("capture.interruptTransientMotion()"),
+            "disappearance must clear any gesture or animation that did not deliver an idle callback")
         XCTAssertTrue(viewport.contains("capture.nativeScrollOffset.cancel()"))
         // Lifecycle cleanup is visual only. The general forbidden list still excludes all execution.
         FeedViewportCaptureTests.assertVisualBoundary()
