@@ -699,7 +699,11 @@ final class AppComposition {
                 cause: transitionError)
             throw transitionError
         }
-        try await searchSources("")
+        // Rebuilding the source-picker options is secondary to the committed
+        // selection. A catalogue query error must not report a successful toggle as
+        // a failed selection change.
+        do { try await searchSources("") }
+        catch { Self.log("source picker refresh after committed toggle failed: \(String(describing: error))") }
     }
 
     func selectContext(_ request: FeedContextRequest) async throws {
