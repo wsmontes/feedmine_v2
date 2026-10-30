@@ -3857,6 +3857,91 @@ final class FeedFrameBudgetTests: XCTestCase {
         await finalAssociation.close()
     }
 
+    /// A failed source preference transaction must not retire the active association.
+    /// The SQLite trigger executes after the preference UPDATE but before commit.
+    func testSourceToggleAbortedPreferenceTransactionKeepsPreviousReader() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        try await composition.searchSources("")
+        let previous = try XCTUnwrap(composition.association)
+        let presentation = try XCTUnwrap(previous.store.state.presentation)
+        let oldContext = composition.currentContextKey
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferenceStore = ReaderPreferencesStore(database: database)
+        let oldSelection = try XCTUnwrap(preferenceStore.load())
+        let candidate = try XCTUnwrap(composition.feeds.first)
+
+        let url = RuntimeDatabaseLocation(directory: directory).databaseURL
+        try executeTransitionTestSQL("""
+            CREATE TRIGGER feedmine_test_abort_source_preferences
+            AFTER UPDATE OF source_keys ON reader_preferences
+            BEGIN SELECT RAISE(ABORT, 'injected source transition failure'); END
+            """, at: url)
+        defer { try? executeTransitionTestSQL(
+            "DROP TRIGGER IF EXISTS feedmine_test_abort_source_preferences", at: url) }
+        do {
+            try await composition.toggleSource(candidate.sourceID)
+            XCTFail("The deliberate SQLite error must abort the source transaction")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("injected source transition failure"))
+        }
+        XCTAssertTrue(composition.association === previous)
+        XCTAssertTrue(previous.active)
+        XCTAssertEqual(composition.currentContextKey, oldContext)
+        XCTAssertEqual(try preferenceStore.load(), oldSelection)
+        XCTAssertEqual(composition.feeds.map(\.principal), previous.feeds.map(\.principal))
+        XCTAssertEqual(previous.store.state.presentation?.editionID, presentation.editionID)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, presentation.editionID)
+        await previous.close()
+    }
+
+    /// A failure after the atomic selection commit must preserve the reader's newly
+    /// chosen sources and version. Recovery retries construction for that committed
+    /// identity instead of rewinding the version and invalidating edition fences.
+    func testSourceToggleLateConstructorFailureRecoversCommittedSelection() async throws {
+        enum InjectedFailure: Error { case afterConstructor }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        try await composition.searchSources("")
+        let previous = try XCTUnwrap(composition.association)
+        let initial = try XCTUnwrap(previous.store.state.presentation)
+        let candidate = try XCTUnwrap(composition.feeds.first)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let original = try XCTUnwrap(preferences.load())
+        var failures = 1
+        composition.associationConstructionFault = {
+            guard failures > 0 else { return }
+            failures -= 1
+            throw InjectedFailure.afterConstructor
+        }
+        defer { composition.associationConstructionFault = nil }
+
+        do {
+            try await composition.toggleSource(candidate.sourceID)
+            XCTFail("The post-constructor failure must reach the caller")
+        } catch InjectedFailure.afterConstructor {}
+        XCTAssertEqual(failures, 0)
+        let committed = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(committed.selectionVersion, original.selectionVersion + 1)
+        XCTAssertEqual(committed.sourceKeys,
+            original.sourceKeys.filter { $0 != candidate.principal })
+        XCTAssertEqual(composition.currentContextKey, committed.activeContextKey)
+        XCTAssertFalse(composition.feeds.contains(where: { $0.sourceID == candidate.sourceID }))
+        XCTAssertFalse(previous.active)
+        let restored = try XCTUnwrap(composition.association)
+        XCTAssertTrue(restored.active)
+        XCTAssertNil(composition.startupFailure)
+        XCTAssertEqual(restored.contextKey.request, committed.activeContextKey.request)
+        XCTAssertNotEqual(restored.store.state.presentation?.editionID, initial.editionID,
+            "A changed source version must not silently adopt the previous Edition")
+        await restored.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
