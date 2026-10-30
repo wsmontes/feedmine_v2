@@ -111,10 +111,10 @@ final class ReaderHostTests: XCTestCase {
 
         coordinator.show(.site(Self.url))
         await waitUntil { platform.up != nil }
-        let controller = try? XCTUnwrap(platform.up)
-        XCTAssertEqual(controller?.modalPresentationStyle, .overFullScreen,
+        guard let controller = platform.up else { return XCTFail("the browser reader was not presented") }
+        XCTAssertEqual(controller.modalPresentationStyle, .overFullScreen,
             "a fullScreen reader can detach the presenting SwiftUI ScrollView")
-        XCTAssertEqual(controller?.view.backgroundColor, UIColor.systemBackground,
+        XCTAssertEqual(controller.view.backgroundColor, UIColor.systemBackground,
             "the reader must stay opaque even though the feed remains mounted")
     }
 
