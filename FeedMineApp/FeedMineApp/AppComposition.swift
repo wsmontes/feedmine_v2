@@ -852,30 +852,35 @@ final class AppComposition {
     /// T8: activating a preset the reader saved. The stored key is the identity — including the search scope it
     /// was born from — so this is T6's transition with that key, and the library is never a second engine.
     func activateSavedPreset(_ key: ContextKey) async throws {
-        guard !replacingSession, let preferences else { return }
-        // An explicit transition happens when the identity changes *or* when the behaviour does: editing a recipe
-        // that leaves the context key alone still changes what the feed ranks, and the running session must not
-        // keep publishing under the revision it was built for.
-        let (_, version) = scoring(for: key)
-        if let current = association, current.contextKey == key,
-            current.policy.scoringPolicyVersion.rawValue == version { return }
-        replacingSession = true
+        try await acquireFilterTransition()
         defer { releaseSessionTransition() }
+        guard let preferences else { throw ReaderPreferencesError.missingPreferences }
+        // Validate against the state AFTER acquiring the session transition gate.
+        // An edited recipe with the same key still needs a new scoring revision.
+        let (_, version) = scoring(for: key)
+        if let current = association, current.contextKey == applied(key),
+            current.policy.scoringPolicyVersion.rawValue == version { return }
+        let previousKey = currentContextKey
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
         association = nil
-        currentContextKey = key
-        _ = try preferences.setContext(key)
-        let next = try await association(contextKey: key)
-        association = next
-        startupFailure = nil
-        try await next.launch()
-        // Answers received during this constructor belong to the finished transition too.
-        if pendingRebuild {
-            try await rebuildSessionWhileTransitionLocked()
+        do {
+            currentContextKey = key
+            _ = try preferences.setContext(key)
+            let next = try await association(contextKey: key)
+            association = next
+            try await next.launch()
+            startupFailure = nil
+            startupFailureDetail = nil
+        } catch {
+            let transitionError = error
+            await restoreAfterFailedContextTransition(previousKey: previousKey, cause: transitionError)
+            throw transitionError
         }
+        // The editorial answer is still serviced while this caller owns the gate.
+        if pendingRebuild { try await rebuildSessionWhileTransitionLocked() }
     }
 
     /// T8: the bookmark boxes surface's store, over the reader's own library. The composition opens the
@@ -1024,24 +1029,34 @@ final class AppComposition {
 
     /// A collection is a session over its own sources, without changing the reader's selection.
     func openCollectionFeed(id: String) async throws {
-        guard let preferences else { return }
-        guard !(try collectionFeeds(id: id)).isEmpty else { throw ReaderPreferencesError.invalidSelection }
-        guard !replacingSession else { return }
-        replacingSession = true
+        try await acquireFilterTransition()
         defer { releaseSessionTransition() }
+        guard let preferences else { throw ReaderPreferencesError.missingPreferences }
+        // Membership may change while waiting. Validate on the acquired turn.
+        guard !(try collectionFeeds(id: id)).isEmpty else { throw ReaderPreferencesError.invalidSelection }
+        let previousKey = currentContextKey
+        let key = ContextKey(request: .main, preset: .collection(id), filter: .unrestricted)
+        if currentContextKey == key, association?.active == true { return }
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
         association = nil
-        // The session exposes its own feeds; the persisted selection is left untouched.
-        currentContextKey = ContextKey(request: .main, preset: .collection(id),
-            filter: .unrestricted)
-        _ = try preferences.setContext(currentContextKey)
-        let next = try await association(contextKey: currentContextKey)
-        association = next
-        startupFailure = nil
-        try await next.launch()
+        do {
+            // The collection is a session over its own sources, not a new selection.
+            currentContextKey = key
+            _ = try preferences.setContext(key)
+            let next = try await association(contextKey: key)
+            association = next
+            try await next.launch()
+            startupFailure = nil
+            startupFailureDetail = nil
+        } catch {
+            let transitionError = error
+            await restoreAfterFailedContextTransition(previousKey: previousKey, cause: transitionError)
+            throw transitionError
+        }
+        if pendingRebuild { try await rebuildSessionWhileTransitionLocked() }
     }
 
     /// T11: the hood of the feed the reader is on, when it is one of their own.
