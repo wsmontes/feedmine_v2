@@ -128,7 +128,7 @@ final class ReaderHostTests: XCTestCase {
         let previousKeyWindow = scene.windows.first(where: { $0.isKeyWindow })
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
-        let presenter = UIViewController()
+        let presenter = UIKitPresentationProbe()
         presenter.view.backgroundColor = .systemBackground
         let scroll = UIScrollView(frame: window.bounds)
         scroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -144,8 +144,8 @@ final class ReaderHostTests: XCTestCase {
             window.isHidden = true
             previousKeyWindow?.makeKeyAndVisible()
         }
-        await waitUntil { presenter.view.window === window }
-        guard presenter.view.window === window, scroll.window === window else {
+        await waitUntil { presenter.didAppear && presenter.view.window === window }
+        guard presenter.didAppear, presenter.view.window === window, scroll.window === window else {
             return XCTFail("the reference window was never attached to the active scene")
         }
         scroll.setContentOffset(CGPoint(x: 0, y: 615), animated: false)
@@ -280,6 +280,18 @@ final class ReaderHostTests: XCTestCase {
         headline: "A stored body", publishedAt: nil,
         text: "Parágrafo 1: o texto que a fonte publicou para este artigo.",
         siteURL: URL(string: "https://example.test/article"), isPartial: true)
+}
+
+
+/// Wait for the presenter to *finish appearing*, not merely obtain a window.
+/// UIKit can reject a present call issued before this lifecycle transition.
+@MainActor
+private final class UIKitPresentationProbe: UIViewController {
+    private(set) var didAppear = false
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        didAppear = true
+    }
 }
 
 /// A surface that reports the controller it has up, as UIKit's own property does: the state a real window can
