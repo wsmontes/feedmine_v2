@@ -91,5 +91,27 @@
     }
   ],
   "native_production_binary_sha256": "120863c2ffc14c2dac1c19e07f4c003e9d4e420e9e1229dfbb23989b2c9fa4ca",
-  "review": "attempted; usage limit; pending"
+  "review": "attempted; usage limit; pending",
+  "patches": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-diagnostic-build.patch.gz": {
+      "sha256_uncompressed": "f254c4f8898eae25a48d78b8b9a25dc19edba3aeda84664ed4b4490574df1413",
+      "bytes": 18398
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-red-build.patch.gz": {
+      "sha256_uncompressed": "fa13144c9e5bdc05a6ab8b05cebd0e6a3f238617ae1adfeeff9daf048ab7d1b3",
+      "bytes": 1868
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-fact-build.patch.gz": {
+      "sha256_uncompressed": "650c526843247b629a36078e3d2ec00e662974fb66083877602f615450fbcc71",
+      "bytes": 18562
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-final-build.patch.gz": {
+      "sha256_uncompressed": "f0eb441fb5b1721ef80a763d3874a6cce679cb6d2977ad8a01c35ac78c57830c",
+      "bytes": 18113
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-green-build.patch.gz": {
+      "sha256_uncompressed": "ecf371211c0342edd8f506aa43bcad860771a606c6e55ed31488cd15d2e65fcf",
+      "bytes": 15358
+    }
+  }
 }
