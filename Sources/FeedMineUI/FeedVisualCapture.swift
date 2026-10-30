@@ -230,8 +230,11 @@ struct FeedVisualCapture {
             // Uma carta a mais de um viewport acima do leitor nunca é o topo, e volta a reportar ao se aproximar.
             motion.cardContentTops = motion.cardContentTops.filter { $0.value.top >= offset - reach }
         }
+        // Lazy cells may report geometry before they enter the visible rectangle. A card
+        // starting below the lower edge is not the presented top, even if it is the
+        // nearest known content position. Never persist a cursor for an unseen card.
         motion.presentedTop = motion.cardContentTops
-            .filter { $0.value.top >= offset - 1 }
+            .filter { $0.value.top >= offset - 1 && $0.value.top < offset + reach }
             .min { $0.value.top < $1.value.top }?.key
     }
 
