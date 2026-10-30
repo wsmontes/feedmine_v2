@@ -286,10 +286,10 @@ final class ReadingSurfaceUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         attach(app, "safari-native-window-anchor-diagnosis")
-        XCTAssertTrue(before.contains("scrollInstances=") && before.contains("windowRevision=")
+        XCTAssertTrue(before.contains("captureInstance=") && before.contains("scrollInstances=") && before.contains("windowRevision=")
             && before.contains("positionID=") && before.contains("presentedTop="),
             "the first observation must include native identity, publication and capture")
-        XCTAssertTrue(after.contains("scrollInstances=") && after.contains("windowRevision=")
+        XCTAssertTrue(after.contains("captureInstance=") && after.contains("scrollInstances=") && after.contains("windowRevision=")
             && after.contains("positionID=") && after.contains("presentedTop="),
             "a missing post-dismissal diagnostic is itself evidence of hierarchy loss")
         // Do not assert that the position was retained: this probe must produce evidence
