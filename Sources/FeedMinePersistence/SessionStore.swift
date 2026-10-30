@@ -68,12 +68,22 @@ public struct SessionStore: Sendable {
     /// Inserts the first durable position inside the first-publication transaction.
     static func insertInitialCheckpoint(_ checkpoint: CheckpointRecord, in db: Database,
         bindingActivation: BindingActivation? = nil) throws {
-        try requireCheckpointOwner(editionID: checkpoint.editionID, activation: bindingActivation, in: db)
+        try requireCheckpointOwner(editionID: checkpoint.editionID, activation: bindingActivation, allowsPreparation: true, in: db)
         guard ["top", "center"].contains(checkpoint.anchorPlacement) else { throw SessionStoreError.invalidPlacement }
         guard try member(db, editionID: checkpoint.editionID, cardID: checkpoint.cardID) else { throw SessionStoreError.invalidMembership }
         let time: Double
         do { time = try PersistenceValueCoding.date(checkpoint.updatedAt, field: "updated_at") }
         catch { throw SessionStoreError.invalidRepresentation("updated_at") }
+        if let bindingActivation, try !isCurrentActivation(bindingActivation, in: db) {
+            _ = try requirePreparation(bindingActivation, in: db)
+            guard try ownedCheckpoint(bindingID: bindingActivation.bindingID, editionID: checkpoint.editionID, in: db) == nil else {
+                throw SessionStoreError.checkpointAlreadyExists
+            }
+            try persistOwned(checkpoint, bindingID: bindingActivation.bindingID, in: db)
+            try db.execute(sql: "UPDATE reader_history_preparations SET checkpoint_present = 1 WHERE binding_id = ?",
+                arguments: [PersistenceValueCoding.uuid(bindingActivation.bindingID)])
+            return // Hidden publication has no display position or seen milestone yet.
+        }
         if bindingActivation != nil,
             try Bool.fetchOne(db, sql: "SELECT checkpoint_present FROM session_reader_binding WHERE singleton_id = 1") == true {
             throw SessionStoreError.checkpointAlreadyExists
@@ -140,6 +150,7 @@ public struct SessionStore: Sendable {
             }
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
             try db.execute(sql: "DELETE FROM session_reader_binding WHERE singleton_id = 1")
+            try db.execute(sql: "UPDATE reader_history_preparations SET selected = 0 WHERE selected = 1")
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_identity = ?",
                 arguments: [key.canonicalIdentity]) {
                 let saved = try Self.decode(row, in: db)
@@ -249,7 +260,7 @@ public struct SessionStore: Sendable {
         try checkpoint(row)
     }
 
-    private static func member(_ db: Database, editionID: FeedEditionID, cardID: PublicationCardID) throws -> Bool {
+    static func member(_ db: Database, editionID: FeedEditionID, cardID: PublicationCardID) throws -> Bool {
         try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM published_cards c
                 JOIN feed_segments s ON s.id = c.segment_id JOIN feed_editions e ON e.id = s.edition_id

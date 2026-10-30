@@ -1,0 +1,72 @@
+{
+  "logs": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-base-fence.log.gz": {
+      "sha256_uncompressed": "fea27782547136bba570ee94be686eaf1dc37ce5254e67d73378fd2fdf3e38b3",
+      "bytes": 2244
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-cold-pipeline.log.gz": {
+      "sha256_uncompressed": "fe10d4ea68e6e602e29f8963a76f3683f654008b369bf7af1ae38db468a300da",
+      "bytes": 7189
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-final.log.gz": {
+      "sha256_uncompressed": "00f0b60898f5f28b0b110db19e03ec5101df30f7bf519cc35438bb23b215d633",
+      "bytes": 28649
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-full-final.log.gz": {
+      "sha256_uncompressed": "f8a2119f54068e7783ff295e618c512bf3930d78c101adffac001a21b4141967",
+      "bytes": 546178
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-full.log.gz": {
+      "sha256_uncompressed": "40e21ab77ca8bb4c3a47f1ca8b8d2950d79985b951fc4e50f1f285504db5322c",
+      "bytes": 545882
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-green.log.gz": {
+      "sha256_uncompressed": "3d57c1c0dd8e58ea01dea54e5e8ac29919ee8a7ea4ec21ab283cc6e2e79e7521",
+      "bytes": 817116
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-neighbours.log.gz": {
+      "sha256_uncompressed": "7b2b0d58311be74caec75848e0340f6098835b03084f026577bed9d6c6b77e11",
+      "bytes": 23222
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-red.log.gz": {
+      "sha256_uncompressed": "c54d52086635ec5133539d7db15d1e95104d3cb5d2daa2391b8a80651d2d04a9",
+      "bytes": 15377
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-retarget-red.log.gz": {
+      "sha256_uncompressed": "923b3ee8182556841003ae1a18a0bffabc0bc366607a868a8bc83cc8a13132bb",
+      "bytes": 5259
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-rollover-red.log.gz": {
+      "sha256_uncompressed": "1d63c934a25438828631954aa3d266f8015e1a3df534141b332c7cf40fc84b4b",
+      "bytes": 5777
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-reader-preparation-verified.log.gz": {
+      "sha256_uncompressed": "aaa2fff476900ba06527aeac88d158928a92ee4f6c8aa2fa713dd5f934a4eb82",
+      "bytes": 22851
+    }
+  },
+  "files": {
+    "Sources/FeedMinePersistence/PublicationStore+Writing.swift": "47f6b7c9d11c6415adc14af68f200d0b0b3e2f028b5c8bc1d274b911a5beb185",
+    "Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift": "9cebfb611a4d3c66e509cf1729b1e5e40e3d7e7d28b7f4d6c4663d92f450dd72",
+    "Sources/FeedMinePersistence/RuntimeMigrations.swift": "edfd45752cd2e34f89e8c969db716cccde3c3753de31d2a881e34d1227ebad59",
+    "Sources/FeedMinePersistence/SessionStore+HistoryBinding.swift": "0e46054cfa939862e90e462f2207928674eadf15ba7e4153eadd2c7ef2fea31d",
+    "Sources/FeedMinePersistence/SessionStore.swift": "dfe0bce0841c9d82046e0e225471de0fe2b0efc64238d2f8b720ac8284e5d5dc",
+    "Sources/FeedMinePublication/PublicationHistory.swift": "262837068bbae3716da3ff0f742389ff723823f23fb96f4bf3684b90d0f84d56",
+    "Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift": "42641fce3f37460d301504399250d680eb063dafd5e076178d765ae5f1efa2a4",
+    "Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift": "23ea04365cf749dc39d8fdba52964cc87e37315945e3330baeff9d9e26cffd02",
+    "Tests/FeedMinePublicationTests/PublicationOwnedHistoryTests.swift": "17102019a3f69fa63a001888d18bf02e38ea6095ff50a8f6f41c3ba5ef082046",
+    "Tests/FeedMineRuntimeTests/DurableAnchorRestoreTests.swift": "d69769f7d18376f0daa45e42343f0d58b06a181f664aeaa3dcac6312ae48cec8",
+    "docs/reviews/2026-10-28-github-progress-checkpoint.md": "a667a8e2717a2245a503f5fd22e35faeb42b58452ec23db5e544d75e435237a9",
+    "docs/reviews/2026-10-29-f13-native-logical-identity.md": "6e9c54556f69751189e9ec8a737d7584ee6795d92a054760633f4920c36b5b27",
+    "docs/superpowers/plans/2026-10-29-native-history-adoption.md": "0634d6b33f8294432c86390842624b3e63c69c8b360368d465d0ac244fa4e047",
+    "Sources/FeedMinePersistence/SessionStore+HistoryPreparation.swift": "0fdc1536fbb1ec21b77a43831d0e7552baf5b45a88e06f2ca9cd2573333081b2",
+    "Tests/FeedMinePersistenceTests/ReaderHistoryPreparationTests.swift": "5e040fe03447732afa0f51e5e0789fae2c78bea72fe96593a0e92ba3d0806c9e",
+    ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests": "ea5678ae5c83881559f9d7f5ba0a7c6d0afabfe5d7211024047f5ea9427a2424"
+  },
+  "full_run_binary": {
+    "path": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests",
+    "sha256": "dbaed95950c67c0510f502a5f5061d054c7e7ab53556a195c7676879dca64a19",
+    "run_report": "r4-reader-preparation-full-final.json"
+  },
+  "scope": "full1844/one skipped/0, then test-only cold pipeline1/0; no native R4 acceptance"
+}

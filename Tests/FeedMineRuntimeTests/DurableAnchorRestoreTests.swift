@@ -212,4 +212,46 @@ extension DurableAnchorRestoreTests {
             XCTAssertEqual(try checkpoints.checkpoint(bindingID: binding.id), saved)
         }
     }
+    func testPreparedFeedSessionCanRestoreBeforePromotionButCannotCheckpointOverPresentedReader() async throws {
+        try await withLocation { location in
+            let db = try RuntimeDatabase(location: location), store = PublicationStore(database: db)
+            let a = makeEdition(revision(contextKey: ContextKey(request: .main)), seed: 4)
+            let b = makeEdition(revision(contextKey: ContextKey(request: .source(SourceID()))), seed: 5)
+            let cardsA = try makeCards(3, prefix: "presented"), cardsB = try makeCards(3, prefix: "prepared")
+            try publish(a, cards: cardsA, in: store)
+            try publish(b, cards: cardsB, in: store)
+            let legacy = PublicationHistory(database: db)
+            try legacy.saveCursor(.init(editionID: b.id, anchor: .init(cardID: cardsB[1].id, placement: .top)), updatedAt: savedAt)
+            try legacy.saveCursor(.init(editionID: a.id, anchor: .init(cardID: cardsA[1].id, placement: .top)), updatedAt: savedAt)
+            let bindings = ReaderHistoryBindingStore(database: db), checkpoints = SessionStore(database: db)
+            let ba = try bindings.resolve(logicalKey: a.editorialRevision.contextKey,
+                adopting: .init(editionID: a.id, publicationKey: a.editorialRevision.contextKey, evidence: .exactContext))
+            let bb = try bindings.resolve(logicalKey: b.editorialRevision.contextKey,
+                adopting: .init(editionID: b.id, publicationKey: b.editorialRevision.contextKey, evidence: .exactContext))
+            let active = try checkpoints.activateBinding(ba.id)
+            let current = FeedSession(publicationHistory: PublicationHistory(database: db, bindingActivation: active))
+            _ = try await current.admitPresentation(.initial(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            let pointA = try checkpoints.checkpoint()
+            let pending = try checkpoints.prepareBinding(bb.id)
+            let next = FeedSession(publicationHistory: PublicationHistory(database: db, bindingActivation: pending))
+            let restored = try await next.admitPresentation(.initial(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            XCTAssertEqual(restored?.editionID, b.id)
+            XCTAssertEqual(restored?.window.anchor.cardID, cardsB[1].id)
+            do {
+                _ = try await next.checkpointCurrentPosition(at: Date())
+                XCTFail("a hidden candidate has no viewport authority")
+            } catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
+            XCTAssertEqual(try checkpoints.checkpoint(), pointA)
+            _ = try await current.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 600))
+            try checkpoints.promotePreparedBinding(pending)
+            let wrote = try await next.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 700))
+            XCTAssertTrue(wrote)
+            XCTAssertEqual(try checkpoints.checkpoint()?.editionID, b.id)
+            do {
+                _ = try await current.checkpointCurrentPosition(at: Date())
+                XCTFail("the old presented reader is retired only after promotion")
+            } catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
+        }
+    }
+
 }

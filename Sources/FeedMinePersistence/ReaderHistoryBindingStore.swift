@@ -145,12 +145,12 @@ public struct ReaderHistoryBindingStore: Sendable {
 
     static func attachNewEdition(_ edition: PublicationStore.EditionRecord,
         expectation: PublicationStore.BindingPublicationExpectation, in db: Database) throws {
-        try SessionStore.requireActivation(expectation.activation, in: db)
+        try SessionStore.requirePublicationActivation(expectation.activation, in: db)
         let id = PersistenceValueCoding.uuid(expectation.activation.bindingID)
         guard let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?", arguments: [id]) else {
             throw SessionStoreError.missingHistoryBinding
         }
-        let active = try PublicationRecordFields(row).optionalUUID("active_edition_id").map { FeedEditionID(rawValue: $0) }
+        let active = try SessionStore.scopedEdition(expectation.activation, in: db)
         guard active == expectation.expectedActiveEditionID else { throw SessionStoreError.staleHistoryBinding }
         guard try Self.key(row, field: "logical_key_json") == edition.editorialRevision.contextKey else {
             throw Failure.incompatibleAdoption
@@ -159,8 +159,13 @@ public struct ReaderHistoryBindingStore: Sendable {
             INSERT INTO reader_history_editions(edition_id, binding_id, publication_key_json, adoption_kind)
             VALUES (?, ?, ?, 'exact_context')
             """, arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), id, try encode(edition.editorialRevision.contextKey)])
-        try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
-            arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), id])
+        if try SessionStore.isCurrentActivation(expectation.activation, in: db) {
+            try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
+                arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), id])
+        } else {
+            try db.execute(sql: "UPDATE reader_history_preparations SET edition_id = ?, checkpoint_present = 0 WHERE binding_id = ?",
+                arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), id])
+        }
     }
 
     private struct PolicyEvidence: Encodable {

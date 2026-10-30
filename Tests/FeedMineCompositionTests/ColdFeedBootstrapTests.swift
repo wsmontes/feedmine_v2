@@ -1238,4 +1238,33 @@ extension ColdFeedBootstrapTests {
         XCTAssertEqual(try checkpoints.checkpoint()?.updatedAt, Date(timeIntervalSince1970: 1000))
         XCTAssertEqual(f.http.calls, 0)
     }
+    func testPreparedColdOwnerPublishesWithoutTakingCurrentViewportAuthority() async throws {
+        let f = try fixture(registrations: false)
+        try Self.seed(f.database, source: f.source)
+        let bindings = ReaderHistoryBindingStore(database: f.database), checkpoints = SessionStore(database: f.database)
+        let old = try bindings.resolve(logicalKey: ContextKey(request: .source(SourceID())))
+        let current = try checkpoints.activateBinding(old.id)
+        let target = try bindings.resolve(logicalKey: f.plan.context.key), prepared = try checkpoints.prepareBinding(target.id)
+        let reader = FeedSession(publicationHistory: PublicationHistory(database: f.database, bindingActivation: prepared))
+        let bootstrap = try ColdFeedBootstrap(session: reader, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            bindingPublication: .init(activation: prepared))
+        let id = identity()
+        let snapshot = try published(await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 8))
+        XCTAssertEqual(snapshot.editionID, id.editionID)
+        XCTAssertNil(try checkpoints.checkpoint())
+        XCTAssertNil(try checkpoints.checkpoint(bindingActivation: current), "the prior empty reader still holds authority")
+        XCTAssertNil(try bindings.binding(for: f.plan.context.key)?.activeEditionID)
+        do {
+            _ = try await reader.checkpointCurrentPosition(at: Date())
+            XCTFail("hidden bootstrap cannot checkpoint a viewport")
+        } catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
+        try checkpoints.promotePreparedBinding(prepared)
+        let wrote = try await reader.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 1000))
+        XCTAssertTrue(wrote)
+        XCTAssertEqual(try checkpoints.checkpoint()?.editionID, id.editionID)
+        XCTAssertThrowsError(try checkpoints.checkpoint(bindingActivation: current))
+        XCTAssertEqual(f.http.calls, 0)
+    }
+
 }

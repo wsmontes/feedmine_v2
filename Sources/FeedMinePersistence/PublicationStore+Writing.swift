@@ -30,7 +30,7 @@ extension PublicationStore {
         try database.write { db in
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             try Self.requireWordExclusions(expectedWordExclusions, in: db)
-            try SessionStore.requireActivation(bindingPublication?.activation, in: db)
+            try SessionStore.requirePublicationActivation(bindingPublication?.activation, in: db)
             try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
             if let bindingPublication { try ReaderHistoryBindingStore.attachNewEdition(edition, expectation: bindingPublication, in: db) }
         }
@@ -55,7 +55,7 @@ extension PublicationStore {
                 firstSegment.cardIDs.contains(initialCheckpoint.cardID) else {
                 throw PublicationStoreError.invalidInitialCheckpoint
             }
-            try SessionStore.requireActivation(bindingPublication?.activation, in: db)
+            try SessionStore.requirePublicationActivation(bindingPublication?.activation, in: db)
             try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
             if let bindingPublication { try ReaderHistoryBindingStore.attachNewEdition(edition, expectation: bindingPublication, in: db) }
             try SessionStore.insertInitialCheckpoint(initialCheckpoint, in: db, bindingActivation: bindingPublication?.activation)
@@ -164,7 +164,7 @@ extension PublicationStore {
         expectedWordExclusions: ReaderWordExclusionSnapshot? = nil,
         bindingActivation: SessionStore.BindingActivation? = nil) throws {
         try database.write { db in
-            try SessionStore.requireCheckpointOwner(editionID: segment.editionID, activation: bindingActivation, in: db)
+            try SessionStore.requireCheckpointOwner(editionID: segment.editionID, activation: bindingActivation, allowsPreparation: true, in: db)
             try Self.requireSourceExclusions(expectedSourceExclusions, in: db)
             try Self.requireWordExclusions(expectedWordExclusions, in: db)
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",

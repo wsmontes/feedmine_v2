@@ -152,4 +152,29 @@ final class PublicationOwnedHistoryTests: XCTestCase {
         }
     }
 
+    func testPreparedHistoryProjectsWithoutSeenOrViewportAuthorityUntilPromotion() throws {
+        try withDatabase { db in
+            let session = SessionStore(database: db), bindings = ReaderHistoryBindingStore(database: db)
+            let a = RestoreFixture.edition(), ba = try bindings.resolve(logicalKey: a.editorialRevision.contextKey)
+            let active = try session.activateBinding(ba.id)
+            _ = try publish(db, edition: a, activation: active)
+            let current = try session.checkpoint()
+            let b = RestoreFixture.edition(context: .source(SourceID())), bb = try bindings.resolve(logicalKey: b.editorialRevision.contextKey)
+            let preparation = try session.prepareBinding(bb.id), cards = try publish(db, edition: b, activation: preparation)
+            let history = PublicationHistory(database: db, bindingActivation: preparation)
+            XCTAssertEqual(try history.restore(backwardCapacity: 0, forwardCapacity: 2)?.edition.id, b.id)
+            try history.markSeen(editionID: b.id, cardID: cards[1].id)
+            XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM publication_card_usage WHERE card_id = ?",
+                arguments: [cards[1].id.rawValue.uuidString.lowercased()]) }, 0)
+            XCTAssertThrowsError(try history.saveCursor(.init(editionID: b.id,
+                anchor: .init(cardID: cards[1].id, placement: .top)), updatedAt: Date()))
+            XCTAssertEqual(try session.checkpoint(), current)
+            try session.promotePreparedBinding(preparation)
+            try history.markSeen(editionID: b.id, cardID: cards[1].id)
+            XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM publication_card_usage WHERE card_id = ?",
+                arguments: [cards[1].id.rawValue.uuidString.lowercased()]) }, 1)
+            XCTAssertThrowsError(try PublicationHistory(database: db, bindingActivation: active).restore(backwardCapacity: 0, forwardCapacity: 0))
+        }
+    }
+
 }

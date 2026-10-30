@@ -72,6 +72,10 @@ public struct PublicationHistory: Sendable {
     }
 
     public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID) throws {
+        if let bindingActivation, try sessionStore.isPreparedBinding(bindingActivation) {
+            try sessionStore.validateBinding(bindingActivation, editionID: editionID)
+            return // A hidden replacement's projection is not a presented/seen event.
+        }
         try publicationStore.markSeen(editionID: editionID, cardID: cardID, bindingActivation: bindingActivation)
     }
 

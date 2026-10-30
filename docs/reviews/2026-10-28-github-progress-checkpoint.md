@@ -1,5 +1,11 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — preparação antes da troca de autoridade, 2026-10-29
+
+O pipeline pode publicar/projetar uma candidata oculta sem retirar de A a autoridade de salvar posição. Promoção atômica, cancelamento, retomada explícita e fences de predecessor/Edition de base/token implementados. Revisão independente e followup concluídos. **1844 testes completos, um ignorado, zero falhas**; foco55/0 e teste frio adicional1/0 (adição posterior só em teste). [Relatório](2026-10-29-f13-reader-preparation.md).
+
+A revisão nativa antes limitada por quota também foi concluída sem achados acionáveis. AppComposition ainda precisa consumir a preparação e resolver seleção/ambiguidades/namespace; R4 continua FAIL e aceitação iOS/UI/relaunch permanece pendente.
+
 ## Atualização — identidade lógica nativa, 2026-10-29
 
 FeedAssociation separa critérios lógicos da identidade congelada. Corrigidos handoff pendente e confirmação desnecessária após editar apenas palavras globais; a lente pendente usa critérios contextuais originais. Os owners frio/ativo nativos agora capturam a política estrita de palavras por oportunidade. Prova real de primeira publicação, bloqueio/reversão futura e transições: **34 testes nativos distintos, zero falhas inesperadas**, incluindo o oráculo R4 com suas falhas esperadas mantidas. [Relatório](2026-10-29-f13-native-logical-identity.md).

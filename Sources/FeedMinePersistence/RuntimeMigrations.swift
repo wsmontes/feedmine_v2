@@ -750,6 +750,26 @@ public enum RuntimeMigrations {
                     WHERE b.id = session_reader_binding.binding_id)
                 """)
         }
+        migrator.registerMigration("reader-history-preparation-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_history_preparations (
+                    binding_id TEXT PRIMARY KEY NOT NULL REFERENCES reader_history_bindings(id),
+                    edition_id TEXT,
+                    base_edition_id TEXT,
+                    checkpoint_present INTEGER NOT NULL CHECK(checkpoint_present IN (0, 1)),
+                    activation_token TEXT NOT NULL,
+                    selected INTEGER NOT NULL CHECK(selected IN (0, 1)),
+                    replacing_binding_id TEXT REFERENCES reader_history_bindings(id),
+                    replacing_activation_token TEXT,
+                    CHECK((replacing_binding_id IS NULL) = (replacing_activation_token IS NULL)),
+                    FOREIGN KEY(binding_id, edition_id) REFERENCES reader_history_editions(binding_id, edition_id)
+                        DEFERRABLE INITIALLY DEFERRED,
+                    FOREIGN KEY(binding_id, base_edition_id) REFERENCES reader_history_editions(binding_id, edition_id)
+                        DEFERRABLE INITIALLY DEFERRED
+                );
+                CREATE UNIQUE INDEX reader_history_one_selected_preparation ON reader_history_preparations(selected) WHERE selected = 1;
+                """)
+        }
         return migrator
     }
 

@@ -39,8 +39,22 @@ FeedAssociation gains immutable logicalContextKey, defaulting to its publication
 
 - [x] Native RED: editing globals without changing raw criteria must not report a filter handoff pending or confirm an unchanged raw filter as a new context transition.
 - [x] Implement identity split and audit consumers; actual native iOS validation: 34 distinct tests, zero unexpected failures (known strict R4 reproducer retained).
-- [ ] Independent review of native identity/policy wiring: attempt returned usage-limit error, no review. See docs/reviews/2026-10-29-f13-native-logical-identity.md.
+- [x] Independent review of native identity/policy wiring resumed after usage limit; no actionable findings. See docs/reviews/2026-10-29-f13-reader-preparation.md.
 
 This does not yet change reapplyReaderFilters or activate bindings. The existing native R4 expected failures must remain until the whole reading-continuity path is wired and proven.
 
 Dependency discovered during the intent-guard audit: changing install/supersession guards to logical equality is safe only when publications independently capture current word policy. This slice therefore supplies one immutable catalogue/raw-context descriptor to both native cold/live owners. Direct constructors retain the default nil behavior. New native cold test keeps the same owner/frozen union, disables globals and verifies effective rules through real publication, including overlapping contextual words.
+
+## Task 2c — prepare a replacement without retiring the presented reader
+
+The actual NF03 tests require preparation/acquisition while the old reader stays live, and checkpoint refusal after that preparation must leave the same old association active. Moving the checkpoint before preparation is not equivalent. Activating B in its constructor would retire A prematurely.
+
+Extend the existing SessionStore authority with per-binding retained preparation records and at most one selected preparation token. This is publication/read authority for the hidden candidate, not a second display owner. Capture the predecessor activation as a promotion fence. A prepared Edition pointer is separate from reader_history_bindings.active_edition_id, including for a same-binding revision rollover. Initial publication/append may use the selected preparation, writing only owned history; active checkpoint/clear and direct markSeen remain current-reader-only. PublicationHistory may project prepared history without recording it as seen. Promotion verifies the predecessor and selected token, preserves A's latest point, installs B's pointer/checkpoint and makes the same captured token current atomically. Cancellation/supersession revokes preparation authority but retains its explicit candidate Edition/point for a later retry; do not burn hidden published supply or guess the latest Edition.
+
+A new additive reader-history-preparation-v1 migration stores per-binding prepared Edition, presence, token, selected bit and predecessor binding/token pair; unique partial index enforces one selected preparation. Existing immediate activation/context switches revoke selected preparation authority. Normal no-token/active APIs retain strict behavior.
+
+- [x] RED transactional tests for prepare/publish/read without moving A; A checkpoint after preparation; promotion; cancellation/supersession; same-binding rollover; rollback; retained retry; stale predecessor.
+- [x] Implement prepared owner transport at Persistence/PublicationHistory; 55 affected/0, full1844/one skip/0 plus later cold-pipeline1/0. Independent review and retarget followup completed. See docs/reviews/2026-10-29-f13-reader-preparation.md.
+- [ ] Native NF03 consumes the prepared handle, checkpoints A after next.launch, promotes synchronously immediately before installation, cancels obsolete/failed handles. Initial/ordinary switches may immediately promote. Native binding selection/ambiguity UI and R4 ordinary assertions still required.
+
+Task2c stronger checks required base_edition_id fencing and token rotation on explicit reset. Callers must capture the returned reset handle before constructing the reader/owners. A retained candidate is resumed only while its base Edition still matches; consumed preparation metadata is cleared on promotion, without deleting Edition/checkpoint history.

@@ -275,7 +275,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
                  "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
                  "publication-media-identity-v1", "continuity-relative-position-v1",
                  "selection-supply-media-deferral-v1", "selection-supply-media-deferral-v2",
-                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1"])
+                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1", "reader-history-preparation-v1"])
         }
     }
 
@@ -571,7 +571,26 @@ extension PublicationRunwayStoreTests {
                 "sqlite_autoindex_reader_history_bindings_3:",
                 "sqlite_autoindex_reader_history_editions_1:",
                 "sqlite_autoindex_reader_history_editions_2:",
-                "sqlite_autoindex_reader_history_checkpoints_1:"
+                "sqlite_autoindex_reader_history_checkpoints_1:",
+                """
+                reader_history_preparations:CREATE TABLE reader_history_preparations (
+                    binding_id TEXT PRIMARY KEY NOT NULL REFERENCES reader_history_bindings(id),
+                    edition_id TEXT,
+                    base_edition_id TEXT,
+                    checkpoint_present INTEGER NOT NULL CHECK(checkpoint_present IN (0, 1)),
+                    activation_token TEXT NOT NULL,
+                    selected INTEGER NOT NULL CHECK(selected IN (0, 1)),
+                    replacing_binding_id TEXT REFERENCES reader_history_bindings(id),
+                    replacing_activation_token TEXT,
+                    CHECK((replacing_binding_id IS NULL) = (replacing_activation_token IS NULL)),
+                    FOREIGN KEY(binding_id, edition_id) REFERENCES reader_history_editions(binding_id, edition_id)
+                        DEFERRABLE INITIALLY DEFERRED,
+                    FOREIGN KEY(binding_id, base_edition_id) REFERENCES reader_history_editions(binding_id, edition_id)
+                        DEFERRABLE INITIALLY DEFERRED
+                )
+                """,
+                "reader_history_one_selected_preparation:CREATE UNIQUE INDEX reader_history_one_selected_preparation ON reader_history_preparations(selected) WHERE selected = 1",
+                "sqlite_autoindex_reader_history_preparations_1:"
             ]
             // D7-A: the V1 upgrade receipt, additive only. The two tables state what the upgrade carried and
             // every reported skip; nothing here rewrites a shipped row.
