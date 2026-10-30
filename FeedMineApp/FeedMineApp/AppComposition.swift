@@ -123,10 +123,17 @@ final class AppComposition {
     @ObservationIgnored var associationConstructionFault: (() throws -> Void)?
     #endif
 
+    // A bounded adoption turn may leave one newer durable version to reconcile.
+    // Keep only one scheduled continuation, even if other callers are notified.
+    // Clear the reservation when the continuation *acquires* the transition gate,
+    // not when its Task starts, so a queued continuation remains coalesced.
+    @ObservationIgnored private var sourceAdoptionContinuationPending = false
     #if DEBUG
     /// Deterministic injection point for a source-management commit arriving at the
     /// exact boundary between one completed adoption rebuild and its version reread.
     @ObservationIgnored var sourceAdoptionDidRebuild: ((UInt64) throws -> Void)?
+    @ObservationIgnored private(set) var sourceAdoptionContinuationSchedules = 0
+    var hasPendingSourceAdoptionContinuation: Bool { sourceAdoptionContinuationPending }
     #endif
 
     /// F05: the evidence a run is judged by, written where the run can find it (beside the runtime database).
@@ -1370,6 +1377,36 @@ final class AppComposition {
         do { try await acquireFilterTransition() }
         catch { return }
         defer { releaseSessionTransition() }
+        await reconcileSourceSelectionWhileLocked()
+    }
+
+    /// A single continuation is reserved while it waits in the FIFO. Keeping this
+    /// state through the wait avoids starting duplicate background reconciliations.
+    /// Once its gate turn begins, it can schedule its own successor if more durable
+    /// versions arrive during its bounded rebuild batch.
+    private func scheduleSourceAdoptionContinuation() {
+        guard !sourceAdoptionContinuationPending else { return }
+        sourceAdoptionContinuationPending = true
+        #if DEBUG
+        sourceAdoptionContinuationSchedules += 1
+        #endif
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.acquireFilterTransition()
+            } catch {
+                self.sourceAdoptionContinuationPending = false
+                return
+            }
+            self.sourceAdoptionContinuationPending = false
+            defer { self.releaseSessionTransition() }
+            await self.reconcileSourceSelectionWhileLocked()
+        }
+    }
+
+    /// Caller owns the transition gate. A version check after each rebuild detects
+    /// a source-management write that arrived while discovery was suspended.
+    private func reconcileSourceSelectionWhileLocked() async {
         guard let preferences, let database = libraryDatabase() else { return }
         let identities = ReaderLibraryStore(database: database)
         // An external writer does not acquire our in-process gate. Check again
@@ -1412,7 +1449,7 @@ final class AppComposition {
                     // This call still owns the transition gate. The new task will
                     // queue behind earlier waiters (or acquire once it is free).
                     // It rereads the *latest* durable record, not an older snapshot.
-                    Task { [weak self] in await self?.adoptSelectionChange() }
+                    scheduleSourceAdoptionContinuation()
                     return
                 }
             } catch {
