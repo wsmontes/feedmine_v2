@@ -138,6 +138,9 @@ final class AppComposition {
     // before its atomic commit. A test can inject a concurrent source-manager
     // transaction deterministically, including repeated conflicts.
     @ObservationIgnored var sourceToggleBeforeCommit: ((Int) throws -> Void)?
+    /// One-shot test seam for an external edit committed after launch but before
+    /// the toggle's final durability check.
+    @ObservationIgnored var sourceToggleDidLaunch: (() throws -> Void)?
     var hasPendingSourceAdoptionContinuation: Bool { sourceAdoptionContinuationPending }
     #endif
 
@@ -759,6 +762,23 @@ final class AppComposition {
             await restoreAfterFailedContextTransition(previousKey: currentContextKey,
                 cause: transitionError)
             throw transitionError
+        }
+        #if DEBUG
+        // Keep test-only external writers separate from the already committed
+        // toggle. A failing fixture must not roll back a successful reader choice.
+        do { try sourceToggleDidLaunch?() }
+        catch { Self.log("post-launch toggle test seam failed: \(String(describing: error))") }
+        #endif
+        // Source management writes outside the transition gate. A change can
+        // commit while association(contextKey:) or launch() is suspended; avoid
+        // leaving a newly launched association pinned to an obsolete selection.
+        // Defer reconciliation to a new FIFO turn, after this user's transition.
+        do {
+            if let latest = try preferences.load(), latest.selectionVersion != selectionVersion {
+                scheduleSourceAdoptionContinuation()
+            }
+        } catch {
+            Self.log("failed post-toggle selection version check: \(String(describing: error))")
         }
         // Rebuilding the source-picker options is secondary to the committed
         // selection. A catalogue query error must not report a successful toggle as
