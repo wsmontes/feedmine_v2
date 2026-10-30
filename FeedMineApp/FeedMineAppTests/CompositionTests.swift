@@ -3685,6 +3685,72 @@ final class FeedFrameBudgetTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// Preset and collection navigation are real user intents. If discovery holds
+    /// another rebuild, neither action may silently return; both must execute FIFO.
+    func testPresetAndCollectionRequestedDuringRebuildExecuteInOrder() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        await composition.launch()
+        XCTAssertNil(composition.startupFailure)
+        let originalAssociation = try XCTUnwrap(composition.association)
+        let initial = composition.currentContextKey
+        let selection = composition.feeds
+        XCTAssertGreaterThan(selection.count, 1)
+        let chosen = selection[1]
+        let collection = try XCTUnwrap(ReaderLibraryCoordinator(database: originalAssociation.database)
+            .collectSources(named: "Queued collection", sourceKeys: [chosen.principal]))
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        // The real constructor is suspended on a new profile's discovery query.
+        let rebuilding = Task { try await composition.replaceSession() }
+        let suspended = await gate.nextRead()
+        var completed: [String] = []
+        let presetKey = ContextKey(request: .main, preset: .lastClicked)
+        let preset = Task { @MainActor in
+            try await composition.activateSavedPreset(presetKey)
+            completed.append("preset")
+        }
+        let firstLimit = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < firstLimit { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1)
+        let collectionRequest = Task { @MainActor in
+            try await composition.openCollectionFeed(id: collection.id)
+            completed.append("collection")
+        }
+        let secondLimit = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 2,
+            ProcessInfo.processInfo.systemUptime < secondLimit { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 2)
+        XCTAssertEqual(composition.currentContextKey, initial)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, initial)
+        gate.answer(suspended, entries: [], subjects: [:])
+        try await rebuilding.value
+        try await preset.value
+        try await collectionRequest.value
+
+        XCTAssertEqual(completed, ["preset", "collection"])
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        XCTAssertEqual(composition.currentContextKey.preset, .collection(collection.id))
+        XCTAssertEqual(try preferences.load()?.activeContextKey, composition.currentContextKey)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertTrue(active.active)
+        XCTAssertEqual(active.feeds.map(\.principal), [chosen.principal])
+        XCTAssertEqual(try preferences.load()?.sourceKeys, selection.map(\.principal),
+            "Collection navigation cannot mutate the reader's own source selection")
+        XCTAssertFalse(originalAssociation.active)
+        await active.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
