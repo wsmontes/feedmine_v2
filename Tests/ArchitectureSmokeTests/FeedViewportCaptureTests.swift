@@ -137,6 +137,31 @@ final class FeedViewportCaptureTests: XCTestCase {
     }
 
 
+    /// A LazyVStack can measure a future card before it enters the viewport. The content
+    /// coordinate is valid, but that card is not evidence of where the reader's screen begins.
+    /// The prior predicate used only the lower bound and would record an unseen card.
+    func testBelowViewportCardCannotBecomeDurablePresentedTopUntilVisible() {
+        var capture = FeedVisualCapture()
+        let bottomEdge = PublicationCardID(), future = PublicationCardID()
+        var reported: [(PresentationAnchor, Bool)] = []
+        _ = capture.observe(.init(offset: 0, extent: 2_000, height: 200))
+        _ = capture.observeCard(.init(cardID: bottomEdge,
+            frame: .init(x: 0, y: 200, width: 400, height: 180), offset: 0, height: 200))
+        _ = capture.observeCard(.init(cardID: future,
+            frame: .init(x: 0, y: 500, width: 400, height: 180), offset: 0, height: 200))
+        XCTAssertNil(capture.presentedAnchor,
+            "no sampled card starts inside the viewport: neither the bottom edge nor a future cell")
+        capture.reportPresentedPosition { reported.append(($0, $1)) }
+        XCTAssertTrue(reported.isEmpty, "offscreen geometry must never become a durable cursor")
+
+        // A real scroll can move a previously measured content coordinate into the visible region.
+        _ = capture.observe(.init(offset: 400, extent: 2_000, height: 200))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: future, placement: .top))
+        capture.reportPresentedPosition { reported.append(($0, $1)) }
+        XCTAssertEqual(reported.map(\.0), [PresentationAnchor(cardID: future, placement: .top)])
+        XCTAssertEqual(reported.map(\.1), [true], "the visible position can be acknowledged at rest")
+    }
+
     /// **Teste decisivo da sonda de 2026-10-14** (lead): uma janela cuja **cabeça cresce acima da escolha**, com a
     /// carta acima que **não** volta a reportar — e o `gap` que isso produz.
     ///
