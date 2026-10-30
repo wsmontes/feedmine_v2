@@ -182,7 +182,17 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
     let access: FeedNativeScrollOffset
     let ids: [PublicationCardID]
     func makeUIView(context: Context) -> Probe { Probe(access: access) }
-    func updateUIView(_ view: Probe, context: Context) { view.access = access; access.updateWindow(ids) }
+    func updateUIView(_ view: Probe, context: Context) {
+        // SwiftUI may retain the UIView when a new FeedVisualCapture replaces
+        // the old owner. Resolve the same native ancestor for the NEW adapter
+        // immediately; waiting for layout leaves a stale or missing scroll proof.
+        if view.access !== access {
+            view.access.scrollView = nil
+            view.access = access
+            view.resolveScrollView()
+        }
+        access.updateWindow(ids)
+    }
 
     final class Probe: UIView {
         var access: FeedNativeScrollOffset
@@ -201,7 +211,13 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
             resolveScrollView()
         }
         override func layoutSubviews() { super.layoutSubviews(); resolveScrollView() }
-        private func resolveScrollView() {
+        func resolveScrollView() {
+            // A detached UIView may keep its parent chain alive for a moment.
+            // Never report that old scroll view as the native current viewport.
+            guard window != nil else {
+                access.scrollView = nil
+                return
+            }
             var ancestor = superview
             while let view = ancestor {
                 if let scroll = view as? UIScrollView {
@@ -213,6 +229,9 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
                 }
                 ancestor = view.superview
             }
+            // The probe can be reparented before an ancestor ScrollView exists.
+            // layoutSubviews will retry instead of retaining a stale adapter.
+            access.scrollView = nil
         }
     }
 }
