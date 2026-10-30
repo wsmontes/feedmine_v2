@@ -4032,6 +4032,48 @@ final class FeedFrameBudgetTests: XCTestCase {
         await active.close()
     }
 
+    /// The external source store may commit again AFTER adoption has already
+    /// started rebuilding. The in-flight session reflects version N; adoption
+    /// must detect N+1 on completion and reconstruct using the latest selection.
+    func testExternalSourceChangeDuringAdoptionRebuildIsReconciled() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
+        let originalFeeds = composition.feeds
+        XCTAssertGreaterThanOrEqual(originalFeeds.count, 3)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let first = try preferences.changeSources(removing: [originalFeeds[0].principal])
+        let adoption = Task { await composition.adoptSelectionChange() }
+        // The first adoption uses a new discovery profile and cannot build its
+        // replacement before this held read has been answered.
+        let held = await gate.nextRead()
+        XCTAssertEqual(try preferences.load()?.selectionVersion, first.selectionVersion)
+        let second = try preferences.changeSources(removing: [originalFeeds[1].principal])
+        XCTAssertEqual(second.selectionVersion, first.selectionVersion + 1)
+        gate.answer(held, entries: [], subjects: [:])
+        await adoption.value
+
+        let expected = originalFeeds.dropFirst(2).map(\.principal)
+        XCTAssertEqual(composition.feeds.map(\.principal), expected)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, second.sourceKeys)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, composition.currentContextKey)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertTrue(active.active)
+        XCTAssertEqual(active.feeds.map(\.principal), expected)
+        XCTAssertNil(composition.startupFailure)
+        await active.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
