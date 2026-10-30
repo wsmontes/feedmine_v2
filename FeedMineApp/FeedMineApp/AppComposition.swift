@@ -137,7 +137,7 @@ final class AppComposition {
     // Runs after a version-specific toggle proposal has been calculated but
     // before its atomic commit. A test can inject a concurrent source-manager
     // transaction deterministically, including repeated conflicts.
-    @ObservationIgnored var sourceToggleBeforeCommit: ((Int) throws -> Void)?
+    @ObservationIgnored var sourceToggleBeforeCommit: ((Int) async throws -> Void)?
     /// One-shot test seam for an external edit committed after launch but before
     /// the toggle's final durability check.
     @ObservationIgnored var sourceToggleDidLaunch: (() async throws -> Void)?
@@ -671,11 +671,31 @@ final class AppComposition {
     }
 
     func toggleSource(_ sourceID: SourceID) async throws {
-        // A reader's explicit toggle must not disappear just because discovery or
-        // another navigation is constructing a session. Evaluate the toggle against
-        // the selection that exists when this intent actually acquires the gate.
+        // User intent owns the transition gate until both its normal or failed
+        // handoff AND any editorial rebuild already deferred behind it complete.
         try await acquireFilterTransition()
         defer { releaseSessionTransition() }
+        do {
+            try await toggleSourceWhileTransitionLocked(sourceID)
+        } catch {
+            let transitionError = error
+            if pendingRebuild {
+                // A failed toggle can have already recovered a live association.
+                // The deferred editorial request must still be serviced; if that
+                // separate rebuild fails, its recovery publishes startupFailure.
+                // Preserve the original toggle error for the explicit caller.
+                do { try await rebuildSessionWhileTransitionLocked() }
+                catch {
+                    Self.log("deferred editorial rebuild after failed toggle: \(String(describing: error))")
+                }
+            }
+            throw transitionError
+        }
+    }
+
+    /// The caller already holds the exclusive transition gate, including across
+    /// checkpoint, preference transaction, association construction and recovery.
+    private func toggleSourceWhileTransitionLocked(_ sourceID: SourceID) async throws {
         guard let choice = sourceChoices[sourceID], let preferences else {
             throw ReaderPreferencesError.invalidSelection
         }
@@ -722,7 +742,7 @@ final class AppComposition {
             let key = ContextKey(request: request, preset: presetAfterSelectionChange(),
                 filter: currentContextKey.filter)
             #if DEBUG
-            try sourceToggleBeforeCommit?(attempt)
+            try await sourceToggleBeforeCommit?(attempt)
             #endif
             do {
                 let record = try preferences.commitSourceTransition(
