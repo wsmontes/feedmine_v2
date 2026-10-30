@@ -83,6 +83,47 @@ public struct ReaderPreferencesStore: Sendable {
         }
     }
 
+    /// A source toggle is one durable reader decision: change the selection, its
+    /// monotonic version, the active context and the resolved identity registrations
+    /// in a single write transaction. A failed identity insert or context write must
+    /// not leave a selection that no running association can represent.
+    ///
+    /// Never derive the new selection from just the resolved list: unavailable
+    /// reader-owned sources remain in the persisted sourceKeys until explicitly removed.
+    public func commitSourceTransition(adding: [String] = [], removing: [String] = [],
+        context: ContextKey, resolvedSources: [(key: String, authority: String)]) throws -> Record {
+        try Self.validate(adding)
+        try Self.validate(removing)
+        guard Set(adding).isDisjoint(with: removing) else { throw ReaderPreferencesError.invalidSelection }
+        return try database.write { db in
+            guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+            let excluded = Set(removing)
+            var keys = current.sourceKeys.filter { !excluded.contains($0) }
+            let existing = Set(keys)
+            keys.append(contentsOf: adding.filter { !existing.contains($0) })
+            let changed = Set(keys) != Set(current.sourceKeys)
+            if changed && current.selectionVersion >= UInt64(Int64.max) {
+                throw ReaderPreferencesError.versionOverflow
+            }
+            let updated = Record(sourceKeys: keys,
+                selectionVersion: current.selectionVersion + (changed ? 1 : 0),
+                activeContextKey: context, settings: current.settings,
+                preferredBookmarkListID: current.preferredBookmarkListID,
+                filterExpiry: current.filterExpiry)
+            try Self.save(updated, in: db)
+            for (key, authority) in resolvedSources {
+                guard !key.isEmpty, authority == "catalog" || authority == "reader" else {
+                    throw ReaderLibraryError.invalidSourceIdentity
+                }
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO reader_source_identity
+                        (source_key, anchor_key, current_key, authority) VALUES (?, ?, ?, ?)
+                    """, arguments: [key, key, key, authority])
+            }
+            return updated
+        }
+    }
+
     /// T10: writes the reader's preferences. The four-hour filter rule keeps its own column — T6 wrote it first,
     /// and the read composes it back into the value — so this write keeps both in step.
     public func setSettings(_ settings: ReaderSettings) throws -> Record {
