@@ -29,6 +29,22 @@ final class FeedNativeScrollOffset {
     /// (`isDragging`/`isDecelerating` o dizem), e por isso ele fecha o caso de uma tela que se move **sem** o leitor.
     var isAnimatingScroll: Bool { scrollView?.isScrollAnimating ?? false }
     #if DEBUG
+    // Debug-only counters: distinguish the native viewport being remounted from a
+    // window/anchor change while the same UIScrollView remains attached.
+    private(set) var probeMounts = 0
+    private(set) var probeUnmounts = 0
+    private(set) var distinctScrollViews = 0
+    private var lastScrollIdentity: ObjectIdentifier?
+    func noteProbeWindowMove(attached: Bool) {
+        if attached { probeMounts += 1 } else { probeUnmounts += 1 }
+    }
+    func noteResolvedScroll(_ scroll: UIScrollView) {
+        let identity = ObjectIdentifier(scroll)
+        if lastScrollIdentity != identity {
+            distinctScrollViews += 1
+            lastScrollIdentity = identity
+        }
+    }
     private(set) var activeWrites = 0
     private(set) var activeWindowChanges = 0
     private(set) var activeLayoutSteps = 0
@@ -173,12 +189,24 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
             isAccessibilityElement = false
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-        override func didMoveToWindow() { super.didMoveToWindow(); resolveScrollView() }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            #if DEBUG
+            access.noteProbeWindowMove(attached: window != nil)
+            #endif
+            resolveScrollView()
+        }
         override func layoutSubviews() { super.layoutSubviews(); resolveScrollView() }
         private func resolveScrollView() {
             var ancestor = superview
             while let view = ancestor {
-                if let scroll = view as? UIScrollView { access.scrollView = scroll; return }
+                if let scroll = view as? UIScrollView {
+                    #if DEBUG
+                    access.noteResolvedScroll(scroll)
+                    #endif
+                    access.scrollView = scroll
+                    return
+                }
                 ancestor = view.superview
             }
         }
@@ -189,6 +217,8 @@ struct FeedNativeWindowProof: ViewModifier {
     let ids: [PublicationCardID]
     let access: FeedNativeScrollOffset
     let deferredWindows: Int
+    let store: FeedScreenStore
+    @Binding var capture: FeedVisualCapture
     /// How many times the feed surface has re-evaluated in this process. DEBUG evidence, deliberately a
     /// plain counter: the number the scroll-stability work is judged by is "how often does the surface
     /// rebuild per fling", and without it that cost is argued instead of measured.
@@ -196,11 +226,84 @@ struct FeedNativeWindowProof: ViewModifier {
     func body(content: Content) -> some View {
         FeedNativeWindowProof.surfaceEvaluations += 1
         return content.overlay(alignment: .topLeading) {
+            if ProcessInfo.processInfo.environment["FEEDMINE_SAFARI_DIAGNOSTIC"] == "1" {
+                FeedViewportDiagnosticReadout(access: access, store: store, capture: $capture)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+            }
             if FeedVisualCapture.tracesCapture {
                 Text("ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","));corrections=\(access.appliedCount);residual=\(access.maximumResidual);measured=\(access.measuredCorrections);visualResidual=\(access.maximumVisualResidual);activeWrites=\(access.activeWrites);activeWindows=\(access.activeWindowChanges);activeLayoutSteps=\(access.activeLayoutSteps);activeLayoutStep=\(access.maximumActiveLayoutStep);deferredWindows=\(deferredWindows);surfaceEvals=\(FeedNativeWindowProof.surfaceEvaluations);geom=\(FeedVisualCapture.geometryObservations);probes=\(FeedVisualCapture.probeEntries);guards=\(FeedVisualCapture.probeGuards);cards=\(FeedVisualCapture.cardObservations);emits=\(FeedVisualCapture.emissions);submits=\(FeedVisualCapture.submissions);geomEvents=\(FeedVisualCapture.scrollGeometryEvents);phaseEvents=\(FeedVisualCapture.scrollPhaseEvents);scopeReject=\(FeedVisualCapture.scopeRejections);installs=\(FeedFlowCounters.installAttempts)/\(FeedFlowCounters.installAccepts)/\(FeedFlowCounters.installRejects)")
                     .font(.system(size: 1)).frame(width: 1, height: 1).opacity(0)
                     .allowsHitTesting(false).accessibilityIdentifier("feed-window-proof")
             }
+        }
+    }
+}
+
+/// A debug-only accessibility snapshot, computed when XCTest reads the property rather
+/// than when SwiftUI last evaluated the view. Motion changes deliberately do not
+/// invalidate the FeedScreen: a Text snapshot in its body would be stale by design.
+private struct FeedViewportDiagnosticReadout: UIViewRepresentable {
+    let access: FeedNativeScrollOffset
+    let store: FeedScreenStore
+    @Binding var capture: FeedVisualCapture
+
+    func makeUIView(context: Context) -> Probe {
+        let view = Probe()
+        configure(view)
+        return view
+    }
+    func updateUIView(_ view: Probe, context: Context) { configure(view) }
+    private func configure(_ view: Probe) {
+        let state = $capture
+        view.access = access
+        view.store = store
+        view.readCapture = { state.wrappedValue }
+    }
+
+    final class Probe: UIView {
+        var access: FeedNativeScrollOffset?
+        var store: FeedScreenStore?
+        var readCapture: (() -> FeedVisualCapture)?
+        init() {
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = true
+            accessibilityIdentifier = "native-viewport-diagnosis"
+            accessibilityLabel = "Native feed viewport diagnosis"
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+        // This read is passive: it never submits a viewport, changes an offset or
+        // triggers publication. The fields isolate mount, window and cursor causes.
+        override var accessibilityValue: String? {
+            get {
+                func card(_ id: PublicationCardID?) -> String { id?.rawValue.uuidString ?? "none" }
+                let snapshot = store?.state.presentation
+                let window = snapshot?.window
+                let visual = readCapture?()
+                let native = access?.scrollView
+                let offset = native.map { String(format: "%.2f", Double($0.contentOffset.y)) } ?? "none"
+                return [
+                    "probeMounts=\(access?.probeMounts ?? -1)",
+                    "probeUnmounts=\(access?.probeUnmounts ?? -1)",
+                    "scrollInstances=\(access?.distinctScrollViews ?? -1)",
+                    "scrollAttached=\(native?.window != nil)",
+                    "scrollIdentity=\(native.map { String(describing: ObjectIdentifier($0)) } ?? "none")",
+                    "nativeOffset=\(offset)",
+                    "windowItems=\(window?.items.count ?? -1)",
+                    "renderedItems=\(store?.renderedItems.count ?? -1)",
+                    "windowHead=\(card(window?.items.first?.id))",
+                    "windowTail=\(card(window?.items.last?.id))",
+                    "windowAnchor=\(card(window?.anchor.cardID))",
+                    "windowRevision=\(snapshot.map { String(describing: $0.provenance.position) } ?? "none")",
+                    "positionID=\(card(visual?.positionID))",
+                    "presentedTop=\(card(visual?.motion.presentedTop))",
+                    "acknowledgedTop=\(card(visual?.motion.acknowledgedPresentedTop))",
+                    "holding=\(visual?.interaction.isHolding ?? false)"
+                ].joined(separator: ";")
+            }
+            set { /* A diagnostic always reflects current reader state. */ }
         }
     }
 }
