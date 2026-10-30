@@ -689,6 +689,12 @@ final class AppComposition {
             startupFailure = nil
             startupFailureDetail = nil
         } catch {
+            // A previous recovery attempt may have installed an association before
+            // its launch failed. Do not leave that incomplete session exposed as active.
+            if let incomplete = association {
+                await incomplete.close()
+                association = nil
+            }
             startupFailure = "Não foi possível recuperar o feed anterior."
             startupFailureDetail = "transition: \(cause); recovery: \(error)"
             Self.log("failed context recovery: \(String(describing: error))")
