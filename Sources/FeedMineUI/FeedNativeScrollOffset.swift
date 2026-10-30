@@ -29,6 +29,10 @@ final class FeedNativeScrollOffset {
     /// (`isDragging`/`isDecelerating` o dizem), e por isso ele fecha o caso de uma tela que se move **sem** o leitor.
     var isAnimatingScroll: Bool { scrollView?.isScrollAnimating ?? false }
     #if DEBUG
+    // When the edition/context replaces FeedVisualCapture, the offset adapter
+    // and its counters reset. A process-unique token makes that reset visible
+    // instead of mistaking a new adapter's first UIScrollView for the old one.
+    let diagnosticCaptureID = UUID().uuidString
     // Debug-only counters: distinguish the native viewport being remounted from a
     // window/anchor change while the same UIScrollView remains attached.
     private(set) var probeMounts = 0
@@ -287,6 +291,7 @@ private struct FeedViewportDiagnosticReadout: UIViewRepresentable {
                 let native = access?.scrollView
                 let offset = native.map { String(format: "%.2f", Double($0.contentOffset.y)) } ?? "none"
                 return [
+                    "captureInstance=\(access?.diagnosticCaptureID ?? "none")",
                     "probeMounts=\(access?.probeMounts ?? -1)",
                     "probeUnmounts=\(access?.probeUnmounts ?? -1)",
                     "scrollInstances=\(access?.distinctScrollViews ?? -1)",
