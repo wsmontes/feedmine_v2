@@ -3940,6 +3940,15 @@ final class FeedFrameBudgetTests: XCTestCase {
         XCTAssertNotEqual(restored.store.state.presentation?.editionID, initial.editionID,
             "A changed source version must not silently adopt the previous Edition")
         await restored.close()
+        let reopened = root(directory: directory)
+        await reopened.launch()
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertEqual(reopened.currentContextKey, committed.activeContextKey)
+        XCTAssertEqual(reopened.feeds.map(\.principal),
+            original.sourceKeys.filter { $0 != candidate.principal },
+            "A new app process must recover the committed selection, not the retired one")
+        XCTAssertEqual(try preferences.load()?.selectionVersion, committed.selectionVersion)
+        await reopened.association?.close()
     }
 
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
