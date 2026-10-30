@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 120
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      REPORT_DIR: ${{ github.workspace }}/.safari-ci-results
+      REPORT_DIR: ${{ github.workspace }}/safari-ci-results
       TEST_VISUAL: FeedMineUITests/ReadingSurfaceUITests/testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory
       TEST_DIAG: FeedMineUITests/ReadingSurfaceUITests/testSafariViewportDiagnosisCapturesMountWindowAndAnchor
     steps:
@@ -154,6 +154,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: safari-ab-single-simulator
-          path: ${{ github.workspace }}/.safari-ci-results/
+          path: ${{ github.workspace }}/safari-ci-results/
           retention-days: 7
           if-no-files-found: warn
