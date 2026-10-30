@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 import Foundation
 import UIKit
 import SwiftUI
@@ -3288,4 +3289,83 @@ final class FeedFrameBudgetTests: XCTestCase {
         XCTAssertEqual(onOneTwenty["severe"], "2")
         XCTAssertEqual(onOneTwenty["worst_ms"], "235.6")
     }
+
+    /// Red regression for a failed B construction after SessionStore.activateContext(B)
+    /// has committed, but PublicationStore.setVisibility(B) aborts. A failed user transition
+    /// must leave A usable and must not persist B as the reader's completed selection.
+    func testFailedContextBuildAfterActivationDoesNotStrandReader() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let original = try XCTUnwrap(composition.association?.store.state.presentation)
+        let originalKey = composition.currentContextKey
+        let source = TrustedFeed.development[1].sourceID
+
+        // Ensure B has a published Edition and a durable checkpoint before injecting
+        // the failure: constructor line 2123 must actually call setVisibility(B).
+        try await composition.selectContext(.source(source))
+        let b = try XCTUnwrap(composition.association?.store.state.presentation)
+        try await composition.selectContext(originalKey.request)
+        let a = try XCTUnwrap(composition.association?.store.state.presentation)
+        XCTAssertEqual(a.editionID, original.editionID)
+
+        // sqlite3 is used only in the test target; no production failpoint or schema
+        // changes are required. The trigger is scoped to B's Edition and removed below.
+        let databaseURL = RuntimeDatabaseLocation(directory: directory).databaseURL
+        let targetEdition = b.editionID.rawValue.uuidString.lowercased()
+        try executeTransitionTestSQL("""
+            CREATE TRIGGER feedmine_test_fail_visibility
+            BEFORE UPDATE OF visible ON edition_reading_state
+            WHEN NEW.edition_id = '\(targetEdition)'
+            BEGIN SELECT RAISE(ABORT, 'injected visibility failure'); END
+            """, at: databaseURL)
+        defer { try? executeTransitionTestSQL("DROP TRIGGER IF EXISTS feedmine_test_fail_visibility", at: databaseURL) }
+
+        do {
+            try await composition.selectContext(.source(source))
+            XCTFail("Expected the B constructor's visibility write to fail")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("injected visibility failure"),
+                "The test must fail only at the deliberately injected SQLite boundary: \(error)")
+        }
+
+        // Contract for production safety: a failed transition is not a committed move.
+        // These assertions are expected to FAIL with the current implementation;
+        // do not turn them into characterization assertions that accept a stranded UI.
+        XCTAssertTrue(composition.association?.active == true,
+            "A failed transition must not leave the reader without a live association")
+        XCTAssertEqual(composition.currentContextKey, originalKey,
+            "An unsuccessful transition must not change the reader's active context")
+
+        let store = try RuntimeDatabase(location: .init(directory: directory))
+        XCTAssertEqual(try ReaderPreferencesStore(database: store).load()?.activeContextKey, originalKey,
+            "The durable preference must continue describing the usable session")
+        XCTAssertEqual(try SessionStore(database: store).checkpoint()?.editionID, a.editionID,
+            "The active checkpoint must still address the previous readable Edition")
+        XCTAssertEqual(try SessionStore(database: store).checkpoint(for: .source(source))?.editionID,
+            b.editionID, "The archived B checkpoint must not be erased")
+    }
+
+    /// The separate SQLite connection installs a narrow fault at the actual storage layer.
+    /// The helper has no effect on the application binary or Release configuration.
+    private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
+        var connection: OpaquePointer?
+        let openResult = sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE, nil)
+        guard openResult == SQLITE_OK, let connection else {
+            if let connection { sqlite3_close(connection) }
+            throw NSError(domain: "FeedMineTestSQLite", code: Int(openResult),
+                userInfo: [NSLocalizedDescriptionKey: "Could not open fault-injection SQLite connection"])
+        }
+        defer { sqlite3_close(connection) }
+        var errorMessage: UnsafeMutablePointer<CChar>?
+        let result = sqlite3_exec(connection, sql, nil, nil, &errorMessage)
+        let message = errorMessage.map { String(cString: $0) } ?? "SQLite test operation failed"
+        if let errorMessage { sqlite3_free(errorMessage) }
+        guard result == SQLITE_OK else {
+            throw NSError(domain: "FeedMineTestSQLite", code: Int(result),
+                userInfo: [NSLocalizedDescriptionKey: message])
+        }
+    }
+
 }
