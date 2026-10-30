@@ -27,7 +27,7 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// A run whose only supply is the app's own local fixtures: the development feeds served in process, so there
     /// is no network, no server, no clock — and no add-feed sheet in the way of reaching an article.
     private func launched(shape: String, blocked: Bool = false, largeText: Bool = false,
-        itemsPerFeed: Int? = nil) -> XCUIApplication {
+        itemsPerFeed: Int? = nil, safariDiagnostic: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
@@ -35,6 +35,7 @@ final class ReadingSurfaceUITests: XCTestCase {
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_FIXTURE_TEXT"] = shape
         if let itemsPerFeed { app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = String(itemsPerFeed) }
+        if safariDiagnostic { app.launchEnvironment["FEEDMINE_SAFARI_DIAGNOSTIC"] = "1" }
         // The closed HTTPS proxy the app itself installs: real connections fail, the fixture still answers.
         if blocked { app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1" }
         if largeText {
@@ -250,6 +251,51 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// Browser-close regression: a nontrivial admitted history must return to the SAME card, not merely
     /// to any card somewhere in the feed. The long local fixture keeps the scenario reproducible offline.
     /// This is a UI proof: a session-level anchor assertion cannot detect a UIKit/SwiftUI scroll jump.
+    /// Evidence only. Unlike the regression test below, this reports all three
+    /// independent seams without claiming to fix the browser-return displacement.
+    func testSafariViewportDiagnosisCapturesMountWindowAndAnchor() throws {
+        let app = launched(shape: "shortSummary", itemsPerFeed: 95, safariDiagnostic: true)
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 180))
+        XCTAssertTrue(waitForAVisibleCard(app, within: 180))
+        let diagnostic = app.otherElements["native-viewport-diagnosis"].firstMatch
+        XCTAssertTrue(diagnostic.waitForExistence(timeout: 20), "debug diagnostic must be accessible")
+        let initial = diagnostic.value as? String ?? "diagnostic-unavailable"
+        for _ in 0..<8 { scroll.swipeUp(velocity: .fast) }
+        guard let tracked = settledVisibleCard(app, within: 30) else {
+            attach(app, "safari-diagnosis-setup-unsettled")
+            return XCTFail("no stable card after the eight reader gestures")
+        }
+        let before = diagnostic.value as? String ?? "diagnostic-unavailable"
+        let card = byIdentifier(app, tracked.identity)
+        XCTAssertTrue(card.exists && card.isHittable)
+        let opener = openControl(card)
+        if opener.exists && opener.isHittable { opener.tap() } else { card.tap() }
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20))
+        app.buttons["Close"].tap()
+        XCTAssertTrue(app.buttons["Close"].waitForNonExistence(timeout: 20))
+        let after = diagnostic.value as? String ?? "diagnostic-unavailable"
+        let returned = byIdentifier(app, tracked.identity)
+        let finalFrame = settledFrame(of: returned, within: 20)
+        let attachment = XCTAttachment(string: [
+            "initial=\(initial)", "before=\(before)", "after=\(after)",
+            "tracked=\(tracked.identity)", "beforeY=\(tracked.frame.minY)",
+            "afterY=\(finalFrame.map { String(describing: $0.minY) } ?? "missing")"
+        ].joined(separator: "\n"))
+        attachment.name = "safari-native-window-anchor-diagnosis"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        attach(app, "safari-native-window-anchor-diagnosis")
+        XCTAssertTrue(before.contains("scrollInstances=") && before.contains("windowRevision=")
+            && before.contains("positionID=") && before.contains("presentedTop="),
+            "the first observation must include native identity, publication and capture")
+        XCTAssertTrue(after.contains("scrollInstances=") && after.contains("windowRevision=")
+            && after.contains("positionID=") && after.contains("presentedTop="),
+            "a missing post-dismissal diagnostic is itself evidence of hierarchy loss")
+        // Do not assert that the position was retained: this probe must produce evidence
+        // even when the main browser-return regression fails.
+    }
+
     func testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory() throws {
         let app = launched(shape: "shortSummary", itemsPerFeed: 95)
         let scroll = app.scrollViews.firstMatch
