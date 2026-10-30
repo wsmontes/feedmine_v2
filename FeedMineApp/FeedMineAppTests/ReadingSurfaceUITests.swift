@@ -51,6 +51,35 @@ final class ReadingSurfaceUITests: XCTestCase {
             .first { $0.frame.minY > window.minY + 120 && $0.frame.maxY < window.maxY - 80 }
     }
 
+    /// XCUITest may return immediately after the last fast fling, while the native scroll
+    /// is still decelerating. Sample the same card and frame three times before opening it.
+    /// This waits only during setup: browser return is still inspected without a recovery swipe.
+    private func settledVisibleCard(_ app: XCUIApplication, within seconds: TimeInterval)
+        -> (identity: String, frame: CGRect)? {
+        let deadline = Date().addingTimeInterval(seconds)
+        var previous: (identity: String, frame: CGRect)?
+        var matches = 0
+        while Date() < deadline {
+            if let card = visibleCard(app), card.isHittable {
+                let current = (identity: card.identifier, frame: card.frame)
+                if let previous, previous.identity == current.identity,
+                    abs(previous.frame.minY - current.frame.minY) <= 1,
+                    abs(previous.frame.maxY - current.frame.maxY) <= 1 {
+                    matches += 1
+                } else {
+                    matches = 1
+                }
+                if matches >= 3 { return current }
+                previous = current
+            } else {
+                previous = nil
+                matches = 0
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return nil
+    }
+
     /// The card's own *open* control. It carries `card.open`: measured on the device
     /// (`docs/reviews/2026-10-11-article-reading-diagnosis.md` §3), the card's tree had the bookmark control with
     /// an identifier and the opening label with **none**, so a test had to guess ("the first button with an empty
@@ -208,11 +237,22 @@ final class ReadingSurfaceUITests: XCTestCase {
         // Eight real gestures, rather than stopping as soon as any other card is seen: the test
         // must cross multiple viewport windows and exercise the long-history presentation.
         for _ in 0..<8 { scroll.swipeUp(velocity: .fast) }
-        guard let card = visibleCard(app), card.identifier != firstID else {
-            return XCTFail("the reader must reach a card past the initial viewport")
+        guard let settled = settledVisibleCard(app, within: 30) else {
+            attach(app, "browser-close-setup-not-settled")
+            return XCTFail("after eight flings, no hittable card had a stable frame")
         }
-        let identity = card.identifier
+        guard settled.identity != firstID else {
+            attach(app, "browser-close-setup-did-not-advance")
+            return XCTFail("eight flings did not leave the initial visible card")
+        }
+        let identity = settled.identity
+        let card = byIdentifier(app, identity)
+        guard card.exists, card.isHittable else {
+            return XCTFail("the card stabilized after the flings must remain tappable")
+        }
         let before = card.frame
+        XCTAssertEqual(before.minY, settled.frame.minY, accuracy: 1.0,
+            "the tracked card moved between settling and opening the browser")
         XCTAssertTrue(before.intersects(scroll.frame), "the tracked card starts in the actual feed viewport")
         let opener = openControl(card)
         if opener.exists && opener.isHittable { opener.tap() } else { card.tap() }
