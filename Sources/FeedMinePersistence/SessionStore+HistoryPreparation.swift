@@ -43,6 +43,10 @@ extension SessionStore {
         }
     }
 
+    public func editionID(bindingActivation: BindingActivation) throws -> FeedEditionID? {
+        try database.read { try Self.scopedEdition(bindingActivation, in: $0) }
+    }
+
     /// Explicit compatibility decision; nil starts fresh without erasing history. Retargeting returns
     /// a new captured handle so an older A callback cannot regain authority after A→empty→A.
     public func resetPreparedBinding(_ handle: BindingActivation, editionID: FeedEditionID?) throws -> BindingActivation {

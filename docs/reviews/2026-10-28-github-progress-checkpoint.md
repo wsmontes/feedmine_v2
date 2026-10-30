@@ -1,5 +1,12 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — integração nativa, 2026-10-30
+
+Bindings/preparação agora consumidos pelo host, com promoção NF03 após drain/checkpoint e isolamento de namespaces. Mudanças globais preservam a associação apresentada. **Oráculo R4 conhecido passou com assertions ordinárias**, sem wrappers de falha esperada. Pacote completo: **1846 testes, um ignorado, zero falhas**. Nativo: **42 testes distintos, zero falhas**, revisão independente concluída. [Relatório e limites](2026-10-30-f13-native-history-binding.md).
+
+F13/aceitação completa continuam abertos: recuperação explícita de ambiguidades com leitura anterior apresentada, política não resolvida, relaunch real e jornadas UI ainda pendentes. As seções abaixo registram checkpoints históricos e são supersedidas por esta atualização no escopo descrito.
+
+
 ## Atualização — preparação antes da troca de autoridade, 2026-10-29
 
 O pipeline pode publicar/projetar uma candidata oculta sem retirar de A a autoridade de salvar posição. Promoção atômica, cancelamento, retomada explícita e fences de predecessor/Edition de base/token implementados. Revisão independente e followup concluídos. **1844 testes completos, um ignorado, zero falhas**; foco55/0 e teste frio adicional1/0 (adição posterior só em teste). [Relatório](2026-10-29-f13-reader-preparation.md).

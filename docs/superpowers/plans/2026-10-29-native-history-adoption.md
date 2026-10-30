@@ -58,3 +58,15 @@ A new additive reader-history-preparation-v1 migration stores per-binding prepar
 - [ ] Native NF03 consumes the prepared handle, checkpoints A after next.launch, promotes synchronously immediately before installation, cancels obsolete/failed handles. Initial/ordinary switches may immediately promote. Native binding selection/ambiguity UI and R4 ordinary assertions still required.
 
 Task2c stronger checks required base_edition_id fencing and token rotation on explicit reset. Callers must capture the returned reset handle before constructing the reader/owners. A retained candidate is resumed only while its base Edition still matches; consumed preparation metadata is cleared on promotion, without deleting Edition/checkpoint history.
+
+## Task 2d — consume prepared bindings in the native host
+
+For raw logical input, reuse its existing binding, otherwise inspect exact/current-forward unowned candidates. Prefer a compatible active statement; retain ambiguity as a typed failure before ownership writes (explicit More-menu recovery still required). New first Editions use raw criteria. A restored Edition keeps its frozen key/revision. Prepared compatibility resets must capture the returned token. Root uses the binding's runtime namespace for collision salt and discovery-walk cache isolation.
+
+NF03 constructs/launches with a prepared handle; the previous viewport remains authorized. At cutover freeze/drain the prior viewport ingress, checkpoint it, refresh only the hidden prepared projection from the final point when needed, validate latest raw intent, then promote synchronously immediately before assignment. Resume old ingress and cancel prepared handle on failure/supersession. Other initial/ordinary transitions may promote during synchronous construction. Closing a candidate cancels only its own prepared handle.
+
+Global rules invoke the existing semantic eligibility notification instead of replacement. Native R4 strict failures may be removed only after actual host execution shows they are now unexpectedly passing, then ordinary assertions must pass. Legacy ambiguity recovery/UI, unresolved-policy recovery and remaining acceptance are still required, not certified by the unambiguous path.
+
+- [x] Native RED ownership/global edit/composition recreation; hidden-only refresh RED. Real OS process relaunch remains open.
+- [x] Wire binding selection, constructor/history/cold/live, NF03 promotion and namespace.
+- [x] Actual native tests; R4 ordinary oracle, legacy adoption/collision and existing handoff tests; independent review. See docs/reviews/2026-10-30-f13-native-history-binding.md.

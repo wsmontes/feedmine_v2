@@ -254,4 +254,39 @@ extension DurableAnchorRestoreTests {
         }
     }
 
+    func testOnlyHiddenPreparedReaderCanRefreshFromTheFinalPredecessorPoint() async throws {
+        try await withLocation { location in
+            let db = try RuntimeDatabase(location: location), store = PublicationStore(database: db)
+            let e = makeEdition(revision(contextKey: ContextKey(request: .main)), seed: 4)
+            let cards = try makeCards(3, prefix: "handoff")
+            try publish(e, cards: cards, in: store)
+            try PublicationHistory(database: db).saveCursor(.init(editionID: e.id,
+                anchor: .init(cardID: cards[0].id, placement: .top)), updatedAt: savedAt)
+            let bindings = ReaderHistoryBindingStore(database: db), checkpoints = SessionStore(database: db)
+            let binding = try bindings.resolve(logicalKey: e.editorialRevision.contextKey,
+                adopting: .init(editionID: e.id, publicationKey: e.editorialRevision.contextKey, evidence: .exactContext))
+            let active = try checkpoints.activateBinding(binding.id)
+            let bounds = FeedPresentationBounds(backwardCapacity: 2, forwardCapacity: 2, keepsAdmittedHead: true)
+            let current = FeedSession(publicationHistory: PublicationHistory(database: db, bindingActivation: active))
+            _ = try await current.admitPresentation(.initial(bounds))
+            let prepared = try checkpoints.prepareBinding(binding.id)
+            let next = FeedSession(publicationHistory: PublicationHistory(database: db, bindingActivation: prepared))
+            let first = try await next.admitPresentation(.initial(bounds))
+            XCTAssertEqual(first?.window.anchor.cardID, cards[0].id)
+            _ = try await current.submitViewport(.init(anchor: .init(cardID: cards[2].id, placement: .top)), deliberate: true)
+            _ = try await current.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 800))
+            let refreshed = try await next.refreshPreparedPresentation(bounds)
+            XCTAssertEqual(refreshed?.window.anchor.cardID, cards[2].id)
+            XCTAssertEqual(refreshed?.provenance.sequenceID, first?.provenance.sequenceID)
+            XCTAssertGreaterThan(try XCTUnwrap(refreshed?.provenance.position), try XCTUnwrap(first?.provenance.position))
+            let point = try checkpoints.checkpoint()
+            do { _ = try await current.refreshPreparedPresentation(bounds); XCTFail("current admitted reader cannot reset its projection") }
+            catch { XCTAssertEqual(error as? FeedSessionError, .readerIsNotPrepared) }
+            try checkpoints.promotePreparedBinding(prepared)
+            do { _ = try await next.refreshPreparedPresentation(bounds); XCTFail("promotion closes hidden refresh authority") }
+            catch { XCTAssertEqual(error as? FeedSessionError, .readerIsNotPrepared) }
+            XCTAssertEqual(try checkpoints.checkpoint(), point)
+        }
+    }
+
 }

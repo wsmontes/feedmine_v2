@@ -71,6 +71,11 @@ public struct PublicationHistory: Sendable {
         self.bindingActivation = bindingActivation
     }
 
+    public func isPreparedReader() throws -> Bool {
+        guard let bindingActivation else { return false }
+        return try sessionStore.isPreparedBinding(bindingActivation)
+    }
+
     public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID) throws {
         if let bindingActivation, try sessionStore.isPreparedBinding(bindingActivation) {
             try sessionStore.validateBinding(bindingActivation, editionID: editionID)

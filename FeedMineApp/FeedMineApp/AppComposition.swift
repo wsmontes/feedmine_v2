@@ -50,6 +50,9 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
+    @ObservationIgnored private var persistedLaunchContext: ContextKey?
+    @ObservationIgnored private var constructedAssociation = false
+    private enum HistorySelectionFailure: Error { case ambiguousLegacyHistory, unresolvedLegacyHistory }
     /// True exactly while a context/source transition owns the reader's session. The context control reads this
     /// to present itself as busy and disabled: a tap offered while a replacement runs cannot start, and the
     /// product must not promise an action it will ignore.
@@ -475,7 +478,8 @@ final class AppComposition {
         transportConfiguration: URLSessionConfiguration? = nil,
         discoveryQuery: DiscoveryQuery? = nil,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
-        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) {
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil,
+        contentFilterTemplates: [ReaderContentFilterTemplate]? = nil) {
         let support = RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
         #if DEBUG
@@ -492,6 +496,7 @@ final class AppComposition {
         self.discoveryQuery = discoveryQuery ?? Self.liveDiscoveryQuery
         self.monotonicNow = monotonicNow
         self.bookmarkRead = bookmarkRead
+        self.contentFilterTemplatesUncached = contentFilterTemplates
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
@@ -604,6 +609,7 @@ final class AppComposition {
         // A launch with nothing durable keeps the asynchronous path exactly as it was: its preparation surface is the
         // legitimate one (doctrine item 1 — "the first open may be slow — that is what the loading screen is for"),
         // and the pool its profile names must not block a first run's main actor.
+        persistedLaunchContext = currentContextKey
         if startupFailure == nil, hasDurableWindow() {
             association = try? warmAssociation()
         }
@@ -1921,18 +1927,11 @@ final class AppComposition {
         await association.sourceExclusionsChanged()
     }
 
-    /// The content filters changed (settings or the rules surface): the session is rebuilt, because what it
-    /// hides is part of the identity it published under — the same rule the lens criteria follow. Nothing is
-    /// erased: the rules stay in the reader's preferences either way.
+    /// Global eligibility changes reuse the reader and its current semantic opportunity owner.
     func reapplyReaderFilters() async {
-        guard association != nil, !replacingSession else { return }
-        guard applied(currentContextKey) != association?.contextKey else { return }
-        do { try await replaceSession() }
-        catch {
-            startupFailure = "Não foi possível atualizar seus filtros."
-            startupFailureDetail = String(describing: error)
-            Self.log("startup failure updating content filters: \(String(describing: error))")
-        }
+        noteReaderSettingsWritten()
+        guard let association, !replacingSession else { return }
+        await association.contentExclusionsChanged()
     }
 
     /// T7: the source surface's store, over the catalog coordinator. One store per presentation, so its
@@ -2032,7 +2031,7 @@ final class AppComposition {
     /// The one place a session is built: every transition ranks with the context's own scoring. A collection's
     /// own feed passes its own sources; everything else is the reader's selection.
     private func association(contextKey: ContextKey,
-        allowsSourceOutsideSelection: Bool = false) async throws -> FeedAssociation {
+        allowsSourceOutsideSelection: Bool = false, preparingReplacement: Bool = false) async throws -> FeedAssociation {
         // The detached pool may finish after an activation. It retries for the current fingerprint;
         // resolve the selected sources, policy and traversal *after* that await so they all agree about the
         // authority one new association is using.
@@ -2046,7 +2045,7 @@ final class AppComposition {
         // resuming this constructor. Do not combine that pool with the replacement snapshot.
         if requestedFingerprint != snapshot?.fingerprint {
             return try await association(contextKey: contextKey,
-                allowsSourceOutsideSelection: allowsSourceOutsideSelection)
+                allowsSourceOutsideSelection: allowsSourceOutsideSelection, preparingReplacement: preparingReplacement)
         }
         // An answer received while the detached read was running is behaviour, not identity (F02): the constructor
         // is a boundary that answer must cross. Capturing the profile before the await and never looking again made
@@ -2066,7 +2065,7 @@ final class AppComposition {
             _ = try preferences?.setContext(session.key)
         }
         return try makeAssociation(contextKey: session.key, profile: profile, read: read, warmLaunch: false,
-            allowsSourceOutsideSelection: allowsSourceOutsideSelection)
+            allowsSourceOutsideSelection: allowsSourceOutsideSelection, preparingReplacement: preparingReplacement)
     }
 
     /// The one place an association is built. The **asynchronous** launch and the **warm** launch hand the same
@@ -2074,35 +2073,111 @@ final class AppComposition {
     /// can run (the warm one cannot `await`, because the reader's own window has to exist before the first frame)
     /// — and therefore how much of discovery exists when it is built.
     private func makeAssociation(contextKey: ContextKey, profile: ReaderDiscoveryProfile,
-        read: DiscoveryRead?, warmLaunch: Bool, allowsSourceOutsideSelection: Bool = false) throws -> FeedAssociation {
+        read: DiscoveryRead?, warmLaunch: Bool, allowsSourceOutsideSelection: Bool = false,
+        preparingReplacement: Bool = false) throws -> FeedAssociation {
         let session = try sessionState(for: contextKey,
             allowsSourceOutsideSelection: allowsSourceOutsideSelection)
         if session.key != contextKey {
             currentContextKey = session.key
             _ = try preferences?.setContext(session.key)
         }
-        let key = applied(session.key)
-        let (scoring, version) = scoring(for: key)
-        // S1: only a gesture on this session reaches here (`openSourceContext`); a relaunch restores the reading
-        // place with `contextSource == nil`, so it opens the source's local history and issues no request.
-        let visitFeed: TrustedFeed? = {
-            guard let contextSource, case .source(let id) = key.request, id == contextSource.sourceID else { return nil }
-            return contextSource
-        }()
-        let association = try FeedAssociation(directory: directory, feeds: session.feeds,
-            discovery: read?.feeds ?? [], subjects: read?.subjects ?? [:],
-            configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
-            discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
-            contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
-            catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
-            discoveryProfile: profile, contextSourceDisplayName: sourceContextDisplayName,
-            warmLaunch: warmLaunch, launchSettings: launchSettings, visitFeed: visitFeed,
-            monotonicNow: monotonicNow, bookmarkRead: bookmarkRead,
-            logicalContextKey: session.key, wordTemplates: contentFilterTemplates)
-        #if DEBUG
-        sessionConstructions += 1
-        #endif
-        return connecting(association)
+        guard let database = libraryDatabase() else { throw ReaderPreferencesError.invalidSelection }
+        let (scoring, version) = scoring(for: session.key)
+        let binding = try resolveHistoryBinding(session.key, database: database, scoringVersion: version)
+        let checkpoints = SessionStore(database: database), publication = PublicationStore(database: database)
+        var handle = try checkpoints.prepareBinding(binding.id)
+        var built: FeedAssociation?
+        do {
+            var editionID = try checkpoints.editionID(bindingActivation: handle)
+            var frozen = try editionID.flatMap { try publication.edition(id: $0) }
+            if let existing = frozen {
+                let point = try checkpoints.checkpoint(bindingActivation: handle)
+                if !FeedAssociation.mayShow(existing.editorialRevision, for: existing.editorialRevision.contextKey,
+                    scoringVersion: version) || point == nil {
+                    handle = try checkpoints.resetPreparedBinding(handle, editionID: nil)
+                    editionID = nil
+                    frozen = nil
+                }
+            }
+            let key = frozen?.editorialRevision.contextKey ?? session.key
+            let visitFeed: TrustedFeed? = {
+                guard let contextSource, case .source(let id) = key.request, id == contextSource.sourceID else { return nil }
+                return contextSource
+            }()
+            let next = try FeedAssociation(directory: directory, feeds: session.feeds,
+                discovery: read?.feeds ?? [], subjects: read?.subjects ?? [:],
+                configuration: transportConfiguration, trace: trace, database: database,
+                discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot,
+                    runtimeNamespace: binding.runtimeNamespace),
+                contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
+                catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
+                discoveryProfile: profile, contextSourceDisplayName: sourceContextDisplayName,
+                warmLaunch: warmLaunch, launchSettings: launchSettings, visitFeed: visitFeed,
+                monotonicNow: monotonicNow, bookmarkRead: bookmarkRead,
+                logicalContextKey: session.key, wordTemplates: contentFilterTemplates,
+                bindingActivation: handle, bindingExpectedEditionID: editionID, runtimeNamespace: binding.runtimeNamespace)
+            built = next
+            if !preparingReplacement { try checkpoints.promotePreparedBinding(handle) }
+            constructedAssociation = true
+            #if DEBUG
+            sessionConstructions += 1
+            #endif
+            return connecting(next)
+        } catch {
+            _ = try? checkpoints.cancelPreparedBinding(handle)
+            if let built { Task { await built.close() } }
+            throw error
+        }
+    }
+
+    private func resolveHistoryBinding(_ raw: ContextKey, database: RuntimeDatabase,
+        scoringVersion: UInt64) throws -> ReaderHistoryBindingStore.Record {
+        let bindings = ReaderHistoryBindingStore(database: database)
+        if let existing = try bindings.binding(for: raw) { return existing }
+        let words = try ReaderWordExclusionPolicy(database: database, templates: contentFilterTemplates,
+            context: raw.filter.exclusions).capture()
+        let inventory = try bindings.legacyCandidates(logicalKey: raw, wordExclusions: words)
+        let compatible = inventory.filter {
+            FeedAssociation.mayShow($0.edition.editorialRevision, for: $0.edition.editorialRevision.contextKey,
+                scoringVersion: scoringVersion)
+        }
+        let active = compatible.filter { $0.checkpoints.contains(where: \.isActive) }
+        let candidate: ReaderHistoryBindingStore.LegacyCandidate?
+        if active.count == 1 { candidate = active[0] }
+        else if active.isEmpty, compatible.count <= 1 { candidate = compatible.first }
+        else { throw HistorySelectionFailure.ambiguousLegacyHistory }
+        if let candidate {
+            let activePoint = candidate.checkpoints.first(where: \.isActive)?.point
+            guard activePoint != nil || candidate.checkpoints.count <= 1 else {
+                throw HistorySelectionFailure.ambiguousLegacyHistory
+            }
+            return try bindings.resolve(logicalKey: raw, adopting: .init(editionID: candidate.edition.id,
+                publicationKey: candidate.edition.editorialRevision.contextKey, evidence: candidate.evidence,
+                checkpoint: activePoint ?? candidate.checkpoints.first?.point))
+        }
+        // On launch, unexplained frozen words are an unresolved legacy intent, never a subtraction heuristic.
+        if !constructedAssociation, !replacingSession, persistedLaunchContext == raw,
+            let point = try SessionStore(database: database).checkpoint() {
+            let editionID = try publicationEdition(of: point, database: database)
+            if let old = try PublicationStore(database: database).edition(id: editionID),
+                try bindings.owner(ofEditionID: editionID) == nil {
+                let frozen = old.editorialRevision.contextKey
+                let withoutHistoricalWords = ContextKey(request: frozen.request, preset: frozen.preset,
+                    filter: frozen.filter.replacing(exclusions: raw.filter.exclusions), searchScope: frozen.searchScope,
+                    identitySchemaVersion: frozen.identitySchemaVersion)
+                let forward = ContextKey(request: raw.request, preset: raw.preset,
+                    filter: raw.filter.replacing(exclusions: words.exclusions), searchScope: raw.searchScope,
+                    identitySchemaVersion: raw.identitySchemaVersion)
+                if withoutHistoricalWords == raw, frozen != raw, frozen != forward {
+                    throw HistorySelectionFailure.unresolvedLegacyHistory
+                }
+            }
+        }
+        return try bindings.resolve(logicalKey: raw)
+    }
+
+    private func publicationEdition(of point: SessionStore.CheckpointRecord, database: RuntimeDatabase) throws -> FeedEditionID {
+        try PublicationStore(database: database).location(ofCard: point.cardID)?.editionID ?? point.editionID
     }
 
     /// The association a **warm** launch starts from — the same session `launch()` would build, built
@@ -2140,9 +2215,10 @@ final class AppComposition {
     /// The walk discovery is on for this context's profile. Bounded by the same rule as the pool: no catalogue, no
     /// profile, no traversal — and an empty profile is "no answers yet", not a reason to invent one.
     private func discoveryTraversal(for key: ContextKey, profile: ReaderDiscoveryProfile,
-        snapshot: CatalogSnapshot?) -> ReaderDiscoveryTraversal? {
+        snapshot: CatalogSnapshot?, runtimeNamespace: String? = nil) -> ReaderDiscoveryTraversal? {
         guard let snapshot, !profile.isEmpty else { return nil }
-        let walk = DiscoveryWalkKey(profile: profile, contextKey: key, catalogue: snapshot.fingerprint)
+        let walk = DiscoveryWalkKey(profile: profile, contextKey: key, catalogue: snapshot.fingerprint,
+            runtimeNamespace: runtimeNamespace ?? key.canonicalIdentity)
         if let existing = discoveryTraversals[walk] { return existing }
         let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: snapshot.catalogueURL),
             profile: profile, contextKey: key,
@@ -2477,6 +2553,7 @@ final class AppComposition {
         /// would be resuming someone else's walk — `ReaderDiscoveryBuilder` refuses exactly that mismatch, so the
         /// identity belongs here rather than in a retry.
         let catalogue: String
+        let runtimeNamespace: String
     }
     @ObservationIgnored private var discoveryTraversals: [DiscoveryWalkKey: ReaderDiscoveryTraversal] = [:]
 
@@ -2521,7 +2598,7 @@ final class AppComposition {
                 let next: FeedAssociation
                 do {
                     next = try await association(contextKey: intended,
-                        allowsSourceOutsideSelection: allowsSourceOutsideSelection(intended))
+                        allowsSourceOutsideSelection: allowsSourceOutsideSelection(intended), preparingReplacement: true)
                 } catch {
                     if superseded() { continue }
                     throw error
@@ -2539,21 +2616,25 @@ final class AppComposition {
                     continue
                 }
                 let retired = association
-                if let retired {
-                    do {
+                do {
+                    if let retired {
+                        await retired.freezeViewportForHandoff()
                         _ = try await retired.session.checkpointCurrentPosition(at: Date())
-                    } catch {
-                        await next.close()
-                        if superseded() { continue }
-                        throw error
                     }
-                }
-                // The checkpoint crossed an await and a newer confirmation can commit during it. Revalidate with
-                // no await between this fence and the assignment: the association the screen gets is the key that
-                // is current at the instant of installation, never the one that was current before retirement.
-                guard next.logicalContextKey == currentContextKey else {
+                    if let retired, retired.bindingActivation?.bindingID == next.bindingActivation?.bindingID {
+                        try await next.refreshPreparedPosition()
+                    }
+                    guard next.logicalContextKey == currentContextKey else {
+                        retired?.resumeViewportAfterFailedHandoff()
+                        await next.close()
+                        continue
+                    }
+                    try next.promotePreparedHistory()
+                } catch {
+                    retired?.resumeViewportAfterFailedHandoff()
                     await next.close()
-                    continue
+                    if superseded() { continue }
+                    throw error
                 }
                 association = next
                 startupFailure = nil
@@ -2874,6 +2955,7 @@ final class FeedAssociation {
     let contextKey: ContextKey
     /// The reader's explicit criteria. Global settings never become contextual intent.
     let logicalContextKey: ContextKey
+    let bindingActivation: SessionStore.BindingActivation?
     /// What this session ranks by: eligibility, scoring (a curated feed's weights), sequencing and exposure.
     let policy: ResolvedSelectionPolicy
     /// The feeds this session was built over: a card's source id names one of them, and its principal is the
@@ -3258,7 +3340,9 @@ final class FeedAssociation {
         visitFeed: TrustedFeed? = nil,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
         bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil,
-        logicalContextKey: ContextKey? = nil, wordTemplates: [ReaderContentFilterTemplate]? = nil) throws {
+        logicalContextKey: ContextKey? = nil, wordTemplates: [ReaderContentFilterTemplate]? = nil,
+        bindingActivation: SessionStore.BindingActivation? = nil, bindingExpectedEditionID: FeedEditionID? = nil,
+        runtimeNamespace: String? = nil) throws {
         self.trace = trace
         self.monotonicNow = monotonicNow
         self.catalogueURL = catalogueURL
@@ -3277,18 +3361,20 @@ final class FeedAssociation {
         // T8: the context this session reads and writes, kept so the menu can state what applies to it.
         self.contextKey = contextKey
         self.logicalContextKey = logicalContextKey ?? contextKey
+        self.bindingActivation = bindingActivation
         self.feeds = feeds
         let wordPolicy = wordTemplates.map { ReaderWordExclusionPolicy(database: db, templates: $0,
             context: (logicalContextKey ?? contextKey).filter.exclusions) }
-        let history = PublicationHistory(database: db)
+        let history = PublicationHistory(database: db, bindingActivation: bindingActivation)
         let context = FeedContext(key: contextKey)
         let checkpoints = SessionStore(database: db)
-        try checkpoints.activateContext(contextKey)
+        if bindingActivation == nil { try checkpoints.activateContext(contextKey) }
         var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
         if let restored = saved, !Self.mayShow(restored.edition.editorialRevision, for: contextKey,
             scoringVersion: scoringVersion) {
             // The position goes with the behaviour: the archived checkpoint of this identity holds an Edition
             // published under presentation rules that just changed, and the runtime would install it as the scope.
+            guard bindingActivation == nil else { throw FeedRunwayDriverError.policyContextMismatch }
             try checkpoints.clearActiveCheckpoint()
             try checkpoints.clearCheckpoint(for: contextKey)
             saved = nil
@@ -3317,6 +3403,7 @@ final class FeedAssociation {
             shapedSequencing = weights.isEmpty ? .recencyAlternatingSourcesBySupplyShare
                 : .recencyAlternatingSourcesByWeightedSupplyShare
         }
+        let namespaceSuffix = runtimeNamespace.map { $0 == contextKey.canonicalIdentity ? "" : "|reader:" + $0 } ?? ""
         let revision = try saved?.edition.editorialRevision ?? EditorialRevision(
             // The revision identity carries every version that changes what an Edition was published
             // under. `PublicationStore.insertEditionAndFirstSegment` rejects a second Edition whose
@@ -3326,7 +3413,9 @@ final class FeedAssociation {
             // Adding the scoring and sequencing versions keeps v2 Editions exactly as they were and gives
             // a v3 Edition its own stable identity — no checkpoint is cleared, no history is rewritten.
             id: .init(rawValue: LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
-                key: try JSONEncoder().encode(contextKey).base64EncodedString() + "|" + String(selectionVersion)
+                key: try JSONEncoder().encode(contextKey).base64EncodedString()
+                    + namespaceSuffix
+                    + "|" + String(selectionVersion)
                     + "|scoring:" + String(scoringPolicy.rawValue)
                     + "|sequencing:" + String(sequencingVersion.rawValue))),
             contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: selectionVersion),
@@ -3703,7 +3792,7 @@ final class FeedAssociation {
             // The publication cap is the runway's own published-reserve target: one opportunity publishes at most
             // what the reserve exists to hold ahead of the reader. The rest stays ready and eligible, so the next
             // opportunity publishes it — a burst that publishes every ready candidate was the defect this states away.
-            publicationLimit: Self.runwayMinimumReserveCards, wordPolicy: wordPolicy)
+            publicationLimit: Self.runwayMinimumReserveCards, wordPolicy: wordPolicy, bindingActivation: bindingActivation)
         self.driver = driver
         let relay = EvidenceRelay()
         self.relay = relay
@@ -3725,7 +3814,8 @@ final class FeedAssociation {
             // validates the live scope and revision, so this channel cannot authorize a retired context; it exists
             // because publication is not the condition under which supply arrives — a source that answers after the
             // first Edition used to leave its supply with no consumer at all.
-            onDurableSupply: { await driver.noteLocalSupplyFact() }, wordPolicy: wordPolicy)
+            onDurableSupply: { await driver.noteLocalSupplyFact() }, wordPolicy: wordPolicy,
+            bindingPublication: bindingActivation.map { .init(activation: $0, expectedActiveEditionID: bindingExpectedEditionID) })
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }
@@ -4112,12 +4202,14 @@ final class FeedAssociation {
         try install(store.state.reporting(settled))
     }
 
-    /// A visible source-rule edit reuses the current reader or its existing cold recovery path.
-    func sourceExclusionsChanged() async {
+    func sourceExclusionsChanged() async { await contentExclusionsChanged() }
+
+    /// Future word/source eligibility never changes the admitted reader.
+    func contentExclusionsChanged() async {
         let hasPresentation = await session.currentPresentation() != nil
         guard active, visible, ingressAuthorized else { return }
         if hasPresentation {
-            await driver.noteSourceExclusionsChanged()
+            await driver.noteContentExclusionsChanged()
         } else {
             // The existing recovery path can reconsider a previously excluded cold offer too.
             await foreground()
@@ -4330,6 +4422,7 @@ final class FeedAssociation {
     /// Production authorization for the drain. Background ends it (the reader is no longer on screen) and
     /// foreground restores it; `close()` ends it for good through `active`.
     @ObservationIgnored private var ingressAuthorized = true
+    @ObservationIgnored private var viewportHandoffFrozen = false
     /// The reader's instant, as the host defines it. A test injects a controlled clock; production is uptime.
     @ObservationIgnored private let monotonicNow: @Sendable () -> RunwayMonotonicTime
 
@@ -4342,6 +4435,8 @@ final class FeedAssociation {
     /// summary alone is not completion: `consumeViewportIngress` removes a fact before awaiting the viewport/driver
     /// measurement, so the last fact can still be in flight.
     var viewportDrainIdle: Bool { viewportDrain == nil && viewportIngress.isEmpty }
+    var viewportIngressIsAuthorized: Bool { ingressAuthorized }
+    @ObservationIgnored var beforeViewportDrainCompletion: (@MainActor () async -> Void)?
     #endif
 
     // MARK: - Prepared bookmark installation (R02)
@@ -4464,6 +4559,9 @@ final class FeedAssociation {
         let generation = viewportDrainGeneration
         viewportDrain = Task { [weak self] in
             await self?.consumeViewportIngress()
+            #if DEBUG
+            await self?.beforeViewportDrainCompletion?()
+            #endif
             guard let self, self.viewportDrainGeneration == generation else { return }
             self.viewportDrain = nil
             // A fact that arrived between the last take and releasing ownership must not be stranded; with no
@@ -4760,7 +4858,7 @@ final class FeedAssociation {
         // A resumed screen starts a new measurement window for useful yield as well.
         lastPublication = nil
         // R01: the reader is back on screen; the single ingress may drive again.
-        ingressAuthorized = true
+        ingressAuthorized = !viewportHandoffFrozen
         // P05: a lifecycle opportunity, not a poll: the volume may have changed while the app was away, and the
         // read stays off the MainActor.
         await storageCapacity.refresh()
@@ -4772,7 +4870,7 @@ final class FeedAssociation {
         // nil`), então quem já está medindo não paga nada.
         frameMeter.start()
         do {
-            guard active, !launching else { return }
+            guard active, !launching, !viewportHandoffFrozen else { return }
             if await session.currentPresentation() == nil {
                 // Recovery without replacing the association; a presentation that already exists is
                 // never extended here — returning to the app shows exactly what the reader left.
@@ -4863,7 +4961,36 @@ final class FeedAssociation {
         } catch { reportFailure(error) }
     }
 
+    func freezeViewportForHandoff() async {
+        viewportHandoffFrozen = true
+        let pending = viewportDrain
+        await revokeViewportIngress()
+        // Cancellation alone does not quiesce a driver/session admission already in progress.
+        await pending?.value
+    }
+
+    func resumeViewportAfterFailedHandoff() {
+        viewportHandoffFrozen = false
+        ingressAuthorized = active && visible
+    }
+
+    func refreshPreparedPosition() async throws {
+        guard let bindingActivation, try SessionStore(database: database).isPreparedBinding(bindingActivation) else { return }
+        if let snapshot = try await session.refreshPreparedPresentation(bounds) {
+            try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
+        }
+    }
+
+    func promotePreparedHistory() throws {
+        guard let bindingActivation else { return }
+        try SessionStore(database: database).promotePreparedBinding(bindingActivation)
+    }
+
     func close() async {
+        if let bindingActivation {
+            do { _ = try SessionStore(database: database).cancelPreparedBinding(bindingActivation) }
+            catch { Self.log("prepared history cancellation failed: \(error)") }
+        }
         cold.cancel()
         viewportDrain?.cancel()
         viewportDrain = nil

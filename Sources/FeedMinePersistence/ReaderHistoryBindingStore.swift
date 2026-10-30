@@ -44,6 +44,16 @@ public struct ReaderHistoryBindingStore: Sendable {
         try database.read { try Self.read(key, in: $0) }
     }
 
+    public func owner(ofEditionID editionID: FeedEditionID) throws -> Record? {
+        try database.read { db in
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT b.logical_key_json FROM reader_history_bindings b
+                JOIN reader_history_editions e ON e.binding_id = b.id WHERE e.edition_id = ?
+                """, arguments: [PersistenceValueCoding.uuid(editionID.rawValue)]) else { return nil }
+            return try Self.read(Self.key(row, field: "logical_key_json"), in: db)
+        }
+    }
+
     public func resolve(logicalKey: ContextKey, adopting adoption: Adoption? = nil) throws -> Record {
         try database.write { db in
             let existing = try Self.read(logicalKey, in: db)

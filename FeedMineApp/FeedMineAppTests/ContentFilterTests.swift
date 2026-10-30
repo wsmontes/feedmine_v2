@@ -21,16 +21,23 @@ final class ContentFilterTests: XCTestCase {
         return url
     }
 
-    private func root(directory: URL) -> AppComposition {
+    private func root(directory: URL, templates: [ReaderContentFilterTemplate]? = nil) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         configuration.timeoutIntervalForRequest = 5
         return AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+            transportConfiguration: configuration, contentFilterTemplates: templates)
     }
 
     private func setSettings(_ directory: URL, _ change: (inout ReaderSettings) -> Void) throws {
         let coordinator = ReaderSettingsCoordinator(database: try RuntimeDatabase(location: .init(directory: directory)))
+        var settings = try coordinator.settings()
+        change(&settings)
+        _ = try coordinator.update(settings)
+    }
+
+    private func setSettings(_ database: RuntimeDatabase, _ change: (inout ReaderSettings) -> Void) throws {
+        let coordinator = ReaderSettingsCoordinator(database: database)
         var settings = try coordinator.settings()
         change(&settings)
         _ = try coordinator.update(settings)
@@ -71,7 +78,8 @@ final class ContentFilterTests: XCTestCase {
         let association = try XCTUnwrap(root.association)
         let originalKey = root.currentContextKey
         XCTAssertEqual(association.logicalContextKey, originalKey)
-        XCTAssertEqual(association.contextKey.filter.exclusions.rules, ["global word"])
+        XCTAssertTrue(association.contextKey.filter.exclusions.rules.isEmpty,
+            "new publication identity contains contextual criteria, not global words")
         let confirmed = try await root.confirmFilter(ReaderFilter(languages: ["pt"]), preset: .everything)
         XCTAssertTrue(confirmed)
         let lens = root.filterSelectionForLens()
@@ -116,7 +124,7 @@ final class ContentFilterTests: XCTestCase {
         let tail = try XCTUnwrap(frozen.last)
         let a = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID == tail.sourceID })
         let b = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID != a.sourceID })
-        try setSettings(directory) { $0.contentFilterRules = ["blocked future word"] }
+        try setSettings(database) { $0.contentFilterRules = ["blocked future word"] }
         // Exercise the existing live eligibility owner directly; native root replacement is still pending.
         await association.sourceExclusionsChanged()
         let blocked = try admitWarmSupply(sourceID: a.sourceID, title: "Blocked future word A", database: database)
@@ -130,7 +138,7 @@ final class ContentFilterTests: XCTestCase {
         print("F13_NATIVE_WORD_TAIL plannedPredecessor=\(a.sourceID) allowedSource=\(b.sourceID) actualTail=\(String(describing: actualTail?.sourceID)) initialCount=\(frozenIDs.count) currentCount=\(ids.count)")
         XCTAssertFalse(revisions.contains(blocked.id))
         XCTAssertEqual(revisions.filter { $0 == allowed.id }.count, 1)
-        try setSettings(directory) { $0.contentFilterRules = [] }
+        try setSettings(database) { $0.contentFilterRules = [] }
         await association.sourceExclusionsChanged()
         try await waitForWarmPublication(blocked.id, association: association, publication: publication, requestTailDemand: true)
         ids = try publication.segments(editionID: edition).flatMap(\.cardIDs)
@@ -143,6 +151,110 @@ final class ContentFilterTests: XCTestCase {
         XCTAssertEqual(association.logicalContextKey, root.currentContextKey)
         XCTAssertEqual(association.store.state.presentation?.editionID, edition)
         await association.close()
+    }
+
+    func testNativeRawHistoryBindingSurvivesGlobalWordEditAndWarmRelaunch() async throws {
+        let directory = directory(), root = root(directory: directory)
+        await root.launch()
+        let original = try XCTUnwrap(root.association), raw = root.currentContextKey
+        let before = try XCTUnwrap(original.store.state.presentation)
+        _ = try await original.session.checkpointCurrentPosition(at: Date())
+        let database = original.database, bindings = ReaderHistoryBindingStore(database: database)
+        XCTAssertNotNil(try bindings.binding(for: raw), "native production must resolve the raw logical history")
+        let point = try SessionStore(database: database).checkpoint()
+        try setSettings(database) { $0.contentFilterRules = ["published fixture"] }
+        await root.reapplyReaderFilters()
+        XCTAssertTrue(root.association === original)
+        XCTAssertEqual(root.association?.store.state.presentation?.editionID, before.editionID)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint(), point)
+        await root.association?.close()
+        let reopened = self.root(directory: directory)
+        await reopened.launch()
+        XCTAssertEqual(reopened.currentContextKey, raw)
+        XCTAssertEqual(reopened.association?.store.state.presentation?.editionID, before.editionID)
+        XCTAssertEqual(reopened.association?.store.state.presentation?.window.anchor.cardID, point?.cardID)
+        XCTAssertEqual(try bindings.binding(for: raw)?.activeEditionID, before.editionID)
+        await reopened.association?.close()
+    }
+
+    func testNativeLegacyForwardAdoptionAndCollidingExplicitContextStayIndependent() async throws {
+        let directory = directory(), seed = root(directory: directory)
+        try setSettings(directory) { $0.contentFilterRules = ["legacy global"] }
+        let frozen = ContextKey(request: .main, filter: ReaderFilter(exclusions: .init(isEnabled: true, rules: ["legacy global"])))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 5
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let legacy = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
+            configuration: configuration, database: database, contextKey: frozen,
+            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
+        try await legacy.launch()
+        let before = try XCTUnwrap(legacy.store.state.presentation)
+        let publication = PublicationStore(database: database)
+        let record = try XCTUnwrap(publication.edition(id: before.editionID))
+        let point = try SessionStore(database: database).checkpoint()
+        await legacy.close()
+        XCTAssertNil(try ReaderHistoryBindingStore(database: database).owner(ofEditionID: before.editionID),
+            "the fixture really predates reader ownership")
+        let opened = root(directory: directory)
+        await opened.launch()
+        XCTAssertNil(opened.startupFailure)
+        let a = try XCTUnwrap(opened.association), raw = opened.currentContextKey
+        XCTAssertTrue(raw.filter.exclusions.rules.isEmpty)
+        XCTAssertEqual(a.contextKey, frozen)
+        XCTAssertEqual(a.logicalContextKey, raw)
+        XCTAssertEqual(a.store.state.presentation?.editionID, before.editionID)
+        let bindings = ReaderHistoryBindingStore(database: database)
+        let ownerA = try XCTUnwrap(bindings.binding(for: raw))
+        XCTAssertEqual(ownerA.runtimeNamespace, frozen.canonicalIdentity)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint(), point)
+        try setSettings(a.database) { $0.contentFilterRules = ["next global"] }
+        await opened.reapplyReaderFilters()
+        XCTAssertTrue(opened.association === a)
+        XCTAssertEqual(try publication.edition(id: before.editionID), record)
+        try await opened.applyFilter(frozen.filter, preset: frozen.preset)
+        let b = try XCTUnwrap(opened.association), ownerB = try XCTUnwrap(bindings.binding(for: frozen))
+        XCTAssertEqual(b.logicalContextKey, frozen)
+        XCTAssertNotEqual(ownerB.id, ownerA.id)
+        XCTAssertNotEqual(ownerB.runtimeNamespace, ownerA.runtimeNamespace)
+        let bID = try XCTUnwrap(b.store.state.presentation?.editionID)
+        XCTAssertNotEqual(bID, before.editionID)
+        XCTAssertNotEqual(try publication.edition(id: bID)?.editorialRevision.id, record.editorialRevision.id,
+            "the collision discriminator isolates revision/runway identity, not just the checkpoint row")
+        do { _ = try await a.session.checkpointCurrentPosition(at: Date()); XCTFail("retired legacy A cannot write into B") }
+        catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
+        try await opened.applyFilter(raw.filter, preset: raw.preset)
+        XCTAssertEqual(opened.association?.store.state.presentation?.editionID, before.editionID)
+        XCTAssertEqual(try publication.edition(id: before.editionID), record)
+        do { _ = try await a.session.checkpointCurrentPosition(at: Date()); XCTFail("returning A does not revive the old A callback") }
+        catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
+        await opened.association?.close()
+        _ = seed
+    }
+
+    func testUnexplainedLegacyWordsFailBeforeClaimingOrErasingTheActiveHistory() async throws {
+        let directory = directory(), seed = root(directory: directory)
+        let frozen = ContextKey(request: .main, filter: ReaderFilter(exclusions: .init(isEnabled: true, rules: ["unexplained legacy words"])))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 5
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let legacy = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
+            configuration: configuration, database: database, contextKey: frozen,
+            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
+        try await legacy.launch()
+        let before = try XCTUnwrap(legacy.store.state.presentation), publication = PublicationStore(database: database)
+        let record = try publication.edition(id: before.editionID)
+        let point = try SessionStore(database: database).checkpoint()
+        await legacy.close()
+        let opened = root(directory: directory)
+        await opened.launch()
+        XCTAssertNotNil(opened.startupFailure, "explicit recoverable choice is still pending; the host must not guess word origin")
+        XCTAssertNil(try ReaderHistoryBindingStore(database: database).binding(for: opened.currentContextKey))
+        XCTAssertEqual(try SessionStore(database: database).checkpoint(), point)
+        XCTAssertEqual(try publication.edition(id: before.editionID), record)
+        XCTAssertNil(try ReaderHistoryBindingStore(database: database).owner(ofEditionID: before.editionID))
+        _ = seed
     }
 
     /// The exclusions a **context** carries — a smart bookmark's own words, which V1 kept per preset and the V1
@@ -159,8 +271,11 @@ final class ContentFilterTests: XCTestCase {
         try await root.applyFilter(ReaderFilter(exclusions: own), preset: .smartFeed("bookmark"))
 
         let withGate = try XCTUnwrap(root.association?.contextKey).filter.exclusions
-        XCTAssertEqual(withGate.rules, ["bookmark word", "global word"],
-            "what hides content is the context's own words plus the reader's global ones")
+        XCTAssertEqual(withGate.rules, ["bookmark word"], "the frozen new context keeps its own criteria")
+        let effective = try ReaderWordExclusionPolicy(database: XCTUnwrap(root.association).database,
+            templates: [], context: own).capture()
+        XCTAssertEqual(effective.exclusions.rules, ["bookmark word", "global word"],
+            "future eligibility combines the context's own words and current global ones")
 
         try setSettings(directory) { $0.contentFiltersEnabled = false }
         await root.reapplyReaderFilters()
@@ -185,16 +300,16 @@ final class ContentFilterTests: XCTestCase {
         // What the sheet is seeded with, and what a lens chip hands back: the reader's own criteria.
         XCTAssertTrue(root.currentFilter.exclusions.rules.isEmpty,
             "the editing surface states the reader's own words, not the folded ones")
-        XCTAssertEqual(try XCTUnwrap(root.association?.contextKey).filter.exclusions.rules, ["published fixture"],
-            "while the session applies the global half, as the one place that folds it")
+        XCTAssertTrue(try XCTUnwrap(root.association?.contextKey).filter.exclusions.rules.isEmpty,
+            "global policy does not become a new publication context's own words")
 
         // A criterion that hides nothing (the content type is a criterion this build cannot enforce) is applied
         // the way the sheet applies one.
         try await root.applyFilter(ReaderFilter(contentType: .video), preset: .everything)
         XCTAssertTrue(root.currentContextKey.filter.exclusions.rules.isEmpty,
             "applying a criterion did not copy the global rules into the persisted context")
-        XCTAssertEqual(try XCTUnwrap(root.association?.contextKey).filter.exclusions.rules, ["published fixture"],
-            "the session still applies them — from the settings, not from a copy")
+        XCTAssertTrue(try XCTUnwrap(root.association?.contextKey).filter.exclusions.rules.isEmpty,
+            "global words are carried by opportunity policy rather than persisted into the new identity")
 
         // With the gate off, nothing is hidden: the fixture supply comes back.
         try setSettings(directory) { $0.contentFiltersEnabled = false }
@@ -229,7 +344,7 @@ final class ContentFilterTests: XCTestCase {
         try setSettings(directory) { $0.contentFiltersEnabled = false }
         await root.reapplyReaderFilters()
         let reopened = try XCTUnwrap(root.association)
-        XCTAssertFalse(reopened === association, "the session is rebuilt when what it hides changes")
+        XCTAssertTrue(reopened === association, "eligibility changes reuse the same reader")
         _ = try await reopened.driver.drive(resources: reopened.resources)
         XCTAssertFalse(published(reopened).isEmpty, "with the filters off the same supply is published again")
 
@@ -248,7 +363,7 @@ final class ContentFilterTests: XCTestCase {
             ReaderContentFilterTemplate(key: "unused",
                 names: ["en": "Unused"], keywords: ["en": ["nothing matches this"]])]
         let database = try RuntimeDatabase(location: .init(directory: directory))
-        _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: [])
+        _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: TrustedFeed.development.map(\.principal))
         let adapter = ReaderContentFilterAdapter(database: database, templates: catalog)
         let store = ReaderContentFilterStore(backend: adapter)
         await store.load()
@@ -263,11 +378,15 @@ final class ContentFilterTests: XCTestCase {
                 + "English plus the reader's own")
 
         await store.toggleTemplate("fixture")
-        let root = root(directory: directory)
+        let requestsBefore = FixtureTransport.requests.withLock { $0.count }
+        let root = root(directory: directory, templates: catalog)
         await root.launch()
+        XCTAssertNil(root.startupFailure)
         let association = try XCTUnwrap(root.association)
         _ = try await association.driver.drive(resources: association.resources)
-        XCTAssertTrue(published(association).isEmpty, "the template's words hide the fixture supply")
+        XCTAssertTrue(published(association).isEmpty, "the template's words hide the real fixture supply")
+        XCTAssertGreaterThan(FixtureTransport.requests.withLock { $0.count }, requestsBefore,
+            "empty selection must not make this template test pass without acquiring supply")
         XCTAssertEqual(try settings(directory).contentFilterTemplates, ["fixture"])
 
         // Turning the template off takes exactly its words and leaves the reader's own alone.
@@ -607,31 +726,14 @@ extension ContentFilterTests {
             XCTAssertTrue(frozenRecords, "\(step): every complete CardRecord")
             XCTAssertTrue(savedUnchanged, "\(step): saved card")
             XCTAssertTrue(samePosition(historicalCheckpoint), "\(step): historical context checkpoint")
-            func verifyContinuity(_ field: String, assertion: () -> Void) {
-                guard step == "add" || step == "master-on" else { assertion(); return }
-                let marker = "F13-R4-\(step)-\(field)"
-                let options = XCTExpectedFailure.Options()
-                options.isStrict = true
-                options.issueMatcher = { issue in
-                    issue.type == .assertionFailure && issue.compactDescription.contains(marker)
-                }
-                // Known product failure, not UX13 PASS. Each expectation matches one measured symptom.
-                // A fix makes the strict expectation fail until it is removed. Data checks above stay normal.
-                // Evidence and required follow-up: docs/reviews/2026-10-28-f13-word-history-r4.md.
-                XCTExpectFailure("F13/R4 open: \(marker)", options: options, failingBlock: assertion)
-            }
-            verifyContinuity("edition") {
-                XCTAssertEqual(after?.editionID, before.editionID, "F13-R4-\(step)-edition")
-            }
-            verifyContinuity("sequence") {
-                XCTAssertEqual(prefix, before.window.items.map(\.id), "F13-R4-\(step)-sequence")
-            }
-            verifyContinuity("anchor") {
-                XCTAssertEqual(after?.window.anchor, before.window.anchor, "F13-R4-\(step)-anchor")
-            }
-            verifyContinuity("position") {
-                XCTAssertTrue(samePosition(activeCheckpoint), "F13-R4-\(step)-position")
-            }
+            // These are ordinary assertions after the actual host made all eight strict expected failures pass.
+            XCTAssertTrue(root.association === original, "\(step): the same reader remains presented")
+            XCTAssertEqual(after?.editionID, before.editionID, "F13-R4-\(step)-edition")
+            XCTAssertEqual(prefix, before.window.items.map(\.id), "F13-R4-\(step)-sequence")
+            XCTAssertEqual(after?.window.anchor, before.window.anchor, "F13-R4-\(step)-anchor")
+            XCTAssertTrue(samePosition(activeCheckpoint), "F13-R4-\(step)-position")
+            XCTAssertEqual(activeCheckpoint, checkpoint, "\(step): no rule edit rewrites even the checkpoint timestamp")
+
         }
         await root.association?.close()
     }

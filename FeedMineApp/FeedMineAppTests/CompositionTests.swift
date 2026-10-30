@@ -1850,6 +1850,52 @@ final class CompositionTests: XCTestCase {
     /// The bounded summary keeps the earliest movement (the measurement anchor), the latest position and the newest
     /// fact of each semantic kind — six slots in total. A `Task` per callback (the behavior this replaces) grew the
     /// pending work by one per event; the mutation proof is recorded in the execution register.
+    func testHandoffFreezeQuiescesThePreviouslyRunningViewportDrain() async throws {
+        let (_, association) = try await launched()
+        let completion = BookmarkReadGate()
+        association.beforeViewportDrainCompletion = { _ = try? await completion.read() }
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let first = try XCTUnwrap(presentation.window.items.first?.id)
+        association.store.submitViewport(.init(anchor: .init(cardID: first, placement: .top)),
+            activity: .stationary, rendered: presentation)
+        let entered = await Self.waitUntil(5) { completion.arrivals > 0 }
+        guard entered else {
+            XCTFail("the real viewport task must reach its controlled completion boundary")
+            association.beforeViewportDrainCompletion = nil
+            await association.close()
+            return
+        }
+        let completed = Mutex(false)
+        let freeze = Task { @MainActor in
+            await association.freezeViewportForHandoff()
+            completed.withLock { $0 = true }
+        }
+        _ = await Self.waitUntil(2) { !association.viewportIngressIsAuthorized }
+        await Task.yield()
+        XCTAssertFalse(completed.withLock { $0 }, "freeze must await completion of the captured consumer, even after cancellation")
+        await association.foreground()
+        XCTAssertFalse(association.viewportIngressIsAuthorized, "foreground cannot start a second consumer during cutover")
+        XCTAssertFalse(completed.withLock { $0 })
+        completion.answer([])
+        await freeze.value
+        association.beforeViewportDrainCompletion = nil
+        XCTAssertTrue(completed.withLock { $0 })
+        XCTAssertTrue(association.viewportDrainIdle)
+        association.resumeViewportAfterFailedHandoff()
+        XCTAssertTrue(association.viewportIngressIsAuthorized)
+        await association.close()
+    }
+
+    func testHandoffRollbackCannotReopenBackgroundViewportIngress() async throws {
+        let (_, association) = try await launched()
+        await association.freezeViewportForHandoff()
+        await association.background()
+        association.resumeViewportAfterFailedHandoff()
+        XCTAssertFalse(association.viewportIngressIsAuthorized,
+            "a failed handoff cannot undo background's revocation")
+        await association.close()
+    }
+
     func testScrollIngressDoesNotAwaitProducer() async throws {
         FixtureTransport.feedItemCount.withLock { $0 = 2 }
         defer {

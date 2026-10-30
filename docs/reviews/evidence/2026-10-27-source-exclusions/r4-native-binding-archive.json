@@ -1,0 +1,127 @@
+[
+  {
+    "file": "r4-native-binding-contexts.log.gz",
+    "uncompressed_sha256": "a1c3192a31e0cdd9550a03677c71c7b41c4f446e198fc92b69d402687fdf5854",
+    "bytes": 179007
+  },
+  {
+    "file": "r4-native-binding-first-green.log.gz",
+    "uncompressed_sha256": "59f873e0da00d3bcf763c3c225bc3d91cc1c138dcaa3f84f9e2ca09611bb2f69",
+    "bytes": 7945
+  },
+  {
+    "file": "r4-native-binding-green-build.log.gz",
+    "uncompressed_sha256": "ad56b4948cc229abd06be8815111f9502ab9a50145de09ab13d2e40bdc4eb560",
+    "bytes": 229811
+  },
+  {
+    "file": "r4-native-binding-handoff-races-red-build.log.gz",
+    "uncompressed_sha256": "743be4dfd2679dc0f9cbdb0407e9bfd3e7f671f551bd4e2ee158a8ad7ea1415a",
+    "bytes": 120535
+  },
+  {
+    "file": "r4-native-binding-legacy-build.log.gz",
+    "uncompressed_sha256": "d1bd392fd7e318308222709e6db690665d0f55bdf77e13e4eb284aba2baf6c1f",
+    "bytes": 68740
+  },
+  {
+    "file": "r4-native-binding-legacy-tests.log.gz",
+    "uncompressed_sha256": "aeb36eb0283ba0adf3b2eb92f270de03232529ccef201f3848e568fd6d98a9f9",
+    "bytes": 78727
+  },
+  {
+    "file": "r4-native-binding-lifecycle-build.log.gz",
+    "uncompressed_sha256": "daae61a0cd57ce453e6b08d2557bdae8ac0cb9835b375fd290a0db9a5b2bee96",
+    "bytes": 119342
+  },
+  {
+    "file": "r4-native-binding-lifecycle-green.log.gz",
+    "uncompressed_sha256": "01c09325b541a716bf7da45490f2fc6078fc93fe997d305e1c20258c2094c224",
+    "bytes": 83072
+  },
+  {
+    "file": "r4-native-binding-nf03.log.gz",
+    "uncompressed_sha256": "d84afd639879cf9c47e212eb602216556d1fb80a7c6d20b2340c3ff63c88bb2b",
+    "bytes": 131102
+  },
+  {
+    "file": "r4-native-binding-oracle-build.log.gz",
+    "uncompressed_sha256": "318d96b908c0e4e45421220000036aefabff3182b840ce1286771eb473573f80",
+    "bytes": 126572
+  },
+  {
+    "file": "r4-native-binding-r4-and-handoff-red.log.gz",
+    "uncompressed_sha256": "0e1e8c5cb8b2aa5a074038f20974b965b19b29a130c5b2a031b6d34ff39791ba",
+    "bytes": 85511
+  },
+  {
+    "file": "r4-native-binding-r4-normal.log.gz",
+    "uncompressed_sha256": "72266671a1fb0de53458ee8402b1c6564f2cdfbcc41bd29087022103f1f2442e",
+    "bytes": 72622
+  },
+  {
+    "file": "r4-native-binding-red-build.log.gz",
+    "uncompressed_sha256": "2eca814a2b540d80fcdbf4021691f1de3b4495cc827e60da782c6207ecccdf9b",
+    "bytes": 373359
+  },
+  {
+    "file": "r4-native-binding-red.log.gz",
+    "uncompressed_sha256": "6f85d3ff49be51e865eab7685ac3ee036c5a5b4f8afb48f843e39ea1437c4794",
+    "bytes": 10457
+  },
+  {
+    "file": "r4-native-binding-typed-build.log.gz",
+    "uncompressed_sha256": "0d1da13c4990c93991e45ab1169e2e5fc295e856620f157378c12ccbf3e198df",
+    "bytes": 125335
+  },
+  {
+    "file": "r4-native-binding-green-build.patch.gz",
+    "uncompressed_sha256": "80d1e028a48690578a5369b5d6119c87bdde5d04e193865052944702a1c0722d",
+    "bytes": 32558
+  },
+  {
+    "file": "r4-native-binding-handoff-races-red-build.patch.gz",
+    "uncompressed_sha256": "65feb45dda73c22db6438dfc69c457242bfe21f8a2b1feb6b2ec749deac13d57",
+    "bytes": 36917
+  },
+  {
+    "file": "r4-native-binding-legacy-build.patch.gz",
+    "uncompressed_sha256": "744727cadfc03010f58dbad493166082d740a967084468f5013c344c225b7897",
+    "bytes": 57634
+  },
+  {
+    "file": "r4-native-binding-lifecycle-build.patch.gz",
+    "uncompressed_sha256": "5e7080f775837e61d0246bcd3ae22c13767dcb8a8e3c043c4bd48d302baa8726",
+    "bytes": 51979
+  },
+  {
+    "file": "r4-native-binding-oracle-build.patch.gz",
+    "uncompressed_sha256": "a81e2bb8ad563c0b04d45bf0f5502c47ea50186932743e410539aba77508a35a",
+    "bytes": 47549
+  },
+  {
+    "file": "r4-native-binding-red-build.patch.gz",
+    "uncompressed_sha256": "fe7f9ebe8de7abafb864edfa56fe8918d700884418c3d9d04cd4f3d7961e37e3",
+    "bytes": 2259
+  },
+  {
+    "file": "r4-native-binding-typed-build.patch.gz",
+    "uncompressed_sha256": "9a518d298822d8dd0f61b3839f27aae06e07ec394aa10e204585f972740c828a",
+    "bytes": 33152
+  },
+  {
+    "file": "r4-prepared-refresh-full.log.gz",
+    "uncompressed_sha256": "7d54caa559cc325b241c236afd82ab382fbc4fc244302714af676f7699d1c1aa",
+    "bytes": 546766
+  },
+  {
+    "file": "r4-prepared-refresh-green.log.gz",
+    "uncompressed_sha256": "4016eb3c7468b7380a581a6cc961c36f536dacb71459913c0623e3abc57922e2",
+    "bytes": 316211
+  },
+  {
+    "file": "r4-prepared-refresh-red.log.gz",
+    "uncompressed_sha256": "8c4c35e061d3263786e593516b89606016b4e1cc278aa58acd66175a41c40341",
+    "bytes": 1073
+  }
+]

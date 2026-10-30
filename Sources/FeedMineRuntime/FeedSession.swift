@@ -166,6 +166,20 @@ public actor FeedSession {
         }
     }
 
+    /// Only a hidden replacement may refresh an already materialized projection at authority cutover.
+    /// The active reader's admitted presentation retains the ordinary immutable-admission contract.
+    public func refreshPreparedPresentation(_ bounds: FeedPresentationBounds) throws -> FeedPresentationSnapshot? {
+        guard try publicationHistory.isPreparedReader() else { throw FeedSessionError.readerIsNotPrepared }
+        try validate(bounds)
+        restoredSubstitution = nil
+        presentedPosition = nil
+        durablePosition = nil
+        lastRenderedViewportOrdinal = 0
+        let snapshot = try installFromCheckpoint(bounds)
+        hasAdmittedInitial = snapshot != nil
+        return snapshot
+    }
+
     /// Observes a reading position in the current snapshot, using retained history only.
     /// Recording an observation moves the logical anchor and marks exposure. Evidence of a still
     /// rendered previous window may rematerialize its already-admitted local IDs; it cannot

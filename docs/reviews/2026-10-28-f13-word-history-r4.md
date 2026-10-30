@@ -1,6 +1,8 @@
 # F13 — palavras globais: falha de continuidade R4 — 2026-10-28
 
-**R4 FAIL na integração do host. O comportamento de produção ainda não foi corrigido.**
+**Resultado histórico deste checkpoint: R4 FAIL.**
+
+Atualização 2026-10-30: o oráculo conhecido passou com assertions ordinárias após a integração nativa. [Relatório atual](2026-10-30-f13-native-history-binding.md). Recuperação ambígua/UI/relaunch e aceitação completa continuam pendentes. A reprodução abaixo é preservada como evidência histórica.
 Base: `38396c08`. Neste checkpoint mudam teste, evidências e apontamentos; Sources e executável/dylib
 do app permanecem iguais ao build aprovado da recuperação de cauda.
 
