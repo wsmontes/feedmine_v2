@@ -153,16 +153,27 @@ jobs:
               CODE_SIGNING_ALLOWED=NO > "$log" 2>&1; then
               outcome=pass
             else
-              outcome=fail
-              failures=$((failures+1))
+              outcome=xcodebuild-fail
             fi
-            printf '%s\t%s\t%s\t%s\t%s\n' "$arm" "$repetition" "$outcome" "$sha" "$selector" >> "$REPORT_DIR/results.tsv"
             tail -n 45 "$log"
+            summary="$REPORT_DIR/$arm/run-$repetition-summary.json"
             if [[ -d "$bundle" ]]; then
               xcrun xcresulttool get test-results summary --path "$bundle" \
-                > "$REPORT_DIR/$arm/run-$repetition-summary.json" \
+                > "$summary" \
                 2> "$REPORT_DIR/$arm/run-$repetition-summary.stderr" || true
             fi
+            # A successful xcodebuild exit does NOT establish that the selected
+            # test was found or executed. Each -only-testing selector has one
+            # XCTest case: require exactly one passing, zero failed/skipped.
+            if [[ "$outcome" == pass ]]; then
+              if [[ ! -s "$summary" ]]; then
+                outcome=missing-xcresult-summary
+              elif ! python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("totalTestCount") == 1 and s.get("passedTests") == 1 and s.get("failedTests",0) == 0 and s.get("skippedTests",0) == 0 else 1)' "$summary"; then
+                outcome=wrong-xctest-count
+              fi
+            fi
+            if [[ "$outcome" != pass ]]; then failures=$((failures+1)); fi
+            printf '%s\t%s\t%s\t%s\t%s\n' "$arm" "$repetition" "$outcome" "$sha" "$selector" >> "$REPORT_DIR/results.tsv"
           }
           for repetition in 1 2 3; do
             run_one control "$repetition" "$TEST_VISUAL"
