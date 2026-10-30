@@ -4435,7 +4435,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         var seenAttempts: [Int] = []
         composition.sourceToggleBeforeCommit = { attempt in
             seenAttempts.append(attempt)
-            _ = try preferences.changeSources(adding: ["external-\\(attempt)"])
+            _ = try preferences.changeSources(adding: ["external-\(attempt)"])
         }
         defer { composition.sourceToggleBeforeCommit = nil }
 
