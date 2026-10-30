@@ -131,16 +131,25 @@ final class ReaderHostTests: XCTestCase {
         let presenter = UIViewController()
         presenter.view.backgroundColor = .systemBackground
         let scroll = UIScrollView(frame: window.bounds)
+        scroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scroll.contentInsetAdjustmentBehavior = .never
         scroll.contentSize = CGSize(width: window.bounds.width, height: 3_000)
         presenter.view.addSubview(scroll)
         window.rootViewController = presenter
         window.makeKeyAndVisible()
         defer {
+            // Even a refused presentation must not leave the UI test runner behind
+            // a second key window or an orphaned presentation.
+            if presenter.presentedViewController != nil { presenter.dismiss(animated: false) }
             window.isHidden = true
             previousKeyWindow?.makeKeyAndVisible()
         }
+        await waitUntil { presenter.view.window === window }
+        guard presenter.view.window === window, scroll.window === window else {
+            return XCTFail("the reference window was never attached to the active scene")
+        }
         scroll.setContentOffset(CGPoint(x: 0, y: 615), animated: false)
-        XCTAssertTrue(scroll.window === window, "the reference scroll is mounted before the reader opens")
+        XCTAssertEqual(scroll.contentOffset.y, 615, accuracy: 1)
 
         let platform = PlatformDouble()
         let coordinator = coordinator(platform, Recorder())
@@ -148,17 +157,21 @@ final class ReaderHostTests: XCTestCase {
         await waitUntil { platform.up != nil }
         let reader = try XCTUnwrap(platform.up)
         XCTAssertEqual(reader.modalPresentationStyle, .overFullScreen)
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            presenter.present(reader, animated: false) { continuation.resume() }
+        presenter.present(reader, animated: false)
+        // UIKit can reject a presentation without invoking completion. Poll with a
+        // finite deadline instead of parking XCTest in a checked continuation forever.
+        await waitUntil { presenter.presentedViewController === reader }
+        guard presenter.presentedViewController === reader else {
+            return XCTFail("UIKit refused the overlay presentation")
         }
         XCTAssertTrue(scroll.window === window,
             "presenting the reader must not detach the native viewport")
         XCTAssertEqual(scroll.contentOffset.y, 615, accuracy: 1,
             "presentation must not change the reader's native content offset")
 
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            presenter.dismiss(animated: false) { continuation.resume() }
-        }
+        presenter.dismiss(animated: false)
+        await waitUntil { presenter.presentedViewController == nil }
+        XCTAssertNil(presenter.presentedViewController, "the reader must dismiss from its actual presenter")
         XCTAssertTrue(scroll.window === window, "the original native viewport survives dismissal")
         XCTAssertEqual(scroll.contentOffset.y, 615, accuracy: 1,
             "dismissal must not reconstruct a different scroll position")
