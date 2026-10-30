@@ -60,8 +60,8 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
             edition,
             firstSegment: .init(id: FeedSegmentID(), editionID: edition.id,
                 ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1,
-                createdAt: Date(), cardIDs: [card.id, ready.id]),
-            cards: [card, ready],
+                createdAt: Date(), cardIDs: [ready.id, card.id]),
+            cards: [ready, card],
             initialCheckpoint: .init(editionID: edition.id, cardID: ready.id,
                 anchorPlacement: "top", updatedAt: Date()))
 
@@ -94,5 +94,19 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
             "Warm start admitted a hero card without locally decoded pixels")
         XCTAssertEqual(warm?.snapshot.window.items.map(\.id), [ready.id],
             "Warm start must keep the ready text card while withholding the invalid hero")
+
+        // An invalid forward target must not change the admitted reader position
+        // or mark an image-less card as seen in durable publication history.
+        // This is a distinct failure mode from including it in the initial list.
+        let unreadable = ViewportObservation(
+            anchor: .init(cardID: card.id, placement: .center))
+        _ = try await session.submitViewport(unreadable)
+        let afterRejected = await session.currentPresentation()
+        XCTAssertEqual(afterRejected?.window.anchor.cardID, ready.id,
+            "An unreadable image cannot become the active reader position")
+        let exposure = try XCTUnwrap(PublicationStore(database: database)
+            .hiddenTail(editionID: edition.id))
+        XCTAssertEqual(exposure.highWaterCardID, ready.id,
+            "A rejected viewport must not advance durable seen high-water")
     }
 }
