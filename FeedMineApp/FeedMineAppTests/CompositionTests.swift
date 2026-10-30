@@ -4228,13 +4228,15 @@ final class FeedFrameBudgetTests: XCTestCase {
         try await reader.value
         await secondaryAdoption.value
         let finished = ProcessInfo.processInfo.systemUptime + 5
-        while (applied.count != 5 || composition.hasPendingSourceAdoptionContinuation),
+        while composition.sourceAdoptionContinuationCompletions < 1,
             ProcessInfo.processInfo.systemUptime < finished { await Task.yield() }
 
         XCTAssertTrue(readerCompleted)
         XCTAssertEqual(applied, (0..<5).map { versionOne + UInt64($0) })
         XCTAssertEqual(composition.sourceAdoptionContinuationSchedules, 1,
             "A second bounded adoption must not schedule a duplicate continuation")
+        XCTAssertEqual(composition.sourceAdoptionContinuationCompletions, 1,
+            "Do not mistake acquisition of the gate for completion of reconciliation")
         XCTAssertFalse(composition.hasPendingSourceAdoptionContinuation)
         XCTAssertEqual(composition.waitingFilterTransitions, 0)
         let latest = try XCTUnwrap(preferences.load())
