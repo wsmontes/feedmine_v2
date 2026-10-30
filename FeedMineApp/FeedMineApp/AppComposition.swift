@@ -30,6 +30,9 @@ enum ReaderSearchFailure: Error, Equatable {
     var selectionIsSaved: Bool { if case .storedNotActivated = self { true } else { false } }
 }
 
+enum ReaderHistoryRecoveryChoice { case previousCriteria, currentCriteria }
+enum ReaderHistoryRecoveryError: Error, Equatable { case staleChoice, unavailable, selectionStoredNotActivated }
+
 /// A retained reading before recovery criteria have been chosen. It owns only local projection;
 /// no acquisition, publication driver, binding activation, checkpoint writer or lifecycle work exists here.
 @MainActor
@@ -43,6 +46,10 @@ final class ReaderHistoryRecovery {
     @ObservationIgnored private var pending = FeedAssociation.PendingViewportIngress()
     @ObservationIgnored private var ingressOrdinal: UInt64 = 0
     private(set) var failureDetail: String?
+    private(set) var isRetired = false
+    private(set) var selectedContextKey: ContextKey?
+
+    func recordSelection(_ key: ContextKey) { selectedContextKey = key }
     @ObservationIgnored lazy var store = FeedScreenStore(onViewport: { [weak self] observation, activity in
         self?.enqueue(observation, activity: activity, evidence: nil)
     }, onRenderedViewport: { [weak self] evidence, activity in
@@ -70,6 +77,7 @@ final class ReaderHistoryRecovery {
 
     private func enqueue(_ observation: ViewportObservation, activity: RunwayActivity,
         evidence: RenderedViewportEvidence?) {
+        guard !isRetired else { return }
         ingressOrdinal &+= 1
         pending.record(.init(observation: observation, activity: activity, evidence: evidence,
             sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, ordinal: ingressOrdinal))
@@ -84,18 +92,27 @@ final class ReaderHistoryRecovery {
         }
     }
 
+    func retire() {
+        isRetired = true
+        pending.removeAll()
+        delivery?.cancel()
+    }
+
     /// Admits only already-published local history. Reading here never establishes a durable choice.
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity = .forward,
         evidence: RenderedViewportEvidence? = nil) async throws {
+        guard !isRetired else { return }
         if let evidence {
             guard evidence.observation == observation, let current = store.state.presentation,
                 evidence.belongs(to: current) else { return }
         }
         let moved = try await session.submitViewport(observation, from: evidence, deliberate: true)
+        guard !isRetired else { return }
         try store.install(FeedPresentationHandoff.receive(snapshot: moved, into: store.state))
         let admission: FeedPresentationAdmission = activity == .backward
             ? .backwardScroll(observation) : .forwardScroll(observation)
         let extended = try await session.admitPresentation(admission)
+        guard !isRetired else { return }
         try store.install(FeedPresentationHandoff.receive(snapshot: extended, into: store.state))
     }
 }
@@ -105,6 +122,9 @@ final class ReaderHistoryRecovery {
 final class AppComposition {
     private(set) var association: FeedAssociation?
     private(set) var historyRecovery: ReaderHistoryRecovery?
+    #if DEBUG
+    @ObservationIgnored var beforeRecoveryPromotion: (@MainActor (FeedAssociation) async throws -> Void)?
+    #endif
     /// The product-facing message the reader sees when the composition cannot start.
     private(set) var startupFailure: String?
     /// D7-A: what the V1 upgrade carried and what remains inaccessible, owed to the reader on the first open
@@ -2245,6 +2265,60 @@ final class AppComposition {
             }
         }
         return try bindings.resolve(logicalKey: raw)
+    }
+
+    /// Saves an explicit choice first; a failed activation keeps that intent and the local preview for retry.
+    func recoverHistory(_ choice: ReaderHistoryRecoveryChoice, from recovery: ReaderHistoryRecovery) async throws {
+        guard historyRecovery === recovery, !recovery.isRetired, association == nil,
+            currentContextKey == (recovery.selectedContextKey ?? recovery.logicalContextKey) else {
+            throw ReaderHistoryRecoveryError.staleChoice
+        }
+        guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
+        guard let preferences, let database = libraryDatabase() else { throw ReaderHistoryRecoveryError.unavailable }
+        replacingSession = true
+        defer { replacingSession = false }
+        let expectedContext = currentContextKey
+        let key = choice == .previousCriteria ? recovery.publicationContextKey : recovery.logicalContextKey
+        let allowed = allowsSourceOutsideSelection(key)
+        guard try sessionState(for: key, allowsSourceOutsideSelection: allowed).key == key else {
+            throw ReaderPreferencesError.invalidSelection
+        }
+        let adoption: ReaderHistoryBindingStore.Adoption?
+        if choice == .previousCriteria {
+            let editionID = try publicationEdition(of: recovery.checkpoint, database: database)
+            adoption = .init(editionID: editionID, publicationKey: key, evidence: .exactContext,
+                checkpoint: recovery.checkpoint)
+        } else { adoption = nil }
+        _ = try ReaderHistoryBindingStore(database: database).chooseRecoveryCriteria(key, adopting: adoption,
+            preservingActiveCheckpoint: recovery.checkpoint, expectedContext: expectedContext)
+        // This is a durable user choice, even if preparing/activating its reader later fails.
+        currentContextKey = key
+        recovery.recordSelection(key)
+        var candidate: FeedAssociation?
+        do {
+            let next = try makeAssociation(contextKey: key, profile: discoveryProfile(for: key), read: nil,
+                warmLaunch: true, allowsSourceOutsideSelection: allowed, preparingReplacement: true)
+            candidate = next
+            try await next.launch()
+            #if DEBUG
+            try await beforeRecoveryPromotion?(next)
+            #endif
+            guard historyRecovery === recovery, !recovery.isRetired, association == nil,
+                currentContextKey == key, try preferences.load()?.activeContextKey == key else {
+                throw ReaderHistoryRecoveryError.staleChoice
+            }
+            try next.promotePreparedHistory(expectedLegacyCheckpoint: recovery.checkpoint)
+            // No suspension between authority promotion and installing the selected reader.
+            recovery.retire()
+            association = next
+            historyRecovery = nil
+            startupFailure = nil
+            startupFailureDetail = nil
+        } catch {
+            await candidate?.close()
+            startupFailureDetail = String(describing: error)
+            throw ReaderHistoryRecoveryError.selectionStoredNotActivated
+        }
     }
 
     private func historySelectionFailure(_ reason: HistorySelectionFailure, raw: ContextKey,
@@ -5067,9 +5141,10 @@ final class FeedAssociation {
         }
     }
 
-    func promotePreparedHistory() throws {
+    func promotePreparedHistory(expectedLegacyCheckpoint: SessionStore.CheckpointRecord? = nil) throws {
         guard let bindingActivation else { return }
-        try SessionStore(database: database).promotePreparedBinding(bindingActivation)
+        try SessionStore(database: database).promotePreparedBinding(bindingActivation,
+            expectedLegacyCheckpoint: expectedLegacyCheckpoint)
     }
 
     func close() async {

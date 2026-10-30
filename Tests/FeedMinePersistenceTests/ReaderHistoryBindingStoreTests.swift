@@ -43,6 +43,56 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
         XCTAssertEqual(try ReaderHistoryBindingStore(database: reopened).resolve(logicalKey: key([])), binding)
     }
 
+    func testRecoveryChoiceCommitsIntentAndAdoptionTogetherAndPromotionRechecksLegacyPoint() throws {
+        let db = try StorageFixture.database(self), raw = key([]), frozen = key(["old"])
+        let preferences = try prefs(db, words: [])
+        let (edition, _) = try published(db, key: frozen)
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let point = try XCTUnwrap(sessions.checkpoint())
+        let adoption = ReaderHistoryBindingStore.Adoption(editionID: edition.id, publicationKey: frozen,
+            evidence: .exactContext, checkpoint: point)
+        try db.write { try $0.execute(sql: "CREATE TRIGGER reject_recovery_choice BEFORE UPDATE ON reader_preferences BEGIN SELECT RAISE(ABORT, 'choice rejected'); END") }
+        XCTAssertThrowsError(try store.chooseRecoveryCriteria(frozen, adopting: adoption,
+            preservingActiveCheckpoint: point, expectedContext: raw))
+        XCTAssertNil(try store.owner(ofEditionID: edition.id))
+        XCTAssertNil(try store.binding(for: frozen))
+        XCTAssertEqual(try preferences.load()?.activeContextKey, raw)
+        try db.write { try $0.execute(sql: "DROP TRIGGER reject_recovery_choice") }
+        let chosen = try store.chooseRecoveryCriteria(frozen, adopting: adoption,
+            preservingActiveCheckpoint: point, expectedContext: raw)
+        XCTAssertEqual(chosen.activeEditionID, edition.id)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, frozen)
+        XCTAssertEqual(try sessions.checkpoint(), point)
+        let pending = try sessions.prepareBinding(chosen.id)
+        try db.write { try $0.execute(sql: "UPDATE session_checkpoint SET updated_at = updated_at + 1") }
+        let changed = try sessions.checkpoint()
+        XCTAssertThrowsError(try sessions.promotePreparedBinding(pending, expectedLegacyCheckpoint: point)) {
+            XCTAssertEqual($0 as? SessionStoreError, .staleHistoryBinding)
+        }
+        XCTAssertEqual(try sessions.checkpoint(), changed)
+        XCTAssertTrue(try sessions.isPreparedBinding(pending))
+        XCTAssertEqual(try sessions.checkpoint(bindingID: chosen.id), point)
+    }
+
+    func testExplicitCurrentCriteriaKeepsUnownedLegacyNamespaceAndRejectsStaleChoice() throws {
+        let db = try StorageFixture.database(self), logical = key(["old"])
+        let (edition, _) = try published(db, key: logical)
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let point = try XCTUnwrap(sessions.checkpoint())
+        let binding = try store.resolveIndependentHistory(logicalKey: logical, preservingActiveCheckpoint: point)
+        XCTAssertNotEqual(binding.runtimeNamespace, logical.canonicalIdentity)
+        XCTAssertNil(binding.activeEditionID)
+        XCTAssertNil(try store.owner(ofEditionID: edition.id))
+        XCTAssertEqual(try sessions.checkpoint(), point)
+        XCTAssertEqual(try store.resolve(logicalKey: logical), binding)
+        let other = key(["other"])
+        try sessions.clearActiveCheckpoint()
+        XCTAssertThrowsError(try store.resolveIndependentHistory(logicalKey: other, preservingActiveCheckpoint: point)) {
+            XCTAssertEqual($0 as? ReaderHistoryBindingStore.Failure, .incompatibleAdoption)
+        }
+        XCTAssertNil(try store.binding(for: other), "stale recovery choice is an atomic no-op")
+    }
+
     func testExactAdoptionPreservesFrozenHistorySaveAndCheckpoint() throws {
         let db = try StorageFixture.database(self)
         let (edition, card) = try published(db, key: key(["own"]))

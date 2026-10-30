@@ -1,6 +1,6 @@
 # F13 R4 — global words and reader continuity
 
-Status: proposed implementation contract; production remains R4 FAIL.
+Status: implementation contract in progress. The known native R4 add/off/on/remove oracle passed ordinary assertions on 2026-10-30; full F13 recovery/UI/relaunch acceptance remains open. See docs/reviews/2026-10-30-f13-native-history-binding.md.
 Baseline: `6dcf9cf4`. The preceding checkpoint made progress by recording the real host failure and a strict regression; it did not fix production.
 
 ## Intent and constraints

@@ -83,3 +83,17 @@ Ruling: use an explicit read-only PublicationHistory over the captured durable s
 No claim that preview plumbing alone fulfills ambiguity recovery. Native selection continues to fail safely until the full presentation/choice route consumes it.
 
 Task2e host-state slice: ReaderHistoryRecovery captures the active statement on initial ambiguous/unresolved selection, without a FeedAssociation/publication owners. Uses local decoder/bounds/session/store and the same bounded viewport ingress with rendered evidence. UI is intentionally not connected until recovery choices work; startup failure stays unchanged. Native test covers retained window, no ownership/position mutation, no HTTP from lifecycle/filter callbacks and delayed viewport ordinal. Remaining: explicit choices and retained inventory, retirement at chosen-association installation, rendering/empty-reader/More-menu/pt-en/tail. See docs/reviews/2026-10-30-f13-native-recovery-reader.md.
+
+## Task 2f — explicit recovery choices
+
+Ruling: choosing current criteria resolves an existing logical binding or allocates a discriminator even when the legacy namespace is still unowned. Require the displayed active checkpoint to match in that writer transaction; a stale choice is an atomic no-op. Choosing previous criteria adopts the complete frozen key via existing exact-context checkpoint evidence. Neither operation subtracts words or deletes history.
+
+Review ruling: criteria choice is a durable user intent, separate from activation. Commit binding/adoption and selected preferences in one transaction guarded by the displayed checkpoint and expected current criteria. Root immediately records selectedContextKey and keeps the preview while the prepared candidate launches. A later failure cancels/closes that candidate, retains saved intent and preview, and reports selectionStoredNotActivated; retry and a new composition honour the saved criteria. Promotion rechecks the exact legacy checkpoint in its writer before any mutation. Retire preview synchronously at installation and reject late callbacks. No await between promotion and association assignment.
+
+- [x] Independent namespace RED/GREEN and stale-choice rollback; intent/adoption atomic rollback and final checkpoint fence.
+- [x] Native previous/current criteria RED/GREEN at cutover, saved-intent failure/retry/composition recreation, final checkpoint fence and retired callbacks. Native20/0; package1849/one skip/0. Retention after future same-key checkpoints remains Task2g.
+- [ ] UI consumes choices through fixed-size More-menu and empty-reader route, retained inventory selectable, pt/en and actual UI/tail verification.
+
+## Task 2g — retain original recovery statements independently
+
+Pre-UI audit: when current raw criteria equal an unowned legacy publication key, independent namespace allocation protects revision/runway state but not the sole legacy context_checkpoints row. A later normal checkpoint from the new reader can replace that row. Before exposing recovery actions, add durable retained original statements independent of the context singleton, without claiming/merging the old Edition. Extend the read-only inventory and transactional adoption evidence to include those originals. Preserve multiple statements without latest-Edition guesses; idempotent recovery retries must not duplicate them. Cover current selection followed by later checkpoints/relaunch, exact-key collisions, archived/unknown/misfiled cards, and stale evidence. Keep UI off until this and retained-reading selection work.

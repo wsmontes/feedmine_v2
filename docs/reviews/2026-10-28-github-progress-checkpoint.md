@@ -1,5 +1,12 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — APIs de escolha de recuperação, 2026-10-30
+
+Critérios anteriores completos ou critérios atuais podem ser escolhidos pelo backend nativo. Intenção e adoção transacionadas juntas; falha posterior mantém escolha salva/preview para retry. Promoção revalida o checkpoint legado exato. **1849 testes completos, um ignorado, zero falhas; 20 testes nativos sem falhas**. [Relatório e limites](2026-10-30-f13-recovery-choices.md).
+
+UI continua desligada: antes de expor as ações, é obrigatório persistir declarações antigas fora de context_checkpoints para evitar perder a referência de posição após checkpoints futuros no mesmo contexto (Task2g), além de seleção de leituras retidas e jornadas UI. F13 continua aberto.
+
+
 ## Atualização — reader retido no host, 2026-10-30
 
 O host captura uma leitura de recuperação sem driver/publicação quando a seleção inicial falha por ambiguidade e há checkpoint ativo. Rolagem apenas local, ingresso limitado e evidência contra eventos antigos. **17 testes nativos, zero falhas**, revisão independente concluída. [Relatório](2026-10-30-f13-native-recovery-reader.md). A tela ainda não renderiza esse estado: escolhas explícitas e integração UI continuam pendentes. Pacote inalterado desde a suíte1847/um ignorado/0.

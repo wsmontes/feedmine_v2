@@ -170,14 +170,16 @@ public struct ReaderPreferencesStore: Sendable {
 
     /// Saves the active identity. `setContext(_ request:)` stays as the plain-surface convenience.
     public func setContext(_ key: ContextKey) throws -> Record {
-        try database.write { db in
-            guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
-            let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
-                activeContextKey: key, settings: current.settings,
-                preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: current.filterExpiry)
-            try Self.save(updated, in: db)
-            return updated
-        }
+        try database.write { try Self.setContext(key, in: $0) }
+    }
+
+    static func setContext(_ key: ContextKey, in db: Database) throws -> Record {
+        guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+        let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
+            activeContextKey: key, settings: current.settings,
+            preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: current.filterExpiry)
+        try Self.save(updated, in: db)
+        return updated
     }
 
     public func setContext(_ context: FeedContextRequest) throws -> Record {
@@ -189,7 +191,7 @@ public struct ReaderPreferencesStore: Sendable {
         // not empty.
         guard Set(keys).count == keys.count, keys.allSatisfy({ !$0.isEmpty }) else { throw ReaderPreferencesError.invalidSelection }
     }
-    private static func read(_ db: Database) throws -> Record? {
+    static func read(_ db: Database) throws -> Record? {
         guard let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_preferences WHERE singleton_id = 1") else { return nil }
         let keys = try JSONDecoder().decode([String].self, from: row["source_keys"] as Data)
         // Two shapes live in this column: a pre-T6 row stored the bare `FeedContextRequest`, and a row written

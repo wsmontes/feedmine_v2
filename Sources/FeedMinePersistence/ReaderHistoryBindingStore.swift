@@ -55,85 +55,127 @@ public struct ReaderHistoryBindingStore: Sendable {
     }
 
     public func resolve(logicalKey: ContextKey, adopting adoption: Adoption? = nil) throws -> Record {
+        try resolve(logicalKey: logicalKey, adopting: adoption, independentCheckpoint: nil)
+    }
+
+    /// An explicit recovery choice selects the raw criteria without borrowing an unowned legacy
+    /// namespace. The shown active statement must still be current in the same writer transaction.
+    public func resolveIndependentHistory(logicalKey: ContextKey,
+        preservingActiveCheckpoint checkpoint: SessionStore.CheckpointRecord) throws -> Record {
+        try resolve(logicalKey: logicalKey, adopting: nil, independentCheckpoint: checkpoint)
+    }
+
+    /// Commits the reader's explicit criteria choice and its ownership interpretation together.
+    /// Later activation may fail, but a relaunch must honour the choice already saved here.
+    public func chooseRecoveryCriteria(_ key: ContextKey, adopting adoption: Adoption? = nil,
+        preservingActiveCheckpoint checkpoint: SessionStore.CheckpointRecord,
+        expectedContext: ContextKey) throws -> Record {
         try database.write { db in
-            let existing = try Self.read(logicalKey, in: db)
-            if let existing, adoption == nil { return existing }
-            if let existing, let adoption, let active = existing.activeEditionID {
-                guard active == adoption.editionID else { throw Failure.activeEditionConflict }
-                guard let row = try Row.fetchOne(db, sql: """
-                    SELECT publication_key_json FROM reader_history_editions WHERE edition_id = ? AND binding_id = ?
-                    """, arguments: [PersistenceValueCoding.uuid(active.rawValue), PersistenceValueCoding.uuid(existing.id)]),
-                    try Self.key(row, field: "publication_key_json") == adoption.publicationKey else { throw Failure.incompatibleAdoption }
-                // Established ownership is a fact, not a fresh policy inference. Do not replace its provenance.
-                return existing
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
+                try SessionStore.checkpoint(row) == checkpoint,
+                try ReaderPreferencesStore.read(db)?.activeContextKey == expectedContext else {
+                throw Failure.incompatibleAdoption
             }
-            var adoptedPoint: SessionStore.CheckpointRecord?
-            var provenance: Data?
-            var kind = "exact_context"
-            if let adoption {
-                guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
-                    arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue)]) else { throw Failure.missingEdition }
-                guard try PublicationStore.decodeEdition(row).editorialRevision.contextKey == adoption.publicationKey else {
-                    throw Failure.incompatibleAdoption
-                }
-                switch adoption.evidence {
-                case .exactContext:
-                    guard logicalKey == adoption.publicationKey else { throw Failure.incompatibleAdoption }
-                case .legacyWords(let snapshot):
-                    let forward = ContextKey(request: logicalKey.request, preset: logicalKey.preset,
-                        filter: logicalKey.filter.replacing(exclusions: snapshot.exclusions), searchScope: logicalKey.searchScope,
-                        identitySchemaVersion: logicalKey.identitySchemaVersion)
-                    guard snapshot.context == logicalKey.filter.exclusions, forward == adoption.publicationKey else {
-                        throw Failure.incompatibleAdoption
-                    }
-                    guard try snapshot.matches(settings: ReaderPreferencesStore.publicationSettings(in: db)) else {
-                        throw Failure.staleAdoptionPolicy
-                    }
-                    kind = "legacy_words"
-                    provenance = try Self.encode(PolicyEvidence(snapshot))
-                }
-                if let original = adoption.checkpoint {
-                    adoptedPoint = try Self.validatedCheckpoint(original, editionID: adoption.editionID, in: db)
-                }
-                if let owner = try String.fetchOne(db,
-                    sql: "SELECT binding_id FROM reader_history_editions WHERE edition_id = ?",
-                    arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue)]),
-                    owner != existing.map({ PersistenceValueCoding.uuid($0.id) }) { throw Failure.editionAlreadyOwned }
-            }
-            let id = existing?.id ?? UUID()
-            let preferredNamespace = adoption?.publicationKey.canonicalIdentity ?? logicalKey.canonicalIdentity
-            var namespace = preferredNamespace
-            if let existing, existing.runtimeNamespace != preferredNamespace { throw Failure.runtimeNamespaceConflict }
-            if let owner = try String.fetchOne(db, sql: "SELECT id FROM reader_history_bindings WHERE runtime_namespace = ?",
-                arguments: [preferredNamespace]), owner != PersistenceValueCoding.uuid(id) {
-                guard adoption == nil else { throw Failure.runtimeNamespaceAlreadyOwned }
-                namespace = "reader-binding:" + PersistenceValueCoding.uuid(id)
-            }
-            if existing == nil {
-                try db.execute(sql: """
-                    INSERT INTO reader_history_bindings(id, logical_identity, logical_key_json, runtime_namespace)
-                    VALUES (?, ?, ?, ?)
-                    """, arguments: [PersistenceValueCoding.uuid(id), logicalKey.canonicalIdentity,
-                        try Self.encode(logicalKey), namespace])
-            }
-            if let adoption {
-                try db.execute(sql: """
-                    INSERT INTO reader_history_editions(edition_id, binding_id, publication_key_json, adoption_kind, adoption_policy_json)
-                    VALUES (?, ?, ?, ?, ?)
-                    """, arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue), PersistenceValueCoding.uuid(id),
-                        try Self.encode(adoption.publicationKey), kind, provenance])
-                try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
-                    arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue), PersistenceValueCoding.uuid(id)])
-                if let adoptedPoint {
-                    try SessionStore.persistOwned(adoptedPoint, bindingID: id, in: db)
-                } else {
-                    try SessionStore.seedBindingCheckpoint(bindingID: id, editionID: adoption.editionID, in: db)
-                }
-            }
-            guard let result = try Self.read(logicalKey, in: db) else { throw Failure.corruption }
-            return result
+            let binding = try Self.resolve(logicalKey: key, adopting: adoption,
+                independentCheckpoint: adoption == nil ? checkpoint : nil, in: db)
+            _ = try ReaderPreferencesStore.setContext(key, in: db)
+            return binding
         }
     }
+
+    private func resolve(logicalKey: ContextKey, adopting adoption: Adoption?,
+        independentCheckpoint: SessionStore.CheckpointRecord?) throws -> Record {
+        try database.write { db in
+            try Self.resolve(logicalKey: logicalKey, adopting: adoption,
+                independentCheckpoint: independentCheckpoint, in: db)
+        }
+    }
+
+    private static func resolve(logicalKey: ContextKey, adopting adoption: Adoption?,
+        independentCheckpoint: SessionStore.CheckpointRecord?, in db: Database) throws -> Record {
+        if let independentCheckpoint {
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
+                try SessionStore.checkpoint(row) == independentCheckpoint else { throw Failure.incompatibleAdoption }
+        }
+        let existing = try Self.read(logicalKey, in: db)
+        if let existing, adoption == nil { return existing }
+        if let existing, let adoption, let active = existing.activeEditionID {
+            guard active == adoption.editionID else { throw Failure.activeEditionConflict }
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT publication_key_json FROM reader_history_editions WHERE edition_id = ? AND binding_id = ?
+                """, arguments: [PersistenceValueCoding.uuid(active.rawValue), PersistenceValueCoding.uuid(existing.id)]),
+                try Self.key(row, field: "publication_key_json") == adoption.publicationKey else { throw Failure.incompatibleAdoption }
+            // Established ownership is a fact, not a fresh policy inference. Do not replace its provenance.
+            return existing
+        }
+        var adoptedPoint: SessionStore.CheckpointRecord?
+        var provenance: Data?
+        var kind = "exact_context"
+        if let adoption {
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
+                arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue)]) else { throw Failure.missingEdition }
+            guard try PublicationStore.decodeEdition(row).editorialRevision.contextKey == adoption.publicationKey else {
+                throw Failure.incompatibleAdoption
+            }
+            switch adoption.evidence {
+            case .exactContext:
+                guard logicalKey == adoption.publicationKey else { throw Failure.incompatibleAdoption }
+            case .legacyWords(let snapshot):
+                let forward = ContextKey(request: logicalKey.request, preset: logicalKey.preset,
+                    filter: logicalKey.filter.replacing(exclusions: snapshot.exclusions), searchScope: logicalKey.searchScope,
+                    identitySchemaVersion: logicalKey.identitySchemaVersion)
+                guard snapshot.context == logicalKey.filter.exclusions, forward == adoption.publicationKey else {
+                    throw Failure.incompatibleAdoption
+                }
+                guard try snapshot.matches(settings: ReaderPreferencesStore.publicationSettings(in: db)) else {
+                    throw Failure.staleAdoptionPolicy
+                }
+                kind = "legacy_words"
+                provenance = try Self.encode(PolicyEvidence(snapshot))
+            }
+            if let original = adoption.checkpoint {
+                adoptedPoint = try Self.validatedCheckpoint(original, editionID: adoption.editionID, in: db)
+            }
+            if let owner = try String.fetchOne(db,
+                sql: "SELECT binding_id FROM reader_history_editions WHERE edition_id = ?",
+                arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue)]),
+                owner != existing.map({ PersistenceValueCoding.uuid($0.id) }) { throw Failure.editionAlreadyOwned }
+        }
+        let id = existing?.id ?? UUID()
+        let preferredNamespace = adoption?.publicationKey.canonicalIdentity ?? logicalKey.canonicalIdentity
+        var namespace = independentCheckpoint == nil ? preferredNamespace
+            : "reader-binding:" + PersistenceValueCoding.uuid(id)
+        if let existing, existing.runtimeNamespace != preferredNamespace { throw Failure.runtimeNamespaceConflict }
+        if let owner = try String.fetchOne(db, sql: "SELECT id FROM reader_history_bindings WHERE runtime_namespace = ?",
+            arguments: [preferredNamespace]), owner != PersistenceValueCoding.uuid(id) {
+            guard adoption == nil else { throw Failure.runtimeNamespaceAlreadyOwned }
+            namespace = "reader-binding:" + PersistenceValueCoding.uuid(id)
+        }
+        if existing == nil {
+            try db.execute(sql: """
+                INSERT INTO reader_history_bindings(id, logical_identity, logical_key_json, runtime_namespace)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [PersistenceValueCoding.uuid(id), logicalKey.canonicalIdentity,
+                    try Self.encode(logicalKey), namespace])
+        }
+        if let adoption {
+            try db.execute(sql: """
+                INSERT INTO reader_history_editions(edition_id, binding_id, publication_key_json, adoption_kind, adoption_policy_json)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue), PersistenceValueCoding.uuid(id),
+                    try Self.encode(adoption.publicationKey), kind, provenance])
+            try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",
+                arguments: [PersistenceValueCoding.uuid(adoption.editionID.rawValue), PersistenceValueCoding.uuid(id)])
+            if let adoptedPoint {
+                try SessionStore.persistOwned(adoptedPoint, bindingID: id, in: db)
+            } else {
+                try SessionStore.seedBindingCheckpoint(bindingID: id, editionID: adoption.editionID, in: db)
+            }
+        }
+        guard let result = try Self.read(logicalKey, in: db) else { throw Failure.corruption }
+        return result
+    }
+
 
     private static func validatedCheckpoint(_ original: SessionStore.CheckpointRecord,
         editionID: FeedEditionID, in db: Database) throws -> SessionStore.CheckpointRecord {

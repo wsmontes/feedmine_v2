@@ -1,7 +1,7 @@
 import XCTest
 import Foundation
 import FeedMineDomain
-import FeedMinePersistence
+@testable import FeedMinePersistence
 import FeedMineComposition
 import FeedMineUI
 import FeedMineRuntime
@@ -231,6 +231,127 @@ final class ContentFilterTests: XCTestCase {
         catch { XCTAssertEqual(error as? SessionStoreError, .staleHistoryBinding) }
         await opened.association?.close()
         _ = seed
+    }
+
+    private func unresolvedRecoveryFixture() async throws -> (AppComposition, ReaderHistoryRecovery, ContextKey, FeedEditionID, URL) {
+        let directory = directory(), seed = root(directory: directory)
+        let frozen = ContextKey(request: .main, filter: ReaderFilter(exclusions:
+            .init(isEnabled: true, rules: ["unexplained recovery words"])))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let legacy = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
+            configuration: configuration, contextKey: frozen,
+            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
+        try await legacy.launch()
+        let edition = try XCTUnwrap(legacy.store.state.presentation).editionID
+        await legacy.close()
+        let opened = root(directory: directory)
+        await opened.launch()
+        _ = seed
+        return (opened, try XCTUnwrap(opened.historyRecovery), frozen, edition, directory)
+    }
+
+    func testFailedRecoveryActivationKeepsSavedChoiceForRetryAndCompositionRelaunch() async throws {
+        for previous in [true, false] {
+            for relaunch in [false, true] {
+                let (opened, recovery, frozen, oldEdition, directory) = try await unresolvedRecoveryFixture()
+                let raw = opened.currentContextKey, selected = previous ? frozen : raw
+                opened.beforeRecoveryPromotion = { _ in throw NSError(domain: "recovery-test", code: 1) }
+                do {
+                    try await opened.recoverHistory(previous ? .previousCriteria : .currentCriteria, from: recovery)
+                    XCTFail("the injected activation failure must be surfaced")
+                } catch { XCTAssertEqual(error as? ReaderHistoryRecoveryError, .selectionStoredNotActivated) }
+                XCTAssertEqual(opened.currentContextKey, selected)
+                XCTAssertEqual(recovery.selectedContextKey, selected)
+                XCTAssertFalse(recovery.isRetired)
+                XCTAssertTrue(opened.historyRecovery === recovery)
+                XCTAssertNil(opened.association)
+                let installed: FeedAssociation
+                if relaunch {
+                    let restarted = root(directory: directory)
+                    await restarted.launch()
+                    XCTAssertEqual(restarted.currentContextKey, selected)
+                    XCTAssertNil(restarted.historyRecovery)
+                    installed = try XCTUnwrap(restarted.association)
+                } else {
+                    opened.beforeRecoveryPromotion = nil
+                    try await opened.recoverHistory(previous ? .previousCriteria : .currentCriteria, from: recovery)
+                    installed = try XCTUnwrap(opened.association)
+                    XCTAssertTrue(recovery.isRetired)
+                }
+                XCTAssertEqual(installed.logicalContextKey, selected)
+                XCTAssertEqual(installed.store.state.presentation?.editionID == oldEdition, previous)
+                await installed.close()
+            }
+        }
+    }
+
+    func testRecoveryPromotionRejectsALegacyPointChangedDuringPreparation() async throws {
+        let (opened, recovery, _, oldEdition, _) = try await unresolvedRecoveryFixture()
+        var changed: SessionStore.CheckpointRecord?
+        opened.beforeRecoveryPromotion = { candidate in
+            try candidate.database.write { try $0.execute(sql: "UPDATE session_checkpoint SET updated_at = updated_at + 1") }
+            changed = try SessionStore(database: candidate.database).checkpoint()
+        }
+        do {
+            try await opened.recoverHistory(.currentCriteria, from: recovery)
+            XCTFail("the final writer fence must reject changed legacy evidence")
+        } catch { XCTAssertEqual(error as? ReaderHistoryRecoveryError, .selectionStoredNotActivated) }
+        XCTAssertNotEqual(changed, recovery.checkpoint)
+        XCTAssertTrue(opened.historyRecovery === recovery)
+        XCTAssertFalse(recovery.isRetired)
+        XCTAssertNil(opened.association)
+        XCTAssertEqual(recovery.store.state.presentation?.editionID, oldEdition)
+    }
+
+    func testExplicitRecoveryChoicesPreserveLegacyHistoryAndRetireOldCallbacks() async throws {
+        for previous in [true, false] {
+            let directory = directory(), seed = root(directory: directory)
+            let frozen = ContextKey(request: .main, filter: ReaderFilter(exclusions:
+                .init(isEnabled: true, rules: ["unexplained recovery words"])))
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [FixtureTransport.self]
+            let database = try RuntimeDatabase(location: .init(directory: directory))
+            let legacy = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
+                configuration: configuration, database: database, contextKey: frozen,
+                catalogueURL: nil, editorialExposure: EditorialExposureLedger())
+            try await legacy.launch()
+            let old = try XCTUnwrap(legacy.store.state.presentation)
+            await legacy.close()
+            let point = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            let record = try PublicationStore(database: database).edition(id: old.editionID)
+            let opened = root(directory: directory)
+            await opened.launch()
+            let recovery = try XCTUnwrap(opened.historyRecovery), raw = opened.currentContextKey
+            try await opened.recoverHistory(previous ? .previousCriteria : .currentCriteria, from: recovery)
+            let chosen = try XCTUnwrap(opened.association)
+            XCTAssertNil(opened.historyRecovery)
+            XCTAssertNil(opened.startupFailure)
+            XCTAssertEqual(chosen.logicalContextKey, previous ? frozen : raw)
+            XCTAssertEqual(opened.currentContextKey, chosen.logicalContextKey)
+            let bindings = ReaderHistoryBindingStore(database: chosen.database)
+            let binding = try XCTUnwrap(bindings.binding(for: chosen.logicalContextKey))
+            if previous {
+                XCTAssertEqual(chosen.store.state.presentation?.editionID, old.editionID)
+                XCTAssertEqual(try SessionStore(database: chosen.database).checkpoint(), point)
+                XCTAssertEqual(binding.activeEditionID, old.editionID)
+            } else {
+                XCTAssertNotEqual(chosen.store.state.presentation?.editionID, old.editionID)
+                XCTAssertNotEqual(binding.runtimeNamespace, raw.canonicalIdentity)
+                XCTAssertNil(try bindings.owner(ofEditionID: old.editionID))
+                XCTAssertEqual(try SessionStore(database: chosen.database).checkpoint(for: frozen), point)
+            }
+            XCTAssertEqual(try PublicationStore(database: chosen.database).edition(id: old.editionID), record)
+            let after = recovery.store.state.presentation
+            try await recovery.viewport(ViewportObservation(anchor: old.window.anchor))
+            XCTAssertEqual(recovery.store.state.presentation, after)
+            do {
+                try await opened.recoverHistory(.currentCriteria, from: recovery)
+                XCTFail("a callback from the retired recovery surface must be refused")
+            } catch { XCTAssertEqual(error as? ReaderHistoryRecoveryError, .staleChoice) }
+            await chosen.close()
+            _ = seed
+        }
     }
 
     func testUnexplainedLegacyWordsFailBeforeClaimingOrErasingTheActiveHistory() async throws {

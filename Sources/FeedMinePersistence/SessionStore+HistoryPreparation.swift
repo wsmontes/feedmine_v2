@@ -80,8 +80,13 @@ extension SessionStore {
     }
 
     /// The same captured token becomes current. No callback reacquires authority during this cutover.
-    public func promotePreparedBinding(_ handle: BindingActivation) throws {
+    public func promotePreparedBinding(_ handle: BindingActivation,
+        expectedLegacyCheckpoint: CheckpointRecord? = nil) throws {
         try database.write { db in
+            if let expectedLegacyCheckpoint {
+                guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
+                    try Self.checkpoint(row) == expectedLegacyCheckpoint else { throw SessionStoreError.staleHistoryBinding }
+            }
             let prepared = try Self.requirePreparation(handle, in: db), fields = PublicationRecordFields(prepared)
             let editionID = try fields.optionalUUID("edition_id").map { FeedEditionID(rawValue: $0) }
             let present = try fields.integer("checkpoint_present") == 1

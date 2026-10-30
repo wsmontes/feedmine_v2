@@ -1,0 +1,70 @@
+{
+  "package_binary": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests",
+  "package_binary_sha256": "be34011c5462bdd00543d202236c3ff4186a2835a3bd5052ee063d382961b41f",
+  "archives": [
+    {
+      "file": "recovery-choice-atomic-green.log.gz",
+      "uncompressed_sha256": "c971978fe8b76cf5b3e007a11ef0d8664d55266fa7b5a1f5576f7894c8e38d0b"
+    },
+    {
+      "file": "recovery-choice-atomic-red.log.gz",
+      "uncompressed_sha256": "cf8fc35746c3a8d481123786e21f28a5b065f949ed7ce85d059f0e13e1ae7da8"
+    },
+    {
+      "file": "recovery-choice-full.log.gz",
+      "uncompressed_sha256": "1ffdf67b8ebf64685a85ed5d18ae4b2c97289bb024d365402f00f17c8f55bead"
+    },
+    {
+      "file": "recovery-choice-namespace-green.log.gz",
+      "uncompressed_sha256": "a505cf5d41cf784774d647afc218e89ac3bab39ff0935604d6c74776fdd652f0"
+    },
+    {
+      "file": "recovery-choice-namespace-red.log.gz",
+      "uncompressed_sha256": "a1f42eb570242b918e39bee2cbda056a8141cc73a62d5135f0f89baa9ea11b1c"
+    },
+    {
+      "file": "recovery-native-choice-atomic-build.log.gz",
+      "uncompressed_sha256": "cbee5e505b6f614135343cfa18e1e87847e46b10c33f25640232d4cea268fcf3"
+    },
+    {
+      "file": "recovery-native-choice-atomic-tests.log.gz",
+      "uncompressed_sha256": "43bf423058895e80b8255203d93d5c3e289736d3f1123b6c2d19adc6e62fa598"
+    },
+    {
+      "file": "recovery-native-choice-atomic-typed-build.log.gz",
+      "uncompressed_sha256": "3f53cb238c9350b6c468ef0b658d4bacbb879382a99e9a4c001359a346d22c29"
+    },
+    {
+      "file": "recovery-native-choice-green-build.log.gz",
+      "uncompressed_sha256": "45d44790b6de7962b27d5ebaf568af0cac2a6499dba9d21e8edfcc4b15329ce5"
+    },
+    {
+      "file": "recovery-native-choice-red-build.log.gz",
+      "uncompressed_sha256": "ad345fd27dea46d9f7b85e6286d0d2dfc301cf3ea4b094cfa85261cb9c08a887"
+    },
+    {
+      "file": "recovery-native-choice-tests.log.gz",
+      "uncompressed_sha256": "85f5bd240a23476c20e175b1d7d904824eb88bbdd322a2e31c13a90f1a5f2fe1"
+    },
+    {
+      "file": "recovery-native-choice-atomic-build.patch.gz",
+      "uncompressed_sha256": "51f01098c3503c5d53a6cfdd3f5e4bac958ccab9f44466fabb5b49b27da9bfaa"
+    },
+    {
+      "file": "recovery-native-choice-atomic-typed-build.patch.gz",
+      "uncompressed_sha256": "e7e3f861d4889e431f2c4a085c74a64f32826fc9a8fe103dc51216045edea5d8"
+    },
+    {
+      "file": "recovery-native-choice-green-build.patch.gz",
+      "uncompressed_sha256": "1cbfb5a9942cfaf23f6128673d63c9afa7bccf337f998a5ae9aeb01ca9c9c9de"
+    },
+    {
+      "file": "recovery-native-choice-red-build.patch.gz",
+      "uncompressed_sha256": "1d8877776d2c70678b80738eea0cd414212f3be1fae5117bdeb6228a4d39b73b"
+    },
+    {
+      "file": "recovery-choice-source.patch.gz",
+      "uncompressed_sha256": "d10df53a291c84c74294751a7c503d74af913e31124fce9de0e4d223afa441f1"
+    }
+  ]
+}
