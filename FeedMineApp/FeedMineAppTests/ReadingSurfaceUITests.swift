@@ -294,6 +294,10 @@ final class ReadingSurfaceUITests: XCTestCase {
         }
         XCTAssertNotNil(UUID(uuidString: field("captureInstance", in: before) ?? ""),
             "before opening Safari, the capture adapter must have a real identity")
+        XCTAssertEqual(field("captureBindingMatches", in: before), "true",
+            "the accessibility probe must read the same adapter as the current SwiftUI capture")
+        XCTAssertNotNil(UUID(uuidString: field("captureBindingInstance", in: before) ?? ""),
+            "the bound capture must report a valid identity")
         XCTAssertEqual(field("scrollAttached", in: before), "true",
             "the initial probe must resolve an attached native UIScrollView")
         XCTAssertGreaterThan(Int(field("scrollInstances", in: before) ?? "") ?? -1, 0,
@@ -304,7 +308,8 @@ final class ReadingSurfaceUITests: XCTestCase {
             "the initial publication must have a positive revision")
         XCTAssertTrue(before.contains("positionID=") && before.contains("presentedTop="),
             "the first observation must include a visual capture position")
-        XCTAssertTrue(after.contains("captureInstance=") && after.contains("scrollInstances=")
+        XCTAssertTrue(after.contains("captureInstance=") && after.contains("captureBindingInstance=")
+            && after.contains("captureBindingMatches=") && after.contains("scrollInstances=")
             && after.contains("windowSequence=") && after.contains("windowRevision=")
             && after.contains("positionID=") && after.contains("presentedTop="),
             "a missing post-dismissal diagnostic is itself evidence of hierarchy loss")
