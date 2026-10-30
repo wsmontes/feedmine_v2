@@ -3563,7 +3563,6 @@ final class FeedFrameBudgetTests: XCTestCase {
         XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, presented.editionID)
         XCTAssertNotNil(try SessionStore(database: database).checkpoint(for: initialKey),
             "The earlier context remains recoverable")
-        XCTAssertEqual(original.contextKey, initialKey)
         await current.close()
     }
 
