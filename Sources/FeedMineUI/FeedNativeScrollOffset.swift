@@ -38,15 +38,18 @@ final class FeedNativeScrollOffset {
     private(set) var probeMounts = 0
     private(set) var probeUnmounts = 0
     private(set) var distinctScrollViews = 0
-    private var lastScrollIdentity: ObjectIdentifier?
+    // The old ObjectIdentifier-only witness survived deallocation. UIKit may
+    // eventually reuse that address for a new scroll, hiding a remount.
+    // A weak object witness becomes nil on deinit and cannot mistake that
+    // subsequent allocation for the same still-live scroll view.
+    private weak var lastResolvedScroll: UIScrollView?
     func noteProbeWindowMove(attached: Bool) {
         if attached { probeMounts += 1 } else { probeUnmounts += 1 }
     }
     func noteResolvedScroll(_ scroll: UIScrollView) {
-        let identity = ObjectIdentifier(scroll)
-        if lastScrollIdentity != identity {
+        if lastResolvedScroll !== scroll {
             distinctScrollViews += 1
-            lastScrollIdentity = identity
+            lastResolvedScroll = scroll
         }
     }
     private(set) var activeWrites = 0
