@@ -333,7 +333,10 @@ private struct FeedViewportDiagnosticReadout: UIViewRepresentable {
                     "positionID=\(card(visual?.positionID))",
                     "presentedTop=\(card(visual?.motion.presentedTop))",
                     "acknowledgedTop=\(card(visual?.motion.acknowledgedPresentedTop))",
-                    "holding=\(visual?.interaction.isHolding ?? false)"
+                    "holding=\(visual?.interaction.isHolding ?? false)",
+                    // Deliberately last: consumers that read a truncated AX
+                    // snapshot must not mistake a partial diagnostic for proof.
+                    "diagnosticComplete=1"
                 ].joined(separator: ";")
             }
             set { /* A diagnostic always reflects current reader state. */ }
