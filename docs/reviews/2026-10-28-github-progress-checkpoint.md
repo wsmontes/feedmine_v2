@@ -1,5 +1,11 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — identidade lógica nativa, 2026-10-29
+
+FeedAssociation separa critérios lógicos da identidade congelada. Corrigidos handoff pendente e confirmação desnecessária após editar apenas palavras globais; a lente pendente usa critérios contextuais originais. Os owners frio/ativo nativos agora capturam a política estrita de palavras por oportunidade. Prova real de primeira publicação, bloqueio/reversão futura e transições: **34 testes nativos distintos, zero falhas inesperadas**, incluindo o oráculo R4 com suas falhas esperadas mantidas. [Relatório](2026-10-29-f13-native-logical-identity.md).
+
+R4 continua FAIL; reapplyReaderFilters ainda reconstrói o reader. Ownership/ativação nativa, ambiguidades e aceitação UI/relaunch permanecem pendentes. A tentativa de revisão independente desta etapa encontrou limite de uso e não produziu revisão. PR em rascunho.
+
 ## Atualização — inventário antes de ativação, 2026-10-29
 
 Consulta somente leitura de todos os históricos raw/current-forward sem proprietário, com evidência de posição original resolvida pelo card e sem escolher automaticamente a Edition mais recente. Cobertura atual: **32 testes afetados, zero falhas**, revisão independente sem achados pendentes. Última suíte completa: 1829/um ignorado/0 no checkpoint anterior 589f3470. [Relatório](2026-10-29-f13-legacy-history-inventory.md).

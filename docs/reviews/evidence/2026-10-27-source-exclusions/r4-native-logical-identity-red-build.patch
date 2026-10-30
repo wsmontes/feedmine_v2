@@ -1,0 +1,31 @@
+diff --git a/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift b/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
+index e800ec0c..72c9d3cd 100644
+--- a/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
++++ b/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
+@@ -44,6 +44,26 @@ final class ContentFilterTests: XCTestCase {
+         (association?.store.state.presentation?.window.items ?? []).compactMap(\.title)
+     }
+ 
++    func testGlobalWordEditDoesNotCreateAPendingContextHandoff() async throws {
++        let directory = directory(), root = root(directory: directory)
++        await root.launch()
++        let association = try XCTUnwrap(root.association)
++        let originalKey = root.currentContextKey
++        let before = association.store.state.presentation
++        try setSettings(directory) { $0.contentFilterRules = ["future only global"] }
++        XCTAssertFalse(root.isFilterHandoffPending,
++            "a global policy edit is not an explicit context selection")
++        let lens = root.filterSelectionForLens()
++        XCTAssertFalse(lens.isPending)
++        XCTAssertEqual(lens.filter, originalKey.filter)
++        XCTAssertEqual(lens.preset, originalKey.preset)
++        let confirmed = try await root.confirmFilter(originalKey.filter, preset: originalKey.preset)
++        XCTAssertFalse(confirmed, "confirming unchanged contextual criteria cannot become a new transition because globals changed")
++        XCTAssertTrue(root.association === association)
++        XCTAssertEqual(association.store.state.presentation, before)
++        await association.close()
++    }
++
+     /// The exclusions a **context** carries — a smart bookmark's own words, which V1 kept per preset and the V1
+     /// importer preserves — are not replaced by the reader's global filters, and the master switch masks only the
+     /// global half.

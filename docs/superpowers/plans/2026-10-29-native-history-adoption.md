@@ -32,3 +32,15 @@ Native NF03 prepares a replacement while the previous reader is displayed and ch
 - [x] RED inventory tests: exact/forward, active card-authoritative candidate, multiple retained histories, exclusion of owned history/collision, stale snapshot, no ownership/activation/checkpoint mutation.
 - [x] Implement inventory, verify (32/0) and independent review. See docs/reviews/2026-10-29-f13-legacy-history-inventory.md.
 - [ ] Consume inventory in native root with handoff/ambiguity recovery.
+
+## Task 2b — native logical identity / frozen publication identity split
+
+FeedAssociation gains immutable logicalContextKey, defaulting to its publication context for direct/legacy constructors. AppComposition passes raw session.key independently of the current applied publication key. Audit context intent comparisons (warm discovery guard, filter confirmation/pending/lens, saved preset no-op, supersession and install guards) to use logical identity. Menu context facts use logical criteria; history/editorial policy/bounds keep the frozen publication key.
+
+- [x] Native RED: editing globals without changing raw criteria must not report a filter handoff pending or confirm an unchanged raw filter as a new context transition.
+- [x] Implement identity split and audit consumers; actual native iOS validation: 34 distinct tests, zero unexpected failures (known strict R4 reproducer retained).
+- [ ] Independent review of native identity/policy wiring: attempt returned usage-limit error, no review. See docs/reviews/2026-10-29-f13-native-logical-identity.md.
+
+This does not yet change reapplyReaderFilters or activate bindings. The existing native R4 expected failures must remain until the whole reading-continuity path is wired and proven.
+
+Dependency discovered during the intent-guard audit: changing install/supersession guards to logical equality is safe only when publications independently capture current word policy. This slice therefore supplies one immutable catalogue/raw-context descriptor to both native cold/live owners. Direct constructors retain the default nil behavior. New native cold test keeps the same owner/frozen union, disables globals and verifies effective rules through real publication, including overlapping contextual words.

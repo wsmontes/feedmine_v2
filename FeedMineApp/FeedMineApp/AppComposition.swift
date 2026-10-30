@@ -676,7 +676,7 @@ final class AppComposition {
             // after the reader moved is stale **for this session** — it keeps its value under its own key in the
             // one cache (`discoveryRead`) and changes nothing here. Without this, a pool prepared for profile A
             // could be published into the session reading B (A→B, A concluding last).
-            if let read, association === current, current.active, current.contextKey == key,
+            if let read, association === current, current.active, current.logicalContextKey == currentContextKey,
                 current.discoveryProfile == profile, read.profile == profile,
                 read.fingerprint == fingerprint {
                 current.adopt(read)
@@ -1094,7 +1094,7 @@ final class AppComposition {
     func confirmFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws -> Bool {
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
             searchScope: currentContextKey.searchScope)
-        guard key != currentContextKey || association?.contextKey != applied(key) else { return false }
+        guard key != currentContextKey || association?.logicalContextKey != key else { return false }
         guard let store = preferences else {
             throw ReaderFilterFailure.persistenceFailed(detail: "missing preferences")
         }
@@ -1149,12 +1149,12 @@ final class AppComposition {
     /// confirmed-but-not-presented one.
     var isFilterHandoffPending: Bool {
         guard let association else { return false }
-        return association.contextKey != applied(currentContextKey)
+        return association.logicalContextKey != currentContextKey
     }
 
     func filterSelectionForLens() -> (filter: ReaderFilter, preset: ReaderPresetID, isPending: Bool) {
         if let association, isFilterHandoffPending {
-            return (association.contextKey.filter, association.contextKey.preset, true)
+            return (association.logicalContextKey.filter, association.logicalContextKey.preset, true)
         }
         return (currentFilter, currentPreset, false)
     }
@@ -1227,7 +1227,7 @@ final class AppComposition {
         // that leaves the context key alone still changes what the feed ranks, and the running session must not
         // keep publishing under the revision it was built for.
         let (_, version) = scoring(for: key)
-        if let current = association, current.contextKey == key,
+        if let current = association, current.logicalContextKey == key,
             current.policy.scoringPolicyVersion.rawValue == version { return }
         replacingSession = true
         defer { replacingSession = false }
@@ -2097,7 +2097,8 @@ final class AppComposition {
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
             discoveryProfile: profile, contextSourceDisplayName: sourceContextDisplayName,
             warmLaunch: warmLaunch, launchSettings: launchSettings, visitFeed: visitFeed,
-            monotonicNow: monotonicNow, bookmarkRead: bookmarkRead)
+            monotonicNow: monotonicNow, bookmarkRead: bookmarkRead,
+            logicalContextKey: session.key, wordTemplates: contentFilterTemplates)
         #if DEBUG
         sessionConstructions += 1
         #endif
@@ -2515,7 +2516,7 @@ final class AppComposition {
                 // A newer confirmation makes this attempt obsolete: it may neither install nor report a failure
                 // that belongs to the older selection.
                 let superseded = { [self] in
-                    self.pendingRebuild || self.applied(self.currentContextKey) != self.applied(intended)
+                    self.pendingRebuild || self.currentContextKey != intended
                 }
                 let next: FeedAssociation
                 do {
@@ -2533,7 +2534,7 @@ final class AppComposition {
                     throw error
                 }
                 // A newer confirmation changed the key while this launch was in flight: it must not install.
-                guard next.contextKey == applied(currentContextKey) else {
+                guard next.logicalContextKey == currentContextKey else {
                     await next.close()
                     continue
                 }
@@ -2550,7 +2551,7 @@ final class AppComposition {
                 // The checkpoint crossed an await and a newer confirmation can commit during it. Revalidate with
                 // no await between this fence and the assignment: the association the screen gets is the key that
                 // is current at the instant of installation, never the one that was current before retirement.
-                guard next.contextKey == applied(currentContextKey) else {
+                guard next.logicalContextKey == currentContextKey else {
                     await next.close()
                     continue
                 }
@@ -2706,7 +2707,7 @@ final class FeedAssociation {
         case .save: self.toggleBookmark(event.cardID)
         default: self.perform(event.action, cardID: event.cardID)
         }
-    }, availableDestinations: Self.readerDestinations(for: contextKey),
+    }, availableDestinations: Self.readerDestinations(for: logicalContextKey),
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
         onCancelSearch: { [weak self] in self?.onCancelSearch?() },
         onNavigate: { [weak self] destination in self?.onNavigate?(destination) },
@@ -2841,20 +2842,20 @@ final class FeedAssociation {
     /// T8: which of V1's menu entries apply for this session's context. The entries, their order and their
     /// labels stay V1's (`ReaderMenuEntry.standard`); only which of them apply is decided here.
     func refreshMenuDestinations() {
-        var destinations = Self.readerDestinations(for: contextKey)
-        let criteria = contextKey.filter.activeCriteria.count
+        var destinations = Self.readerDestinations(for: logicalContextKey)
+        let criteria = logicalContextKey.filter.activeCriteria.count
         let committed: Bool = {
-            if case .search = contextKey.request { return true }
+            if case .search = logicalContextKey.request { return true }
             return false
         }()
         if !committed, criteria < 2 { destinations.remove(.collectionFromContextPrompt) }
         if !committed { destinations.remove(.smartFeedPrompt) }
-        switch contextKey.preset {
+        switch logicalContextKey.preset {
         case .smartFeed, .curatedFeed: break
         default: destinations.remove(.smartFeedDeletion)
         }
         // V1 offered the hood and its deletion only while the reader was on a curated feed.
-        if !contextKey.preset.isCurated {
+        if !logicalContextKey.preset.isCurated {
             destinations.remove(.curatedInspector)
             destinations.remove(.curatedDeletion)
         }
@@ -2869,8 +2870,10 @@ final class FeedAssociation {
     @ObservationIgnored var preferredBookmarkListID: () -> String = { ReaderBookmarkList.defaultID }
     /// T9: a card's media action. The app owns the player, so the association only reports the occurrence.
     @ObservationIgnored var onMedia: ((PublicationCardID) -> Void)?
-    /// The identity this session is on. It does not change for the life of the association.
+    /// Frozen publication identity used by history, revisions and presentation bounds.
     let contextKey: ContextKey
+    /// The reader's explicit criteria. Global settings never become contextual intent.
+    let logicalContextKey: ContextKey
     /// What this session ranks by: eligibility, scoring (a curated feed's weights), sequencing and exposure.
     let policy: ResolvedSelectionPolicy
     /// The feeds this session was built over: a card's source id names one of them, and its principal is the
@@ -3254,7 +3257,8 @@ final class FeedAssociation {
         launchSettings: CollectionLaunchSettings = .init(),
         visitFeed: TrustedFeed? = nil,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
-        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) throws {
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil,
+        logicalContextKey: ContextKey? = nil, wordTemplates: [ReaderContentFilterTemplate]? = nil) throws {
         self.trace = trace
         self.monotonicNow = monotonicNow
         self.catalogueURL = catalogueURL
@@ -3272,7 +3276,10 @@ final class FeedAssociation {
         }
         // T8: the context this session reads and writes, kept so the menu can state what applies to it.
         self.contextKey = contextKey
+        self.logicalContextKey = logicalContextKey ?? contextKey
         self.feeds = feeds
+        let wordPolicy = wordTemplates.map { ReaderWordExclusionPolicy(database: db, templates: $0,
+            context: (logicalContextKey ?? contextKey).filter.exclusions) }
         let history = PublicationHistory(database: db)
         let context = FeedContext(key: contextKey)
         let checkpoints = SessionStore(database: db)
@@ -3696,7 +3703,7 @@ final class FeedAssociation {
             // The publication cap is the runway's own published-reserve target: one opportunity publishes at most
             // what the reserve exists to hold ahead of the reader. The rest stays ready and eligible, so the next
             // opportunity publishes it — a burst that publishes every ready candidate was the defect this states away.
-            publicationLimit: Self.runwayMinimumReserveCards)
+            publicationLimit: Self.runwayMinimumReserveCards, wordPolicy: wordPolicy)
         self.driver = driver
         let relay = EvidenceRelay()
         self.relay = relay
@@ -3718,7 +3725,7 @@ final class FeedAssociation {
             // validates the live scope and revision, so this channel cannot authorize a retired context; it exists
             // because publication is not the condition under which supply arrives — a source that answers after the
             // first Edition used to leave its supply with no consumer at all.
-            onDurableSupply: { await driver.noteLocalSupplyFact() })
+            onDurableSupply: { await driver.noteLocalSupplyFact() }, wordPolicy: wordPolicy)
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }

@@ -1,0 +1,95 @@
+{
+  "logs": {
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-contexts.log.gz": {
+      "sha256_uncompressed": "4b11ae9539a3ec33201c161bd349a939e227be0f322189be86b8330a5925341e",
+      "bytes": 174836
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-final-build.log.gz": {
+      "sha256_uncompressed": "723541461fbd63766e73ace1db38df0faa14fcf390b736bf2158553c34a71346",
+      "bytes": 68740
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-green-build.log.gz": {
+      "sha256_uncompressed": "3cfea23b75f12926d57b1c7896e706a19cd2ffa5393bf0a127505e34f0dc91c6",
+      "bytes": 126154
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-green.log.gz": {
+      "sha256_uncompressed": "89906194370bbf72cc07a6248e460ca0ded9670f70f7129393cae46d48dd89bc",
+      "bytes": 74342
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-handoff.log.gz": {
+      "sha256_uncompressed": "c57f6df315747f19473ca119c926c13d389349bd76eb9439dd6e28b70be82356",
+      "bytes": 133861
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-diagnostic-build.log.gz": {
+      "sha256_uncompressed": "2f912acff61db1e23d2dbef67d72331c7ed898c507e313f74683ee6def9ca54f",
+      "bytes": 67535
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-diagnostic.log.gz": {
+      "sha256_uncompressed": "e63e7fe621e1732a995a0cef7bd3d4395f28e77acaa8ca4445cb70c8307c32cb",
+      "bytes": 14078
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-fact-build.log.gz": {
+      "sha256_uncompressed": "02d2a96b9a2ce2f33f7ad438a21fe8d42fad2d9699792ad89ba4400569603728",
+      "bytes": 61860
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-fact.log.gz": {
+      "sha256_uncompressed": "4ef5a2c1a95821f039d43fb304063463760b97eafa7a5a86992a5aaa8cafe01b",
+      "bytes": 9902
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live.log.gz": {
+      "sha256_uncompressed": "f855226fef2950324dcff2dd2e60943e8f9b3ec842f4589d34e57f3420737d3e",
+      "bytes": 13638
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-red-build.log.gz": {
+      "sha256_uncompressed": "82fa67eeb2c99cd8f1bcfc6fcceeeb1a8761858901cd19ce2ffe61633c5bb0bd",
+      "bytes": 490490
+    },
+    "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-red.log.gz": {
+      "sha256_uncompressed": "73d5751df2161a3d75a7e9f8f7f123f76c16b620f6184b72dcf9ff6f3683d9ac",
+      "bytes": 8184
+    }
+  },
+  "files": {
+    "FeedMineApp/FeedMineApp/AppComposition.swift": "6ce9a3d37ccde8d7bced55df201e0bf75eca18c87e95d290d97b8721190f9bab",
+    "FeedMineApp/FeedMineAppTests/ContentFilterTests.swift": "847802445d493a62868dadc0555fcc1b779219b3b0a2e7ab30f0175b238c84de"
+  },
+  "results": [
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-contexts.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-contexts.xcresult",
+      "exit_code": 0
+    },
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-green.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-green.xcresult",
+      "exit_code": 0
+    },
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-handoff.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-handoff.xcresult",
+      "exit_code": 0
+    },
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-diagnostic.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-live-diagnostic.xcresult",
+      "exit_code": 65
+    },
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live-fact.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-live-fact.xcresult",
+      "exit_code": 0
+    },
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-live.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-live.xcresult",
+      "exit_code": 65
+    },
+    {
+      "report": "docs/reviews/evidence/2026-10-27-source-exclusions/r4-native-logical-identity-red.json",
+      "path": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/r4-native-logical-identity-red.xcresult",
+      "exit_code": 65
+    }
+  ],
+  "native_production_binary_sha256": "120863c2ffc14c2dac1c19e07f4c003e9d4e420e9e1229dfbb23989b2c9fa4ca",
+  "review": "attempted; usage limit; pending"
+}

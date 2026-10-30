@@ -44,6 +44,107 @@ final class ContentFilterTests: XCTestCase {
         (association?.store.state.presentation?.window.items ?? []).compactMap(\.title)
     }
 
+    func testGlobalWordEditDoesNotCreateAPendingContextHandoff() async throws {
+        let directory = directory(), root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let originalKey = root.currentContextKey
+        let before = association.store.state.presentation
+        try setSettings(directory) { $0.contentFilterRules = ["future only global"] }
+        XCTAssertFalse(root.isFilterHandoffPending,
+            "a global policy edit is not an explicit context selection")
+        let lens = root.filterSelectionForLens()
+        XCTAssertFalse(lens.isPending)
+        XCTAssertEqual(lens.filter, originalKey.filter)
+        XCTAssertEqual(lens.preset, originalKey.preset)
+        let confirmed = try await root.confirmFilter(originalKey.filter, preset: originalKey.preset)
+        XCTAssertFalse(confirmed, "confirming unchanged contextual criteria cannot become a new transition because globals changed")
+        XCTAssertTrue(root.association === association)
+        XCTAssertEqual(association.store.state.presentation, before)
+        await association.close()
+    }
+
+    func testPendingLensUsesPreviousLogicalCriteriaWithoutCopyingGlobalWords() async throws {
+        let directory = directory(), root = root(directory: directory)
+        try setSettings(directory) { $0.contentFilterRules = ["global word"] }
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let originalKey = root.currentContextKey
+        XCTAssertEqual(association.logicalContextKey, originalKey)
+        XCTAssertEqual(association.contextKey.filter.exclusions.rules, ["global word"])
+        let confirmed = try await root.confirmFilter(ReaderFilter(languages: ["pt"]), preset: .everything)
+        XCTAssertTrue(confirmed)
+        let lens = root.filterSelectionForLens()
+        XCTAssertTrue(lens.isPending)
+        XCTAssertEqual(lens.filter, originalKey.filter)
+        XCTAssertEqual(lens.preset, originalKey.preset)
+        XCTAssertTrue(lens.filter.exclusions.rules.isEmpty,
+            "a pending lens cannot copy frozen global words into a contextual edit")
+        await association.close()
+    }
+
+    func testNativeColdOwnerUsesCurrentWordsInsteadOfFrozenGlobalUnion() async throws {
+        for ownMatches in [false, true] {
+            let directory = directory(), root = root(directory: directory)
+            try setSettings(directory) { $0.contentFilterRules = ["published fixture"] }
+            let own = ReaderContentExclusions(isEnabled: true, rules: [ownMatches ? "published fixture" : "own word"])
+            _ = try await root.confirmFilter(ReaderFilter(exclusions: own), preset: .smartFeed("word-owner"))
+            await root.launch()
+            let association = try XCTUnwrap(root.association)
+            XCTAssertTrue(published(association).isEmpty)
+            let frozen = association.contextKey
+            XCTAssertEqual(association.logicalContextKey.filter.exclusions, own)
+            try setSettings(directory) { $0.contentFiltersEnabled = false }
+            // Same owner and frozen key; deliberately do not invoke the root's still-pending replacement path.
+            try await association.launch()
+            XCTAssertTrue(root.association === association)
+            XCTAssertEqual(association.contextKey, frozen)
+            XCTAssertEqual(published(association).isEmpty, ownMatches,
+                "master-off masks only global words; contextual words still apply to the real cold opportunity")
+            await association.close()
+        }
+    }
+
+    func testNativeLiveOwnerAppliesAndReversesWordsWithoutRewritingFrozenCards() async throws {
+        let directory = directory(), root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association), database = association.database
+        let publication = PublicationStore(database: database)
+        let edition = try XCTUnwrap(association.store.state.presentation).editionID
+        let frozenIDs = try publication.segments(editionID: edition).flatMap(\.cardIDs)
+        let frozen = try frozenIDs.map { try XCTUnwrap(publication.card(id: $0)) }
+        let tail = try XCTUnwrap(frozen.last)
+        let a = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID == tail.sourceID })
+        let b = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID != a.sourceID })
+        try setSettings(directory) { $0.contentFilterRules = ["blocked future word"] }
+        // Exercise the existing live eligibility owner directly; native root replacement is still pending.
+        await association.sourceExclusionsChanged()
+        let blocked = try admitWarmSupply(sourceID: a.sourceID, title: "Blocked future word A", database: database)
+        let allowed = try admitWarmSupply(sourceID: b.sourceID, title: "Allowed future B", database: database)
+        // Direct fixture ingestion must state the same durable-supply fact as a real acquisition receipt.
+        await association.driver.noteLocalSupplyFact()
+        try await waitForWarmPublication(allowed.id, association: association, publication: publication, requestTailDemand: true)
+        var ids = try publication.segments(editionID: edition).flatMap(\.cardIDs)
+        var revisions = try ids.map { try XCTUnwrap(publication.card(id: $0)).originRevisionID }
+        let actualTail = try publication.card(id: XCTUnwrap(ids.last))
+        print("F13_NATIVE_WORD_TAIL plannedPredecessor=\(a.sourceID) allowedSource=\(b.sourceID) actualTail=\(String(describing: actualTail?.sourceID)) initialCount=\(frozenIDs.count) currentCount=\(ids.count)")
+        XCTAssertFalse(revisions.contains(blocked.id))
+        XCTAssertEqual(revisions.filter { $0 == allowed.id }.count, 1)
+        try setSettings(directory) { $0.contentFilterRules = [] }
+        await association.sourceExclusionsChanged()
+        try await waitForWarmPublication(blocked.id, association: association, publication: publication, requestTailDemand: true)
+        ids = try publication.segments(editionID: edition).flatMap(\.cardIDs)
+        revisions = try ids.map { try XCTUnwrap(publication.card(id: $0)).originRevisionID }
+        XCTAssertEqual(revisions.filter { $0 == blocked.id }.count, 1)
+        XCTAssertEqual(revisions.filter { $0 == allowed.id }.count, 1)
+        XCTAssertEqual(Array(ids.prefix(frozenIDs.count)), frozenIDs)
+        for card in frozen { XCTAssertEqual(try publication.card(id: card.id), card) }
+        XCTAssertTrue(root.association === association)
+        XCTAssertEqual(association.logicalContextKey, root.currentContextKey)
+        XCTAssertEqual(association.store.state.presentation?.editionID, edition)
+        await association.close()
+    }
+
     /// The exclusions a **context** carries — a smart bookmark's own words, which V1 kept per preset and the V1
     /// importer preserves — are not replaced by the reader's global filters, and the master switch masks only the
     /// global half.
