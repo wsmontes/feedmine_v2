@@ -43,13 +43,26 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
             mediaMimeType: "image/png", renderLayout: "hero",
             renderMediaAspectRatio: 1.5, primaryActionKind: nil,
             primaryActionReference: nil)
+        // A fully ready text card must remain readable when the earlier image
+        // cannot be decoded; rejecting the entire edition is not a valid fix.
+        let ready = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Ready text", primaryText: "No media required",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil,
+            mediaMimeType: nil, renderLayout: "textOnly",
+            renderMediaAspectRatio: nil, primaryActionKind: nil,
+            primaryActionReference: nil)
         try PublicationStore(database: database).createInitialEdition(
             edition,
             firstSegment: .init(id: FeedSegmentID(), editionID: edition.id,
                 ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1,
-                createdAt: Date(), cardIDs: [card.id]),
-            cards: [card],
-            initialCheckpoint: .init(editionID: edition.id, cardID: card.id,
+                createdAt: Date(), cardIDs: [card.id, ready.id]),
+            cards: [card, ready],
+            initialCheckpoint: .init(editionID: edition.id, cardID: ready.id,
                 anchorPlacement: "top", updatedAt: Date()))
 
         let history = PublicationHistory(database: database)
@@ -67,6 +80,8 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
         } ?? false
         XCTAssertFalse(missingOnRestore,
             "Restore admitted a hero card without locally decoded pixels")
+        XCTAssertEqual(restored?.window.items.map(\.id), [ready.id],
+            "Restore must keep the ready text card while withholding the invalid hero")
 
         // The synchronous warm-launch path must enforce the identical gate
         // before the first feed frame, not rely on later UI repair.
@@ -77,5 +92,7 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
         } ?? false
         XCTAssertFalse(missingOnWarmStart,
             "Warm start admitted a hero card without locally decoded pixels")
+        XCTAssertEqual(warm?.snapshot.window.items.map(\.id), [ready.id],
+            "Warm start must keep the ready text card while withholding the invalid hero")
     }
 }
