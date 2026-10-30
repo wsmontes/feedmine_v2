@@ -140,7 +140,7 @@ final class AppComposition {
     @ObservationIgnored var sourceToggleBeforeCommit: ((Int) throws -> Void)?
     /// One-shot test seam for an external edit committed after launch but before
     /// the toggle's final durability check.
-    @ObservationIgnored var sourceToggleDidLaunch: (() throws -> Void)?
+    @ObservationIgnored var sourceToggleDidLaunch: (() async throws -> Void)?
     var hasPendingSourceAdoptionContinuation: Bool { sourceAdoptionContinuationPending }
     #endif
 
@@ -766,7 +766,7 @@ final class AppComposition {
         #if DEBUG
         // Keep test-only external writers separate from the already committed
         // toggle. A failing fixture must not roll back a successful reader choice.
-        do { try sourceToggleDidLaunch?() }
+        do { try await sourceToggleDidLaunch?() }
         catch { Self.log("post-launch toggle test seam failed: \(String(describing: error))") }
         #endif
         // Source management writes outside the transition gate. A change can
@@ -785,6 +785,10 @@ final class AppComposition {
         // a failed selection change.
         do { try await searchSources("") }
         catch { Self.log("source picker refresh after committed toggle failed: \(String(describing: error))") }
+        // An editorial answer can request replaceSession() while the toggle
+        // owns this gate. That call marks pendingRebuild and returns; process it
+        // before releasing the gate instead of silently discarding the request.
+        if pendingRebuild { try await rebuildSessionWhileTransitionLocked() }
     }
 
     func selectContext(_ request: FeedContextRequest) async throws {
