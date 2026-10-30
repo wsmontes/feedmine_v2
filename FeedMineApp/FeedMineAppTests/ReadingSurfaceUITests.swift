@@ -124,6 +124,16 @@ final class ReadingSurfaceUITests: XCTestCase {
         add(shot)
     }
 
+    // Only collect the expensive accessibility hierarchy when the opt-in
+    // diagnostic node disappears. A screenshot alone cannot establish whether
+    // UIKit removed the view or XCTest filtered it from its element tree.
+    private func attachDiagnosticAccessibilityTree(_ app: XCUIApplication, stage: String) {
+        let tree = XCTAttachment(string: String(app.debugDescription.prefix(20_000)))
+        tree.name = "safari-diagnostic-ax-tree-\(stage)"
+        tree.lifetime = .keepAlways
+        add(tree)
+    }
+
     /// Opens the first card the feed presents and returns its identity plus its frame, so the return can be
     /// measured on this surface.
     @discardableResult
@@ -262,6 +272,7 @@ final class ReadingSurfaceUITests: XCTestCase {
         // implementation detail. Query the stable identifier across all types.
         let diagnostic = byIdentifier(app, "native-viewport-diagnosis")
         guard diagnostic.waitForExistence(timeout: 20) else {
+            attachDiagnosticAccessibilityTree(app, stage: "initial")
             attach(app, "safari-diagnosis-probe-missing-at-start")
             return XCTFail("debug diagnostic must be accessible")
         }
@@ -280,6 +291,7 @@ final class ReadingSurfaceUITests: XCTestCase {
         }
         let before = diagnosticSample()
         guard before != "diagnostic-missing" else {
+            attachDiagnosticAccessibilityTree(app, stage: "before-safari")
             attach(app, "safari-diagnosis-probe-lost-during-scroll")
             return XCTFail("native diagnostic disappeared before opening Safari")
         }
@@ -305,6 +317,9 @@ final class ReadingSurfaceUITests: XCTestCase {
         attachment.name = "safari-native-window-anchor-diagnosis"
         attachment.lifetime = .keepAlways
         add(attachment)
+        if immediatelyAfter == "diagnostic-missing" || after == "diagnostic-missing" {
+            attachDiagnosticAccessibilityTree(app, stage: "after-safari")
+        }
         attach(app, "safari-native-window-anchor-diagnosis")
         // Merely finding a key is not enough: "captureInstance=none" or
         // "scrollInstances=-1" would otherwise pass without a real native proof.
