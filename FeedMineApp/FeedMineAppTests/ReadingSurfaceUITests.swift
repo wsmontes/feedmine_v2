@@ -259,14 +259,28 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(scroll.waitForExistence(timeout: 180))
         XCTAssertTrue(waitForAVisibleCard(app, within: 180))
         let diagnostic = app.otherElements["native-viewport-diagnosis"].firstMatch
-        XCTAssertTrue(diagnostic.waitForExistence(timeout: 20), "debug diagnostic must be accessible")
-        let initial = diagnostic.value as? String ?? "diagnostic-unavailable"
+        guard diagnostic.waitForExistence(timeout: 20) else {
+            attach(app, "safari-diagnosis-probe-missing-at-start")
+            return XCTFail("debug diagnostic must be accessible")
+        }
+        // If Safari dismissal destroys the probe, querying .value directly
+        // throws an XCTest snapshot error before its evidence attachment is saved.
+        // Re-evaluate the live query at each observation and record absence.
+        func diagnosticSample() -> String {
+            guard diagnostic.exists else { return "diagnostic-missing" }
+            return diagnostic.value as? String ?? "diagnostic-unavailable"
+        }
+        let initial = diagnosticSample()
         for _ in 0..<8 { scroll.swipeUp(velocity: .fast) }
         guard let tracked = settledVisibleCard(app, within: 30) else {
             attach(app, "safari-diagnosis-setup-unsettled")
             return XCTFail("no stable card after the eight reader gestures")
         }
-        let before = diagnostic.value as? String ?? "diagnostic-unavailable"
+        let before = diagnosticSample()
+        guard before != "diagnostic-missing" else {
+            attach(app, "safari-diagnosis-probe-lost-during-scroll")
+            return XCTFail("native diagnostic disappeared before opening Safari")
+        }
         let card = byIdentifier(app, tracked.identity)
         XCTAssertTrue(card.exists && card.isHittable)
         let opener = openControl(card)
@@ -274,11 +288,15 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20))
         app.buttons["Close"].tap()
         XCTAssertTrue(app.buttons["Close"].waitForNonExistence(timeout: 20))
-        let after = diagnostic.value as? String ?? "diagnostic-unavailable"
+        let immediatelyAfter = diagnosticSample()
         let returned = byIdentifier(app, tracked.identity)
         let finalFrame = settledFrame(of: returned, within: 20)
+        // The feed may remount while the card frame settles. Keep both
+        // samples: a single delayed read obscures a transient loss of UIKit.
+        let after = diagnosticSample()
         let attachment = XCTAttachment(string: [
-            "initial=\(initial)", "before=\(before)", "after=\(after)",
+            "initial=\(initial)", "before=\(before)",
+            "immediatelyAfter=\(immediatelyAfter)", "afterSettled=\(after)",
             "tracked=\(tracked.identity)", "beforeY=\(tracked.frame.minY)",
             "afterY=\(finalFrame.map { String(describing: $0.minY) } ?? "missing")"
         ].joined(separator: "\n"))
