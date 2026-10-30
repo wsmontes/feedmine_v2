@@ -3962,6 +3962,69 @@ final class FeedFrameBudgetTests: XCTestCase {
         await reopened.association?.close()
     }
 
+    /// A source-management surface persists edits without taking this composition's
+    /// transition gate. If two edits happen while discovery holds a replacement,
+    /// adoption must reread the *latest* version when it finally acquires the gate.
+    func testExternalSelectionAdoptionQueuedBehindRebuildUsesLatestVersion() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        await launchAnsweringInitialDiscovery(composition, gate: gate)
+        XCTAssertNil(composition.startupFailure)
+        let originalFeeds = composition.feeds
+        XCTAssertGreaterThanOrEqual(originalFeeds.count, 3)
+        let initialKey = composition.currentContextKey
+        let oldAssociation = try XCTUnwrap(composition.association)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let initial = try XCTUnwrap(preferences.load())
+        var settings = initial.settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let rebuilding = Task { try await composition.replaceSession() }
+        let heldRead = await gate.nextRead()
+        let first = try preferences.changeSources(removing: [originalFeeds[0].principal])
+        let adopting = Task { await composition.adoptSelectionChange() }
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < deadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1,
+            "Adoption must wait rather than changing the active session in flight")
+        XCTAssertEqual(composition.currentContextKey, initialKey)
+        XCTAssertEqual(composition.feeds.map(\.principal), originalFeeds.map(\.principal))
+        XCTAssertEqual(try preferences.load()?.selectionVersion, first.selectionVersion)
+
+        // The second external commit supersedes the first while adoption is queued.
+        let latest = try preferences.changeSources(removing: [originalFeeds[1].principal])
+        XCTAssertEqual(latest.selectionVersion, first.selectionVersion + 1)
+        gate.answer(heldRead, entries: [], subjects: [:])
+        try await rebuilding.value
+        await adopting.value
+
+        let expectedSources = originalFeeds.dropFirst(2).map(\.principal)
+        XCTAssertEqual(try preferences.load()?.selectionVersion, latest.selectionVersion)
+        XCTAssertEqual(composition.feeds.map(\.principal), expectedSources)
+        let expectedRequest: FeedContextRequest = expectedSources.count == 1
+            ? .source(originalFeeds[2].sourceID) : .main
+        XCTAssertEqual(composition.currentContextKey.request, expectedRequest)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, composition.currentContextKey)
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertTrue(active.active)
+        XCTAssertEqual(active.feeds.map(\.principal), expectedSources)
+        XCTAssertFalse(oldAssociation.active)
+        if let presented = active.store.state.presentation {
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID,
+                presented.editionID)
+        }
+        await active.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
