@@ -322,6 +322,7 @@ private struct FeedViewportDiagnosticReadout: UIViewRepresentable {
                     "windowHead=\(card(window?.items.first?.id))",
                     "windowTail=\(card(window?.items.last?.id))",
                     "windowAnchor=\(card(window?.anchor.cardID))",
+                    "windowSequence=\(snapshot?.provenance.sequenceID.uuidString ?? "none")",
                     "windowRevision=\(snapshot.map { String(describing: $0.provenance.position) } ?? "none")",
                     "positionID=\(card(visual?.positionID))",
                     "presentedTop=\(card(visual?.motion.presentedTop))",
