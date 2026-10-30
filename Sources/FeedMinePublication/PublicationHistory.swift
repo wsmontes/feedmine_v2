@@ -12,6 +12,7 @@ public enum PublicationHistoryError: Error, Equatable, Sendable {
     case invalidWindow
     case inconsistentRestore
     case invalidExposureRequest
+    case readOnlyHistory
 }
 
 /// How a restore reached the reader's card. A position is the reader's, so it is never replaced silently: the one
@@ -64,11 +65,22 @@ public struct PublicationHistory: Sendable {
     private let publicationStore: PublicationStore
     private let sessionStore: SessionStore
     private let bindingActivation: SessionStore.BindingActivation?
+    private let previewCheckpoint: SessionStore.CheckpointRecord?
 
     public init(database: RuntimeDatabase, bindingActivation: SessionStore.BindingActivation? = nil) {
         publicationStore = PublicationStore(database: database)
         sessionStore = SessionStore(database: database)
         self.bindingActivation = bindingActivation
+        previewCheckpoint = nil
+    }
+
+    /// Projects a captured retained statement before an explicit recovery choice. This value never
+    /// activates ownership, follows a newer singleton, saves position, or records presentation as seen.
+    public init(database: RuntimeDatabase, previewing checkpoint: SessionStore.CheckpointRecord) {
+        publicationStore = PublicationStore(database: database)
+        sessionStore = SessionStore(database: database)
+        bindingActivation = nil
+        previewCheckpoint = checkpoint
     }
 
     public func isPreparedReader() throws -> Bool {
@@ -77,6 +89,10 @@ public struct PublicationHistory: Sendable {
     }
 
     public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID) throws {
+        if previewCheckpoint != nil {
+            try validateBinding(editionID: editionID)
+            return
+        }
         if let bindingActivation, try sessionStore.isPreparedBinding(bindingActivation) {
             try sessionStore.validateBinding(bindingActivation, editionID: editionID)
             return // A hidden replacement's projection is not a presented/seen event.
@@ -229,6 +245,7 @@ public struct PublicationHistory: Sendable {
 
     /// Persists a logical cursor for an explicit session checkpoint milestone.
     public func saveCursor(_ cursor: SessionCursor, updatedAt: Date) throws {
+        guard previewCheckpoint == nil else { throw PublicationHistoryError.readOnlyHistory }
         try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt),
             bindingActivation: bindingActivation)
     }
@@ -244,6 +261,14 @@ public struct PublicationHistory: Sendable {
     }
 
     private func readCheckpoint(contextKey: ContextKey?) throws -> SessionStore.CheckpointRecord? {
+        if let previewCheckpoint {
+            if let contextKey {
+                let (cursor, _) = try resolved(PublicationPersistenceMapping.cursor(previewCheckpoint))
+                guard try publicationStore.edition(id: cursor.editionID)?.editorialRevision.contextKey == contextKey
+                else { return nil }
+            }
+            return previewCheckpoint
+        }
         if let bindingActivation {
             return try sessionStore.checkpoint(bindingActivation: bindingActivation, contextKey: contextKey)
         }
@@ -251,6 +276,10 @@ public struct PublicationHistory: Sendable {
     }
 
     private func validateBinding(editionID: FeedEditionID) throws {
+        if let previewCheckpoint {
+            let (cursor, _) = try resolved(PublicationPersistenceMapping.cursor(previewCheckpoint))
+            guard cursor.editionID == editionID else { throw PublicationHistoryError.inconsistentRestore }
+        }
         if let bindingActivation { try sessionStore.validateBinding(bindingActivation, editionID: editionID) }
     }
 

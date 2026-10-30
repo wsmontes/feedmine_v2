@@ -1,5 +1,10 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — preview de recuperação, 2026-10-30
+
+PublicationHistory pode projetar um checkpoint capturado sem ativar ownership, gravar posição ou registrar visto. Card-authoritative/archived/unknown preservados. **1847 testes completos, um ignorado, zero falhas**; foco21/0 e revisão independente concluída. [Relatório](2026-10-30-f13-recovery-preview.md). A interface/seleção da recuperação ambígua ainda não consome esta API e permanece pendente; a validação nativa42 refere-se ao checkpoint anterior.
+
+
 ## Atualização — integração nativa, 2026-10-30
 
 Bindings/preparação agora consumidos pelo host, com promoção NF03 após drain/checkpoint e isolamento de namespaces. Mudanças globais preservam a associação apresentada. **Oráculo R4 conhecido passou com assertions ordinárias**, sem wrappers de falha esperada. Pacote completo: **1846 testes, um ignorado, zero falhas**. Nativo: **42 testes distintos, zero falhas**, revisão independente concluída. [Relatório e limites](2026-10-30-f13-native-history-binding.md).

@@ -103,6 +103,11 @@ final class PublicationOwnedHistoryTests: XCTestCase {
                     ? .nearestNeighbour(withdrawn: missing, landedOn: cards[1].id)
                     : .unknownCard(landedOn: cards[0].id))
                 XCTAssertNil(restored.cursor.progress, "a substitute card must not inherit the lost card's offset")
+                let preview = PublicationHistory(database: db, previewing: try XCTUnwrap(original))
+                XCTAssertEqual(try preview.restore(backwardCapacity: 2, forwardCapacity: 2), restored,
+                    "recovery preview preserves archived/unknown semantics without selecting ownership")
+                XCTAssertNil(try preview.restoreFromEditionStart(forwardCapacity: 2)?.cursor.progress)
+
                 XCTAssertEqual(try session.checkpoint(bindingActivation: current), original,
                     "restoration does not rewrite the durable statement")
                 try session.clearActiveCheckpoint(bindingActivation: current, expectedEditionID: edition.id)

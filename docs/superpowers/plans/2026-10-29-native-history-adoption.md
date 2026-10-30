@@ -70,3 +70,14 @@ Global rules invoke the existing semantic eligibility notification instead of re
 - [x] Native RED ownership/global edit/composition recreation; hidden-only refresh RED. Real OS process relaunch remains open.
 - [x] Wire binding selection, constructor/history/cold/live, NF03 promotion and namespace.
 - [x] Actual native tests; R4 ordinary oracle, legacy adoption/collision and existing handoff tests; independent review. See docs/reviews/2026-10-30-f13-native-history-binding.md.
+
+## Task 2e — immutable recovery presentation before a choice
+
+Ruling: use an explicit read-only PublicationHistory over the captured durable statement, instead of constructing a legacy FeedAssociation (its constructor activates context and may clear incompatible history). This preserves card-authoritative restore/neighbour semantics while keeping selection separate from ownership. The preview does not save cursors or mark seen. It is scoped to the Edition resolved from its captured checkpoint; it never follows a later singleton change.
+
+- [x] RED/GREEN explicit-checkpoint restore, independent of singleton, no position/seen/ownership mutation, foreign-Edition refusal. 21 affected/0; full1847/one skip/0; independent review clean. See docs/reviews/2026-10-30-f13-recovery-preview.md.
+- [ ] Native recovery state captures original intent, compatible active/retained statements and a read-only presented reader. Pause future publication and keep recovery state through lifecycle.
+- [ ] Explicit previous criteria adopts the complete frozen contextual key; current criteria opens a distinct owned history without deleting unowned histories. Retained readings remain selectable. Revalidate choice transactionally.
+- [ ] Existing fixed-size More-menu and empty-reader recovery routes, pt/en and accessibility, ordinary host tests and actual large-text UI/tail proof.
+
+No claim that preview plumbing alone fulfills ambiguity recovery. Native selection continues to fail safely until the full presentation/choice route consumes it.

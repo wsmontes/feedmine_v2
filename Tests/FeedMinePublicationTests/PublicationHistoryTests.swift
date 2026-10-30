@@ -22,6 +22,54 @@ final class PublicationHistoryTests: XCTestCase {
         try store.appendSegment(next.0, cards: next.1)
     }
 
+    func testRecoveryPreviewKeepsItsCapturedPointWithoutPositionOrSeenAuthority() throws {
+        try withDatabase { _, database in
+            let edition = RestoreFixture.edition()
+            let cards = try (0..<6).map { try RestoreFixture.card(index: $0) }
+            try persist(edition, cards: cards, database: database)
+            let sessions = SessionStore(database: database)
+            let captured = SessionCursor(editionID: edition.id,
+                anchor: FeedWindowAnchor(cardID: cards[4].id, placement: .center))
+            let original = PublicationPersistenceMapping.checkpoint(captured, updatedAt: edition.createdAt)
+            try sessions.saveCheckpoint(original)
+            let preview = PublicationHistory(database: database, previewing: original)
+            let newer = SessionCursor(editionID: edition.id,
+                anchor: FeedWindowAnchor(cardID: cards[1].id, placement: .top))
+            try sessions.saveCheckpoint(PublicationPersistenceMapping.checkpoint(newer,
+                updatedAt: edition.createdAt.addingTimeInterval(10)))
+            let before = try sessions.checkpoint()
+            let publication = PublicationStore(database: database)
+            let origins = cards.map(\.origin.originRecordID)
+            let exposure = try publication.exposure(editionID: edition.id, originIDs: origins)
+            let restored = try XCTUnwrap(preview.restore(backwardCapacity: 1, forwardCapacity: 1))
+            XCTAssertEqual(restored.cursor, captured)
+            XCTAssertEqual(restored.window.cards, Array(cards[3...5]))
+            XCTAssertEqual(try preview.savedCursor(), captured)
+            XCTAssertEqual(try preview.restoreFromEditionStart(forwardCapacity: 1)?.window.cards, cards)
+            XCTAssertEqual(try preview.savedCursor(contextKey: edition.editorialRevision.contextKey), captured)
+            XCTAssertNil(try preview.savedCursor(contextKey: ContextKey(request: .source(SourceID()))))
+            XCTAssertThrowsError(try preview.markSeen(editionID: FeedEditionID(), cardID: cards[4].id))
+            let misfiled = SessionCursor(editionID: FeedEditionID(), anchor: captured.anchor)
+            let misfiledPreview = PublicationHistory(database: database, previewing:
+                PublicationPersistenceMapping.checkpoint(misfiled, updatedAt: edition.createdAt))
+            XCTAssertEqual(try misfiledPreview.restore(backwardCapacity: 1, forwardCapacity: 1)?.cursor, captured,
+                "the actual card Edition also controls recovery previews")
+            XCTAssertNotNil(try misfiledPreview.restore(backwardCapacity: 1, forwardCapacity: 1,
+                contextKey: edition.editorialRevision.contextKey))
+            try preview.markSeen(editionID: edition.id, cardID: cards[4].id)
+            XCTAssertThrowsError(try preview.saveCursor(newer, updatedAt: Date())) { error in
+                XCTAssertEqual(error as? PublicationHistoryError, .readOnlyHistory)
+            }
+            XCTAssertEqual(try sessions.checkpoint(), before)
+            XCTAssertEqual(try publication.exposure(editionID: edition.id, originIDs: origins), exposure)
+            XCTAssertNil(try ReaderHistoryBindingStore(database: database).owner(ofEditionID: edition.id))
+            XCTAssertThrowsError(try preview.window(editionID: FeedEditionID(), around: captured.anchor,
+                backwardCapacity: 0, forwardCapacity: 0)) { error in
+                XCTAssertEqual(error as? PublicationHistoryError, .inconsistentRestore)
+            }
+        }
+    }
+
     func testNoCheckpointReturnsNil() throws {
         try withDatabase { _, database in
             XCTAssertNil(try PublicationHistory(database: database).restore(backwardCapacity: 1, forwardCapacity: 2))
