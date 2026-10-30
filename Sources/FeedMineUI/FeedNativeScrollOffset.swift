@@ -307,10 +307,16 @@ private struct FeedViewportDiagnosticReadout: UIViewRepresentable {
                 let snapshot = store?.state.presentation
                 let window = snapshot?.window
                 let visual = readCapture?()
+                let currentAdapter = visual?.nativeScrollOffset
+                // SwiftUI can replace @State while the diagnostic UIView remains
+                // mounted. Report that mismatch rather than combining two owners.
+                let bindingMatches = currentAdapter != nil && currentAdapter === access
                 let native = access?.scrollView
                 let offset = native.map { String(format: "%.2f", Double($0.contentOffset.y)) } ?? "none"
                 return [
                     "captureInstance=\(access?.diagnosticCaptureID ?? "none")",
+                    "captureBindingInstance=\(currentAdapter?.diagnosticCaptureID ?? "none")",
+                    "captureBindingMatches=\(bindingMatches)",
                     "probeMounts=\(access?.probeMounts ?? -1)",
                     "probeUnmounts=\(access?.probeUnmounts ?? -1)",
                     "scrollInstances=\(access?.distinctScrollViews ?? -1)",
