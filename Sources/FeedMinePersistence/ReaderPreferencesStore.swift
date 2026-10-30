@@ -3,7 +3,9 @@ import Foundation
 import GRDB
 import FeedMineDomain
 
-public enum ReaderPreferencesError: Error { case invalidSelection, invalidRecord, missingPreferences, versionOverflow }
+public enum ReaderPreferencesError: Error {
+    case invalidSelection, invalidRecord, missingPreferences, versionOverflow, selectionConflict
+}
 
 public struct ReaderPreferencesStore: Sendable {
     public struct Record: Hashable, Sendable {
@@ -91,12 +93,19 @@ public struct ReaderPreferencesStore: Sendable {
     /// Never derive the new selection from just the resolved list: unavailable
     /// reader-owned sources remain in the persisted sourceKeys until explicitly removed.
     public func commitSourceTransition(adding: [String] = [], removing: [String] = [],
-        context: ContextKey, resolvedSources: [(key: String, authority: String)]) throws -> Record {
+        context: ContextKey, resolvedSources: [(key: String, authority: String)],
+        expectedSelectionVersion: UInt64? = nil) throws -> Record {
         try Self.validate(adding)
         try Self.validate(removing)
         guard Set(adding).isDisjoint(with: removing) else { throw ReaderPreferencesError.invalidSelection }
         return try database.write { db in
             guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+            // Resolution and context were calculated from a specific durable
+            // selection. Refuse to commit that context against a newer external
+            // selection; the caller must reread and recalculate both together.
+            if let expectedSelectionVersion, current.selectionVersion != expectedSelectionVersion {
+                throw ReaderPreferencesError.selectionConflict
+            }
             let excluded = Set(removing)
             var keys = current.sourceKeys.filter { !excluded.contains($0) }
             let existing = Set(keys)
