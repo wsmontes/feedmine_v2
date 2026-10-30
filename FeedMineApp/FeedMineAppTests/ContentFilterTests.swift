@@ -91,7 +91,7 @@ final class ContentFilterTests: XCTestCase {
         await association.close()
     }
 
-    func testNativeColdOwnerUsesCurrentWordsInsteadOfFrozenGlobalUnion() async throws {
+    func testNativeColdRecoveryUsesRootCallbackWithoutReplacingRawContext() async throws {
         for ownMatches in [false, true] {
             let directory = directory(), root = root(directory: directory)
             try setSettings(directory) { $0.contentFilterRules = ["published fixture"] }
@@ -102,9 +102,9 @@ final class ContentFilterTests: XCTestCase {
             XCTAssertTrue(published(association).isEmpty)
             let frozen = association.contextKey
             XCTAssertEqual(association.logicalContextKey.filter.exclusions, own)
-            try setSettings(directory) { $0.contentFiltersEnabled = false }
-            // Same owner and frozen key; deliberately do not invoke the root's still-pending replacement path.
-            try await association.launch()
+            try setSettings(association.database) { $0.contentFiltersEnabled = false }
+            // Exercise the same callback used when the native filter sheet closes.
+            await root.reapplyReaderFilters()
             XCTAssertTrue(root.association === association)
             XCTAssertEqual(association.contextKey, frozen)
             XCTAssertEqual(published(association).isEmpty, ownMatches,
@@ -125,8 +125,8 @@ final class ContentFilterTests: XCTestCase {
         let a = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID == tail.sourceID })
         let b = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID != a.sourceID })
         try setSettings(database) { $0.contentFilterRules = ["blocked future word"] }
-        // Exercise the existing live eligibility owner directly; native root replacement is still pending.
-        await association.sourceExclusionsChanged()
+        // Exercise the same callback used when the native filter sheet closes.
+        await root.reapplyReaderFilters()
         let blocked = try admitWarmSupply(sourceID: a.sourceID, title: "Blocked future word A", database: database)
         let allowed = try admitWarmSupply(sourceID: b.sourceID, title: "Allowed future B", database: database)
         // Direct fixture ingestion must state the same durable-supply fact as a real acquisition receipt.
@@ -139,7 +139,7 @@ final class ContentFilterTests: XCTestCase {
         XCTAssertFalse(revisions.contains(blocked.id))
         XCTAssertEqual(revisions.filter { $0 == allowed.id }.count, 1)
         try setSettings(database) { $0.contentFilterRules = [] }
-        await association.sourceExclusionsChanged()
+        await root.reapplyReaderFilters()
         try await waitForWarmPublication(blocked.id, association: association, publication: publication, requestTailDemand: true)
         ids = try publication.segments(editionID: edition).flatMap(\.cardIDs)
         revisions = try ids.map { try XCTUnwrap(publication.card(id: $0)).originRevisionID }

@@ -20,4 +20,10 @@ Logs e patches completos foram comprimidos sem perdas. [Manifesto de hashes](evi
 
 ## Limites e trabalho restante
 
-**F13 e a aceitação completa de R4 continuam abertos.** O fluxo ambíguo/sem origem comprovável protege dados, mas ainda precisa apresentar a leitura anterior e oferecer escolhas explícitas de recuperação. Faltam recovery de política não resolvida, jornadas UI/gestos/pt-en/XXXL/cauda estável e encerramento/relaunch real. B02/B04/B05 abertos, B03 FAIL e B06 NOT_RUN permanecem inalterados. Os testes cold/live anteriores exercitam owners diretamente; não equivalem a todas as jornadas do callback nativo.
+**F13 e a aceitação completa de R4 continuam abertos.** O fluxo ambíguo/sem origem comprovável protege dados, mas ainda precisa apresentar a leitura anterior e oferecer escolhas explícitas de recuperação. Faltam recovery de política não resolvida, jornadas UI/gestos/pt-en/XXXL/cauda estável e encerramento/relaunch real. B02/B04/B05 abertos, B03 FAIL e B06 NOT_RUN permanecem inalterados. Os testes cold/live anteriores exercitavam owners diretamente. O followup abaixo cobre o callback nativo; as jornadas UI continuam pendentes.
+
+## Followup — callback nativo de política
+
+Os testes cold/live agora invocam `root.reapplyReaderFilters()`, como o fechamento da sheet. O caso frio desativa globals usando o mesmo writer e prova recuperação sem substituir o contexto; a variante com palavra contextual coincidente continua bloqueada. O caso ativo prova bloqueio/reversão de supply futuro, mesma associação/Edition e prefixo congelado intacto. Não houve mudança de produção.
+
+Build e XCTest reais: `r4-native-root-policy-build` e `r4-native-root-policy-tests`, **17 testes, zero falhas**, exit 0, sem interrupção por espaço. Dylib de produção idêntica ao checkpoint anterior; test bundle recompilado. [Manifesto](evidence/2026-10-27-source-exclusions/r4-native-root-policy-archive.json). Não amplia a contagem distinta42 nem substitui aceitação UI/relaunch.

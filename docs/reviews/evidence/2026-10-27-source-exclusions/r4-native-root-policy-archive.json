@@ -1,0 +1,14 @@
+[
+  {
+    "file": "r4-native-root-policy-build.log.gz",
+    "uncompressed_sha256": "8d3498b3aefc0f5def0162a2a529eb226fbf763553421763896c140a141f56eb"
+  },
+  {
+    "file": "r4-native-root-policy-build.patch.gz",
+    "uncompressed_sha256": "cf88b04ff1a4ce77ede7cd1278f985cd36bc4d7db18671d2d40fa99eee6168a1"
+  },
+  {
+    "file": "r4-native-root-policy-tests.log.gz",
+    "uncompressed_sha256": "602418c0115ffa08272beaeed7c28d77401a876d0d04750ec763987440109744"
+  }
+]
