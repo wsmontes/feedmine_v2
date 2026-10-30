@@ -26,13 +26,15 @@ final class ReadingSurfaceUITests: XCTestCase {
 
     /// A run whose only supply is the app's own local fixtures: the development feeds served in process, so there
     /// is no network, no server, no clock — and no add-feed sheet in the way of reaching an article.
-    private func launched(shape: String, blocked: Bool = false, largeText: Bool = false) -> XCUIApplication {
+    private func launched(shape: String, blocked: Bool = false, largeText: Bool = false,
+        itemsPerFeed: Int? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_FIXTURE_TEXT"] = shape
+        if let itemsPerFeed { app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = String(itemsPerFeed) }
         // The closed HTTPS proxy the app itself installs: real connections fail, the fixture still answers.
         if blocked { app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1" }
         if largeText {
@@ -190,6 +192,57 @@ final class ReadingSurfaceUITests: XCTestCase {
         attach(app, "reading-long-summary")
     }
 
+    /// Browser-close regression: a nontrivial admitted history must return to the SAME card, not merely
+    /// to any card somewhere in the feed. The long local fixture keeps the scenario reproducible offline.
+    /// This is a UI proof: a session-level anchor assertion cannot detect a UIKit/SwiftUI scroll jump.
+    func testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory() throws {
+        let app = launched(shape: "shortSummary", itemsPerFeed: 95)
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 180), "the local fixture publishes a feed")
+        guard waitForAVisibleCard(app, within: 180), let firstID = visibleCard(app)?.identifier else {
+            return XCTFail("the fixture draws a first visible card")
+        }
+
+        // Move away from the opening position; a test that reopens the first card cannot exercise
+        // window growth or the restoration of a lazy cell that was scrolled into view.
+        var tracked: XCUIElement?
+        for _ in 0..<12 {
+            scroll.swipeUp(velocity: .fast)
+            if let candidate = visibleCard(app), candidate.identifier != firstID {
+                tracked = candidate
+                break
+            }
+        }
+        guard let card = tracked else {
+            return XCTFail("the reader must reach a card past the initial viewport")
+        }
+        let identity = card.identifier
+        let before = card.frame
+        XCTAssertTrue(before.intersects(scroll.frame), "the tracked card starts in the actual feed viewport")
+        let opener = openControl(card)
+        if opener.exists && opener.isHittable { opener.tap() } else { card.tap() }
+
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20),
+            "the card opens the site's in-app browser")
+        XCTAssertTrue(waitForAddress(app, showing: "example.test", within: 20),
+            "the browser navigated to the fixture card's original URL")
+        app.buttons["Close"].tap()
+
+        // No scroll, search or recovery gesture is allowed before these assertions. Looking for the
+        // missing identity by swiping would mask the very jump this regression is designed to catch.
+        let returned = byIdentifier(app, identity)
+        XCTAssertTrue(returned.waitForExistence(timeout: 20),
+            "browser close must restore the same card, not merely show a different feed card")
+        guard returned.exists else { return }
+        XCTAssertTrue(returned.frame.intersects(scroll.frame),
+            "the same card must still intersect the feed viewport without a recovery scroll")
+        XCTAssertEqual(returned.frame.minY, before.minY, accuracy: 1.0,
+            "browser close must preserve the card's vertical position")
+        XCTAssertEqual(returned.frame.maxY, before.maxY, accuracy: 1.0,
+            "browser close must preserve the card's height and trailing edge")
+        attach(app, "browser-close-deep-history-same-card")
+    }
+
     func testATeaserOpensTheSiteWithNoIntermediateScreen() throws {
         let app = launched(shape: "shortSummary")
         guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
@@ -270,7 +323,7 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// to, and none stacked underneath it either.
     func testOpeningTheSiteFromTheLocalReaderIsAnExplicitRequestAndComesBackToTheFeed() throws {
         let app = launched(shape: "body")
-        guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
+        guard let (identity, frame) = openTheFirstCard(app) else { return XCTFail("no card to open") }
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 20))
 
         byIdentifier(app, "reading.open-site").tap()
@@ -287,6 +340,12 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 20),
             "closing the site ends the reader: the text does not come back as a surface of its own")
         XCTAssertTrue(waitForAVisibleCard(app, within: 20), "and the feed the reader was opened from is back")
+        let returned = byIdentifier(app, identity)
+        XCTAssertTrue(returned.waitForExistence(timeout: 20), "the original card is still in the feed")
+        if returned.exists {
+            XCTAssertEqual(returned.frame.minY, frame.minY, accuracy: 1.0,
+                "site dismissal preserves the original card position")
+        }
         attach(app, "reading-back-in-the-feed")
     }
 }
