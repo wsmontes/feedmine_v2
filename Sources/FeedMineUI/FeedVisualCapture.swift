@@ -127,6 +127,19 @@ struct FeedVisualCapture {
         #endif
     }
 
+    /// A native scroll may be interrupted by a modal or by removal of the reader's view
+    /// without SwiftUI delivering the final idle phase. Reset only gesture-specific evidence:
+    /// the identity, scroll target and last *presented* top remain the reader's. Fresh
+    /// geometry must establish the next movement before the runtime receives another event.
+    mutating func interruptTransientMotion() {
+        reading = false
+        motion.animating = false
+        motion.direction = nil
+        motion.lastEmission = nil
+        motion.velocityUnverified = false
+        invalidateLayout()
+    }
+
     /// Transient visual position of the reader: one card and how much of it is above the viewport.
     /// UI state only — it never decides admission (the session does) and is never persisted.
     var position: FeedScrollPosition? {
