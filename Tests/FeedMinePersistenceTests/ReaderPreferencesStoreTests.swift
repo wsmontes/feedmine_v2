@@ -54,6 +54,40 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertEqual(try reopened.load()?.settings, first.settings)
     }
 
+    /// An identity-write error after the preference UPSERT rolls back both tables.
+    /// The existing source selection, version and raw context must remain unchanged.
+    func testSourceTransitionIdentityFailureRollsBackSelectionAndContextTogether() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        let store = ReaderPreferencesStore(database: db)
+        let original = try store.initialize(sourceKeys: ["reader-owned", "a", "unavailable"])
+        let destination = ContextKey(request: .source(SourceID()))
+        try db.write { database in
+            try database.execute(sql: """
+                CREATE TRIGGER reject_source_identity
+                BEFORE INSERT ON reader_source_identity
+                BEGIN SELECT RAISE(ABORT, 'injected identity failure'); END
+                """)
+        }
+        XCTAssertThrowsError(try store.commitSourceTransition(
+            adding: ["new"], removing: ["a"], context: destination,
+            resolvedSources: [(key: "new", authority: "catalog")]))
+        XCTAssertEqual(try store.load(), original,
+            "A later identity failure must not commit a source change, version bump or context switch")
+        try db.write { try $0.execute(sql: "DROP TRIGGER reject_source_identity") }
+
+        let saved = try store.commitSourceTransition(
+            adding: ["new"], removing: ["a"], context: destination,
+            resolvedSources: [(key: "new", authority: "catalog")])
+        XCTAssertEqual(saved.sourceKeys, ["reader-owned", "unavailable", "new"],
+            "Operationally unavailable reader choices must survive the resolved-source update")
+        XCTAssertEqual(saved.selectionVersion, original.selectionVersion + 1)
+        XCTAssertEqual(saved.activeContextKey, destination)
+        XCTAssertEqual(try store.load(), saved)
+        XCTAssertEqual(try ReaderLibraryStore(database: db).sourceLinks()["new"]?.authority, "catalog")
+    }
+
     func testPD10B2RejectedIncrementalMutationIsAtomic() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
