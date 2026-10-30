@@ -33,6 +33,19 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
+    // Filter requests must not mutate durable preferences while another transition owns
+    // the session. Waiters resume FIFO; each recomputes its key after acquiring the gate.
+    @ObservationIgnored private var filterTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+    #if DEBUG
+    var waitingFilterTransitions: Int { filterTransitionWaiters.count }
+    #endif
+
+    private func releaseSessionTransition() {
+        replacingSession = false
+        if !filterTransitionWaiters.isEmpty {
+            filterTransitionWaiters.removeFirst().resume()
+        }
+    }
     /// One verification shared between foreground and a BGAppRefresh grant.
     @ObservationIgnored private var catalogueSyncInFlight = false
     private let directory: URL
@@ -601,7 +614,7 @@ final class AppComposition {
     func toggleSource(_ sourceID: SourceID) async throws {
         guard !replacingSession else { return }
         replacingSession = true
-        defer { replacingSession = false }
+        defer { releaseSessionTransition() }
         guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }
         var next = selectedFeeds
         let removing = next.firstIndex(where: { $0.sourceID == sourceID })
@@ -644,7 +657,7 @@ final class AppComposition {
         if request == currentContext, association != nil,
             currentContextKey.filter.isUnrestricted, currentContextKey.preset == .everything { return }
         replacingSession = true
-        defer { replacingSession = false }
+        defer { releaseSessionTransition() }
         let previousKey = currentContextKey
         // A failed checkpoint leaves the previous association alive: do not close it
         // until its current reading position has actually been made durable.
@@ -709,6 +722,19 @@ final class AppComposition {
     /// T6: an explicit filter transition. The selection is persisted first, then the association is rebuilt
     /// around the new identity, so A→B→A finds A's own checkpoint and no old callback can install into B.
     func applyFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws {
+        // A rebuild may be suspended on discovery. Do not write a new context into
+        // preferences and return as if applied: replaceSession() would merely mark
+        // pendingRebuild while its gate is held. Queue the user's *intent* instead.
+        while replacingSession {
+            await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
+                filterTransitionWaiters.append(waiter)
+            }
+        }
+        replacingSession = true
+        defer { releaseSessionTransition() }
+        try Task.checkCancellation()
+        // Derive the request only after acquiring the gate. A queued request must
+        // use the context actually active when its turn begins, not stale context.
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
             searchScope: currentContextKey.searchScope)
         guard key != currentContextKey else { return }
@@ -719,7 +745,7 @@ final class AppComposition {
             _ = try preferences?.setContext(key)
             // A new overlay selection starts the window again; a selection without overlay criteria has none.
             _ = try preferences?.setFilterExpiry(filterExpiry(renewing: filter, at: Date()))
-            try await replaceSession(recoveryKey: previousKey)
+            try await rebuildSessionWhileTransitionLocked(recoveryKey: previousKey)
         } catch {
             // The filter is not committed as a navigable context until a session
             // actually launches. Restore the raw identity and its expiry, not the
@@ -802,7 +828,7 @@ final class AppComposition {
         if let current = association, current.contextKey == key,
             current.policy.scoringPolicyVersion.rawValue == version { return }
         replacingSession = true
-        defer { replacingSession = false }
+        defer { releaseSessionTransition() }
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
@@ -970,7 +996,7 @@ final class AppComposition {
         guard !(try collectionFeeds(id: id)).isEmpty else { throw ReaderPreferencesError.invalidSelection }
         guard !replacingSession else { return }
         replacingSession = true
-        defer { replacingSession = false }
+        defer { releaseSessionTransition() }
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
@@ -1763,7 +1789,7 @@ final class AppComposition {
     func replaceSession(recoveryKey: ContextKey? = nil) async throws {
         guard !replacingSession else { pendingRebuild = true; return }
         replacingSession = true
-        defer { replacingSession = false }
+        defer { releaseSessionTransition() }
         try await rebuildSessionWhileTransitionLocked(recoveryKey: recoveryKey)
     }
 
