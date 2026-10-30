@@ -1358,32 +1358,53 @@ final class AppComposition {
     /// at the list is not a selection change, and an emptied selection is a state the reader's own surface
     /// states.
     func adoptSelectionChange() async {
-        guard let preferences, let record = try? preferences.load() else { return }
-        guard record.selectionVersion != selectionVersion else { return }
-        selectionVersion = record.selectionVersion
-        let links = (try? libraryDatabase().map {
-            try ReaderLibraryStore(database: $0).sourceLinks()
-        }) ?? [:]
-        let resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: selectedFeeds,
-            readerSources: readerSourceEntries(), catalogueURL: catalogueURL, identities: links)) ?? []
-        if let database = libraryDatabase() {
-            try? ReaderLibraryStore(database: database).rememberResolvedSources(resolved.map {
-                (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
-                    ? "reader" : "catalog")
-            })
-        }
-        selectedFeeds = resolved
-        // One selected source is its own surface, exactly as `toggleSource` decides; a context pointing at a
-        // source that is no longer selected would be a fence around nothing.
-        let request: FeedContextRequest = resolved.count == 1 ? .source(resolved[0].sourceID) : .main
-        currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
-            filter: currentContextKey.filter)
-        _ = try? preferences.setContext(currentContextKey)
-        do { try await replaceSession() }
-        catch {
-            startupFailure = "Não foi possível atualizar suas fontes."
-            startupFailureDetail = String(describing: error)
-            Self.log("startup failure updating the source selection: \(String(describing: error))")
+        // A source-management surface may commit while another transition is awaiting
+        // discovery. Do not change the in-memory selection or context until this
+        // operation owns the same gate as explicit navigation.
+        do { try await acquireFilterTransition() }
+        catch { return }
+        defer { releaseSessionTransition() }
+        guard let preferences, let database = libraryDatabase() else { return }
+        let identities = ReaderLibraryStore(database: database)
+        // An external writer does not acquire our in-process gate. If it commits
+        // another selection while this rebuild awaits discovery, reconcile again
+        // before releasing the gate rather than installing a stale source version.
+        while !Task.isCancelled {
+            let record: ReaderPreferencesStore.Record
+            let resolved: [TrustedFeed]
+            do {
+                guard let saved = try preferences.load() else { return }
+                if saved.selectionVersion == selectionVersion, association?.active == true { return }
+                record = saved
+                let links = try identities.sourceLinks()
+                resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys,
+                    fallback: selectedFeeds, readerSources: readerSourceEntries(),
+                    catalogueURL: catalogueURL, identities: links)
+                try identities.rememberResolvedSources(resolved.map {
+                    (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
+                        ? "reader" : "catalog")
+                })
+                // A persisted source selection is the authority. Save the context on
+                // that same latest record before changing the composition's state.
+                let request: FeedContextRequest = resolved.count == 1
+                    ? .source(resolved[0].sourceID) : .main
+                let key = ContextKey(request: request, preset: presetAfterSelectionChange(),
+                    filter: currentContextKey.filter)
+                _ = try preferences.setContext(key)
+                selectedFeeds = resolved
+                selectionVersion = record.selectionVersion
+                currentContextKey = key
+                // The user has already committed this selection in source management;
+                // a failing launch must not roll back its monotonic version.
+                try await rebuildSessionWhileTransitionLocked(recoveryKey: key)
+            } catch {
+                startupFailure = "Não foi possível atualizar suas fontes."
+                startupFailureDetail = String(describing: error)
+                Self.log("startup failure updating the source selection: \(String(describing: error))")
+                return
+            }
+            // Loop: the database may have received another source selection while
+            // the session constructor was suspended.
         }
     }
 
