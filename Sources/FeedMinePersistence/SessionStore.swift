@@ -147,7 +147,7 @@ public struct SessionStore: Sendable {
         try database.write { db in
             try ReaderHistoryBindingStore.retainLegacyCheckpoints(in: db)
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
-                try Self.persistContext(Self.decode(row, in: db), in: db)
+                try Self.retainCheckpointBeforeActivation(Self.decode(row, in: db), in: db)
             }
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
             try db.execute(sql: "DELETE FROM session_reader_binding WHERE singleton_id = 1")
@@ -227,6 +227,21 @@ public struct SessionStore: Sendable {
         case .source(let source): "source:" + PersistenceValueCoding.uuid(source.rawValue)
         case .search(let search): "search:" + search.query
         }
+    }
+
+    /// Refiling the legacy singleton carries no authority to replace an already owned position.
+    static func retainCheckpointBeforeActivation(_ point: CheckpointRecord, in db: Database) throws {
+        let sourceEdition = try PublicationStore.location(ofCard: point.cardID, in: db)?.editionID ?? point.editionID
+        if let owner = try String.fetchOne(db, sql: "SELECT binding_id FROM reader_history_editions WHERE edition_id = ?",
+            arguments: [PersistenceValueCoding.uuid(sourceEdition.rawValue)]),
+            try ownedCheckpoint(bindingID: PersistenceValueCoding.uuid(owner, field: "binding_id"),
+                editionID: sourceEdition, in: db) != nil { return }
+        // A misfiled Edition column cannot grant write authority over that Edition's owner,
+        // even when the card's actual Edition remains unowned. Originals were retained above.
+        if sourceEdition != point.editionID,
+            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_editions WHERE edition_id = ?)",
+                arguments: [PersistenceValueCoding.uuid(point.editionID.rawValue)]) == true { return }
+        try persistContext(point, in: db)
     }
 
     static func persistContext(_ checkpoint: CheckpointRecord, in db: Database) throws {

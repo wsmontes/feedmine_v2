@@ -166,6 +166,7 @@ public struct FeedScreen: View {
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
                                 onAction: { store.perform($0, rendered: store.state.presentation) })
+                                .disabled(readingIsPaused)
                                 .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
                                     guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
                                     let frame = proxy.frame(in: .scrollView(axis: .vertical))
@@ -261,6 +262,7 @@ public struct FeedScreen: View {
                                     isBookmarked: store.bookmarkedIDs.contains(card.id),
                                     availableActions: store.availableActions,
                                     onAction: { store.perform($0, rendered: store.state.presentation) })
+                                .disabled(readingIsPaused)
                                 EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                             }
                         }

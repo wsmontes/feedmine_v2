@@ -56,7 +56,7 @@ final class ReaderHistoryRecovery {
         self?.enqueue(observation, activity: activity, evidence: nil)
     }, onRenderedViewport: { [weak self] evidence, activity in
         self?.enqueue(evidence.observation, activity: activity, evidence: evidence)
-    }, availableActions: [], onPresentedPosition: { [weak self] anchor, _ in
+    }, availableActions: FeedAssociation.readerCardActions, onPresentedPosition: { [weak self] anchor, _ in
         guard let self, !isRetired, !viewportFrozen,
             store.state.presentation?.window.items.contains(where: { $0.id == anchor.cardID }) == true else { return }
         presentedPosition = anchor

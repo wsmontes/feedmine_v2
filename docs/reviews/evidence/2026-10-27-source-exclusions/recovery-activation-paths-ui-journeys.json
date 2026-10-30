@@ -1,0 +1,40 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineRecoveryUIProbe_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-activation-paths-ui-journeys.xcresult",
+    "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testLegacyRecoveryContinuesPreviousCriteriaInPortuguese",
+    "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testLegacyRecoveryOpensCurrentCriteriaInEnglishLargeType",
+    "-collect-test-diagnostics",
+    "never"
+  ],
+  "compiled_build_report": "recovery-activation-paths-ui-build.json",
+  "compiled_build_report_sha256": "dc33829110c6342dd6fd72307f6fec31a1835636a7e628dbfb6d616594725c11",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/FeedMineUITests-Runner": "7e36729d4fbf984e023e98952e7a2b878c735240c41c14f1f8a6b1544b20d233",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests": "1462296259707e6dfff4cbf5cb7df5f0a82aab869afd077667f5c1ee11aabe3f",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "19f9c447d3be1949cdaa499250045f13784fff6626baf2194349e1faa5868b1a"
+  },
+  "xctestrun_sha256": "f4f36ea55d6f617607d31d544519854053efd56d78dc79206e200eede8b4167f",
+  "exit_code": 65,
+  "stopped_for_disk_budget": false,
+  "free_before": 964980736,
+  "minimum_observed_free": 529960960,
+  "free_after": 811143168,
+  "reserved_free_floor": 419430400,
+  "elapsed_seconds": 82.15,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-activation-paths-ui-journeys.xcresult",
+  "scope": "actual XCUI controls/process-persistence journey; not full F13 publication acceptance or benchmark"
+}

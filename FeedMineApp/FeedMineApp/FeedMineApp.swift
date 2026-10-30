@@ -544,10 +544,10 @@ struct FeedMineApp: App {
                             #endif
                     } else if let recovery = composition.historyRecovery {
                         FeedScreen(store: recovery.store, appearance: appearance,
-                            statusChip: AnyView(Text(String(localized: "Leitura anterior"))),
+                            statusChip: AnyView(Text(String(localized: "Leitura anterior"))
+                                .accessibilityIdentifier("history-recovery-reader")),
                             onRecoverHistory: { historyRecoveryMessage = nil; present(.historyRecovery) },
                             readingIsPaused: true)
-                            .accessibilityIdentifier("history-recovery-reader")
                             .onAppear {
                                 recovery.store.noteFirstScreenAppeared(hasSources: true, maximumWait: composition.firstScreenWait)
                                 recovery.store.reportFirstScreenSurfaceIfReading()

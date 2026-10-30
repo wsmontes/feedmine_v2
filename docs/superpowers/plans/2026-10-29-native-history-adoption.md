@@ -92,7 +92,8 @@ Review ruling: criteria choice is a durable user intent, separate from activatio
 
 - [x] Independent namespace RED/GREEN and stale-choice rollback; intent/adoption atomic rollback and final checkpoint fence.
 - [x] Native previous/current criteria RED/GREEN at cutover, saved-intent failure/retry/composition recreation, final checkpoint fence and retired callbacks. Native20/0; package1849/one skip/0. Retention after future same-key checkpoints remains Task2g.
-- [ ] UI consumes choices through fixed-size More-menu and empty-reader route, retained inventory selectable, pt/en and actual UI/tail verification.
+- [x] UI consumes previous/current criteria through fixed-size More-menu and empty-reader route; real PT previous/tail/cancel/process-relaunch and EN accessibilityXXXL current/process-relaunch journeys pass. Preview keeps the same disabled card controls so activation does not change card height. See docs/reviews/2026-10-30-f13-visible-recovery.md.
+- [ ] Retained inventory selectable in native UI; absence-of-singleton and unresolved-policy recovery remain required.
 
 ## Task 2g — retain original recovery statements independently
 

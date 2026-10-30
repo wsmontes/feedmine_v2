@@ -1,0 +1,8 @@
+{
+  "file": "recovery-activation-previous-after-choice.png",
+  "sha256": "ad6d9ea7a490b7e0a0862a3ea4b0128b829fe21924082c9a30fb6ceac3290626",
+  "source_result_bundle": ".build/f13-ios-tests/recovery-activation-card-geometry-journeys.xcresult",
+  "source_attachment": "F50124E2-4453-46CC-B40D-5E7CE7972255.png",
+  "test": "SourceExclusionJourneyUITests/testLegacyRecoveryContinuesPreviousCriteriaInPortuguese()",
+  "scope": "retained reading after choice; vertical position assertions also verified after real process relaunch in test log"
+}

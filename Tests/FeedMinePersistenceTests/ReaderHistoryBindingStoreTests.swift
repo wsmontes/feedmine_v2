@@ -44,22 +44,58 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
     }
 
     func testLegacySingletonDoesNotOverwriteSavedLocalPositionWhenAnotherChoiceIsPromoted() throws {
-        let db = try StorageFixture.database(self), raw = key([]), frozen = key(["old"])
-        _ = try prefs(db, words: [])
-        let (edition, card) = try published(db, key: frozen)
-        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
-        let original = try XCTUnwrap(sessions.checkpoint())
-        let local = SessionStore.CheckpointRecord(editionID: edition.id, cardID: card.id,
-            anchorPlacement: "center", updatedAt: original.updatedAt.addingTimeInterval(10), topDelta: -15, cardHeight: 220)
-        let previous = try store.chooseRecoveryCriteria(frozen,
-            adopting: .init(editionID: edition.id, publicationKey: frozen, evidence: .exactContext, checkpoint: original),
-            preservingActiveCheckpoint: original, expectedContext: raw, selectedPosition: local)
-        // Activation may fail after a durable choice; selecting current criteria next must keep that saved point.
-        let current = try store.chooseRecoveryCriteria(raw, preservingActiveCheckpoint: original, expectedContext: frozen)
-        let prepared = try sessions.prepareBinding(current.id)
-        try sessions.promotePreparedBinding(prepared, expectedLegacyCheckpoint: original)
-        XCTAssertEqual(try sessions.checkpoint(bindingID: previous.id), local)
-        XCTAssertNil(try sessions.checkpoint())
+        for activation in ["prepared", "binding", "context"] {
+            let db = try StorageFixture.database(self), raw = key([]), frozen = key(["old"])
+            _ = try prefs(db, words: [])
+            let (edition, card) = try published(db, key: frozen)
+            let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+            let original = try XCTUnwrap(sessions.checkpoint())
+            let local = SessionStore.CheckpointRecord(editionID: edition.id, cardID: card.id,
+                anchorPlacement: "center", updatedAt: original.updatedAt.addingTimeInterval(10), topDelta: -15, cardHeight: 220)
+            let previous = try store.chooseRecoveryCriteria(frozen,
+                adopting: .init(editionID: edition.id, publicationKey: frozen, evidence: .exactContext, checkpoint: original),
+                preservingActiveCheckpoint: original, expectedContext: raw, selectedPosition: local)
+            // Activation may fail after a durable choice; selecting current criteria next must keep that saved point.
+            let current = try store.chooseRecoveryCriteria(raw, preservingActiveCheckpoint: original, expectedContext: frozen)
+            switch activation {
+            case "prepared":
+                let prepared = try sessions.prepareBinding(current.id)
+                try sessions.promotePreparedBinding(prepared, expectedLegacyCheckpoint: original)
+            case "binding": _ = try sessions.activateBinding(current.id)
+            default: try sessions.activateContext(raw)
+            }
+            XCTAssertEqual(try sessions.checkpoint(bindingID: previous.id), local, activation)
+            XCTAssertNil(try sessions.checkpoint())
+        }
+    }
+
+    func testMisfiledLegacySingletonCannotOverwriteAnotherEditionsOwnedPosition() throws {
+        for activation in ["prepared", "binding", "context"] {
+            let db = try StorageFixture.database(self), store = ReaderHistoryBindingStore(database: db)
+            let sessions = SessionStore(database: db), logical = key(["owned"])
+            let (owned, _) = try published(db, key: logical)
+            let binding = try store.resolve(logicalKey: logical, adopting: .init(editionID: owned.id,
+                publicationKey: logical, evidence: .exactContext))
+            let saved = try XCTUnwrap(sessions.checkpoint(bindingID: binding.id))
+            let unowned = StorageFixture.edition(revision: owned.editorialRevision), card = StorageFixture.card()
+            try PublicationStore(database: db).createEdition(unowned,
+                firstSegment: StorageFixture.segment(unowned, [card]), cards: [card])
+            try db.write { try $0.execute(sql: "UPDATE session_checkpoint SET card_id = ?, updated_at = 1234",
+                arguments: [PersistenceValueCoding.uuid(card.id.rawValue)]) }
+            let original = try XCTUnwrap(sessions.checkpoint())
+            let current = try store.resolve(logicalKey: key([]))
+            switch activation {
+            case "prepared":
+                let prepared = try sessions.prepareBinding(current.id)
+                try sessions.promotePreparedBinding(prepared, expectedLegacyCheckpoint: original)
+            case "binding": _ = try sessions.activateBinding(current.id)
+            default: try sessions.activateContext(key([]))
+            }
+            XCTAssertEqual(try sessions.checkpoint(bindingID: binding.id), saved, activation)
+            let legacy = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == unowned.id })
+            XCTAssertNil(legacy.owner)
+            XCTAssertTrue(legacy.checkpoints.contains { $0.point == original })
+        }
     }
 
     func testRecoveryChoiceCarriesExplicitLocalPositionWithoutReplacingOriginalValidationEvidence() throws {

@@ -1,6 +1,15 @@
 # GitHub progress checkpoint — 2026-10-28
 
 
+## Atualização — recuperação visível verificada, 2026-10-30
+
+Reader legado pausado, escolhas anteriores/atuais no menu e estado vazio, preservação da posição rolada e mensagens de escolha salva/ativação pendente agora têm integração UI. Os três caminhos de ativação protegem posições owned contra singleton legado, inclusive Edition declarada inconsistente. A geometria do preview usa os mesmos controles das cartas, desabilitados, evitando crescimento na ativação; marcador de acessibilidade foi retirado do container.
+
+**1860 testes Swift completos, um ignorado, zero falhas; foco49/0; regressão nativa33/0; duas jornadas XCUI reais PT e EN-accessibilityXXXL, zero falhas.** Português verifica cauda relativa à viewport após cancelar/escolher/reiniciar o processo; inglês verifica escolha atual e IDs após reinício. Builds e testes finais exit0, revisão/followup sem achados. Tentativas interrompidas por reserva de disco foram preservadas e repetidas sequencialmente; não contam como GREEN. [Relatório e evidências](2026-10-30-f13-visible-recovery.md).
+
+Produção/F13 continuam abertos: seleção de leituras retidas ainda sem UI, ausência de singleton/política não resolvida e gates B02/B04/B05; B03 FAIL e B06 NOT_RUN. `capacity-ready.json` permanece fora do envio. Schemes temporários foram removidos após comparação byte a byte com as cópias arquivadas.
+
+
 ## Atualização — checkpoint da recuperação visível em andamento, 2026-10-30
 
 Snapshot do trabalho local solicitado para sincronização com o GitHub, sobre `3db33a6d`. O host agora renderiza o reader legado pausado, oferece escolhas de critérios anteriores/atuais pelo menu e estado vazio, e mantém mensagens de escolha salva/ativação pendente. Textos PT/EN, fixture DEBUG isolada e jornadas XCUI com retorno ao processo e posição relativa à viewport foram adicionados.

@@ -1,0 +1,163 @@
+[
+  {
+    "original": "recovery-activation-card-geometry-build.log",
+    "archive": "recovery-activation-card-geometry-build.log.gz",
+    "sha256": "c2f970e83e5098dbde85ac5e47d97cd1200f3fc7175caecfb0c7577a9b8ba7ac",
+    "archive_sha256": "ad2f83e3a344fe0df48657eaadbf3a69aaa4408678fad8c1df05b1f928c3e519",
+    "bytes": 106760
+  },
+  {
+    "original": "recovery-activation-card-geometry-build.patch",
+    "archive": "recovery-activation-card-geometry-build.patch.gz",
+    "sha256": "abab7c1fc4a57eab00ac5eb676d2b2d13ed3fa967de910bf7dcaeefcd972fe24",
+    "archive_sha256": "75441dc9d158638440b9d2640d6f2bd8c9dbdc9678ec4db556b6043f1e76badc",
+    "bytes": 12083
+  },
+  {
+    "original": "recovery-activation-card-geometry-journeys.log",
+    "archive": "recovery-activation-card-geometry-journeys.log.gz",
+    "sha256": "e84dc50ac0df3e47a54e67c16b0f37cecee1b973118ba3f156bf4dbb44e5827d",
+    "archive_sha256": "52c77e7566c201eb901b792f0f41d2385459a5e2b933675f9d9ab4dd42c8e618",
+    "bytes": 21397
+  },
+  {
+    "original": "recovery-activation-final-full.log",
+    "archive": "recovery-activation-final-full.log.gz",
+    "sha256": "08966fed756100f1ff50fbaec7979838e61dbcade6a543cf30b797a7b75d90a2",
+    "archive_sha256": "e4fe7de4b0fdcd11023be851f69cf1e0f026193566752aac3f5c326e142bc0eb",
+    "bytes": 551492
+  },
+  {
+    "original": "recovery-activation-final-ui-build.log",
+    "archive": "recovery-activation-final-ui-build.log.gz",
+    "sha256": "5e374fc5a65c1ddd7212fd3b1d1f2b63b67bb69f423bd1ee56ebc9faf3c0c8bc",
+    "archive_sha256": "daca97c1f95381c2a589e84c5d5ac2b69e31527e12e93850127b0cce6233ffd5",
+    "bytes": 111571
+  },
+  {
+    "original": "recovery-activation-final-ui-build.patch",
+    "archive": "recovery-activation-final-ui-build.patch.gz",
+    "sha256": "ccd0f9ae01170d7a80b77d5dc43fdc0e3b35bcf3d592f52ccb5d9fa144074224",
+    "archive_sha256": "714fe23b7163d1f5314c90ee7374e3fc2e02a6ec766fd99126d828d975f4493b",
+    "bytes": 7660
+  },
+  {
+    "original": "recovery-activation-final-ui-journeys.log",
+    "archive": "recovery-activation-final-ui-journeys.log.gz",
+    "sha256": "536831ee754445d271f72d64d9857c7cbc1439943f041e09e28fcdd6b014c158",
+    "archive_sha256": "02b5155a3c0dea5454b9e5b963315cf45b409dcd33bb506f1fcc57d2c5e63fc7",
+    "bytes": 14794
+  },
+  {
+    "original": "recovery-activation-misfiled-green.log",
+    "archive": "recovery-activation-misfiled-green.log.gz",
+    "sha256": "9c489cb2d804bd9ca15e631fc2a2a699a6aa3d6e406cc2f4b4c111c06e7cd16c",
+    "archive_sha256": "38e6f0b85c9d5d3820277b5098ccbf7cc19a32db7112a12044489e5ca7123b80",
+    "bytes": 19850
+  },
+  {
+    "original": "recovery-activation-misfiled-red.log",
+    "archive": "recovery-activation-misfiled-red.log.gz",
+    "sha256": "816d17c0807a4d005ed159f008fc132ec9bb78fc7d188533e8755bf01a943599",
+    "archive_sha256": "db81bd0a90eda0bd628aee3c8ce907c4a1db04e2e61f4b1fdf297156bc5fbfaf",
+    "bytes": 2795
+  },
+  {
+    "original": "recovery-activation-paths-green.log",
+    "archive": "recovery-activation-paths-green.log.gz",
+    "sha256": "e096073bfd9dee142a807d51f899e624624aca0f865a3fae039f28bc4ae72899",
+    "archive_sha256": "b2c7aead3d6c6b603fe42ed6438941bb1f97a87d38ce6ff7e6d66dce316445a6",
+    "bytes": 281529
+  },
+  {
+    "original": "recovery-activation-paths-red.log",
+    "archive": "recovery-activation-paths-red.log.gz",
+    "sha256": "14f8a059e530103f8a341607aa66f92479529a7517d4d27bd683d1711a643f01",
+    "archive_sha256": "f1f464feb3ee1b076f25cc414f14046fb45eb654a5321a735ceacffa91aae97c",
+    "bytes": 3212
+  },
+  {
+    "original": "recovery-activation-paths-ui-build.log",
+    "archive": "recovery-activation-paths-ui-build.log.gz",
+    "sha256": "87b6c1e8136d29217af711ec88828b970297ae4fc6ab711a52aa6209b038ad12",
+    "archive_sha256": "6b47d2522a3e932b8317b370bdeba107a8edffed047b63b5ed72c5536934be9b",
+    "bytes": 258911
+  },
+  {
+    "original": "recovery-activation-paths-ui-build.patch",
+    "archive": "recovery-activation-paths-ui-build.patch.gz",
+    "sha256": "0d6ddf45a052c071a866ab1e6e7375929960ff7d2917a0a75116d5ce17b03512",
+    "archive_sha256": "093e36aa3b25d014e88b81672ef7d95e845bdcb287ce7d8e32cab3517ca65967",
+    "bytes": 5960
+  },
+  {
+    "original": "recovery-activation-paths-ui-journeys.log",
+    "archive": "recovery-activation-paths-ui-journeys.log.gz",
+    "sha256": "07943a7d10ebb046dd56bb8c32d0fdcdec418e78db59524855c761fe60c0de23",
+    "archive_sha256": "22e508bd7bcd6eb698b9f8bc37814de1a6d4ebba1712d229dc2113b74b8f50a5",
+    "bytes": 17057
+  },
+  {
+    "original": "recovery-activation-position-diagnostic-build.log",
+    "archive": "recovery-activation-position-diagnostic-build.log.gz",
+    "sha256": "c89002558268baeb8f96c604b2df59b4a56585e5241ce8e63df9096acdd5950c",
+    "archive_sha256": "19fa2fcf01423773a8c7761faf6a4d8e4a5c99f22e0b6d130c60ba5977916847",
+    "bytes": 68931
+  },
+  {
+    "original": "recovery-activation-position-diagnostic-build.patch",
+    "archive": "recovery-activation-position-diagnostic-build.patch.gz",
+    "sha256": "c60dfb12491e7c987ca9f7b8477f8083c0947995056582506a90681798b2844a",
+    "archive_sha256": "5e0a8901bd2e8f9be8c33c3e3eaa31fafce3152ee529dce46e0be79e34f16c0a",
+    "bytes": 9718
+  },
+  {
+    "original": "recovery-activation-position-diagnostic-journeys.log",
+    "archive": "recovery-activation-position-diagnostic-journeys.log.gz",
+    "sha256": "63997f3df99e1e9ad5b4f196fc390893cbd83187e22ba90af391374056949688",
+    "archive_sha256": "b772f886970c77d45b55ad585809de2f8df60aa572018802558f93f9846aa007",
+    "bytes": 20532
+  },
+  {
+    "original": "recovery-activation-delivery-full.log",
+    "archive": "recovery-activation-delivery-full.log.gz",
+    "sha256": "b88ab83a7cfbcd71e23e170875dc095b64a0ad8e6012991aa0fff0baafe57bcf",
+    "archive_sha256": "1a3741c87b825e8828c9eeefa576ef1018685e1a15c8f98a169a0d3b3bd77075",
+    "bytes": 98588
+  },
+  {
+    "original": "recovery-activation-delivery-sequential-full.log",
+    "archive": "recovery-activation-delivery-sequential-full.log.gz",
+    "sha256": "d0c2dd7429aa214ca90cfc53b1a6e4490eeb307e675c408b528e6e4bf53742b7",
+    "archive_sha256": "3763d12ffa64e0abafad85b603b4922a283bd6e49f96794343c22239a5a33da8",
+    "bytes": 551502
+  },
+  {
+    "original": "recovery-activation-native-build.log",
+    "archive": "recovery-activation-native-build.log.gz",
+    "sha256": "1da15032f9139414d7ad102eb3f834e3ae467a32c847a6d244e33033f43cd45e",
+    "archive_sha256": "2ec1ece92b09af5db80fe0e4c039228549f9be713fb4faca71c86c7758b13f97",
+    "bytes": 117038
+  },
+  {
+    "original": "recovery-activation-native-build.patch",
+    "archive": "recovery-activation-native-build.patch.gz",
+    "sha256": "abab7c1fc4a57eab00ac5eb676d2b2d13ed3fa967de910bf7dcaeefcd972fe24",
+    "archive_sha256": "75441dc9d158638440b9d2640d6f2bd8c9dbdc9678ec4db556b6043f1e76badc",
+    "bytes": 12083
+  },
+  {
+    "original": "recovery-activation-native-sequential-tests.log",
+    "archive": "recovery-activation-native-sequential-tests.log.gz",
+    "sha256": "4e14e7697e5bffa5d5337765b16f18ee61cad866c202aea44387acc04b8e4334",
+    "archive_sha256": "595ccca2d17ad66d1f0a86d751f7e508249919a9de6a61cf3271398907b60c67",
+    "bytes": 530430
+  },
+  {
+    "original": "recovery-activation-native-tests.log",
+    "archive": "recovery-activation-native-tests.log.gz",
+    "sha256": "b949f56714a2f63770ae3fd233650faa725a42bf26dd3d4ab8bd6f37bd7b2dc7",
+    "archive_sha256": "21057b6b9313b6d5cf85a4dd67d1360f17a4dae74102b88c6d39d5fa6f3e20b9",
+    "bytes": 224796
+  }
+]

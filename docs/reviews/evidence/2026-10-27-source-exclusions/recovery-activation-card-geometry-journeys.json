@@ -1,0 +1,40 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineRecoveryUIProbe_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-activation-card-geometry-journeys.xcresult",
+    "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testLegacyRecoveryContinuesPreviousCriteriaInPortuguese",
+    "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testLegacyRecoveryOpensCurrentCriteriaInEnglishLargeType",
+    "-collect-test-diagnostics",
+    "never"
+  ],
+  "compiled_build_report": "recovery-activation-card-geometry-build.json",
+  "compiled_build_report_sha256": "f2d95e91a5b8510f9903fd522c6ed3678380ec01125ca28d04261d3ca3dabaea",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/FeedMineUITests-Runner": "7e36729d4fbf984e023e98952e7a2b878c735240c41c14f1f8a6b1544b20d233",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests": "c55b1c83307e6778e13f404554a9864dbc3e7269815fff7967b74841b172b007",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "77c91759656a06cc53ab6f8846595b1a273ac906f323e3472dabcafe4242a548"
+  },
+  "xctestrun_sha256": "f4f36ea55d6f617607d31d544519854053efd56d78dc79206e200eede8b4167f",
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "free_before": 877879296,
+  "minimum_observed_free": 488325120,
+  "free_after": 835026944,
+  "reserved_free_floor": 419430400,
+  "elapsed_seconds": 106.32,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-activation-card-geometry-journeys.xcresult",
+  "scope": "actual XCUI controls/process-persistence journey; not full F13 publication acceptance or benchmark"
+}

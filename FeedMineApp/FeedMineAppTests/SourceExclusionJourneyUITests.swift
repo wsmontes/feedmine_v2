@@ -41,7 +41,8 @@ final class SourceExclusionJourneyUITests: XCTestCase {
         let initial = String(proof.label.split(separator: ";")[0])
         let tailID = try XCTUnwrap(initial.dropFirst(4).split(separator: ",").last).description
         let tail = SurfaceTest.element(app, tailID)
-        let before = tail.frame
+        let before = previous ? tail.frame : .zero
+        if previous { XCTAssertGreaterThan(before.intersection(feed.frame).height, 30) }
         let beforeDelta = before.minY - feed.frame.minY
         app.buttons["more-menu"].tap()
         let action = app.buttons["history-recovery-action"]
@@ -63,9 +64,13 @@ final class SourceExclusionJourneyUITests: XCTestCase {
         XCTAssertTrue(proof.waitForExistence(timeout: 20))
         if previous { XCTAssertEqual(String(proof.label.split(separator: ";")[0]), initial, "continuing frozen criteria preserves the exact reading") }
         if previous {
-            XCTAssertGreaterThan(tail.frame.intersection(feed.frame).height, 20)
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Retained reading after choice"
+            attachment.lifetime = .keepAlways
+            add(attachment)
             XCTAssertEqual(tail.frame.minY - feed.frame.minY, beforeDelta, accuracy: 2,
-                "continuing must preserve the visible retained card relative to the viewport")
+                "continuing must preserve the visible retained card relative to the viewport; before=\(before), after=\(tail.frame)")
+            XCTAssertGreaterThan(tail.frame.intersection(feed.frame).height, 20)
         }
         let installed = String(proof.label.split(separator: ";")[0])
         app.terminate()
