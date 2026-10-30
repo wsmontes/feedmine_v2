@@ -1,0 +1,138 @@
+name: Safari A/B iOS 18 regression (opt-in)
+
+# Do not run on pushes, ordinary PR edits, or PR creation.
+# Explicitly add the run-ios-safari label to THIS draft PR to start a run.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safari-ab-ios18-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  safari:
+    if: >-
+      github.event.label.name == 'run-ios-safari' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ci/safari-ab-ios18-20261030'
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arm: control-fullScreen
+            branch: audit/browser-return-identity-regression-20261030
+            selector: FeedMineUITests/ReadingSurfaceUITests/testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory
+            repetitions: 3
+          - arm: experiment-overFullScreen
+            branch: experiment/reader-host-over-full-screen-20261030
+            selector: FeedMineUITests/ReadingSurfaceUITests/testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory
+            repetitions: 3
+          - arm: diagnostic
+            branch: diagnostic/safari-viewport-probe-20261030
+            selector: FeedMineUITests/ReadingSurfaceUITests/testSafariViewportDiagnosisCapturesMountWindowAndAnchor
+            repetitions: 1
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      TEST_SELECTOR: ${{ matrix.selector }}
+      ARM: ${{ matrix.arm }}
+      REPETITIONS: ${{ matrix.repetitions }}
+      DERIVED_DATA: ${{ runner.temp }}/feedmine-derived
+      REPORT_DIR: ${{ runner.temp }}/feedmine-results
+    steps:
+      - name: Checkout exact test arm
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify Xcode and iOS 18.5 simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORT_DIR"
+          test -d "/Applications/Xcode_16.4.app/Contents/Developer"
+          xcodebuild -version | tee "$REPORT_DIR/xcode-version.txt"
+          xcrun simctl list devices available | tee "$REPORT_DIR/available-devices.txt"
+          DEVICE_ID=$(xcrun simctl list -j devices available | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next((x["udid"] for runtime, xs in devices.items() if runtime.endswith("iOS-18-5") for x in xs if x.get("name") == "iPhone 16" and x.get("isAvailable", True)), ""))')
+          if [[ -z "$DEVICE_ID" ]]; then
+            echo "iPhone 16 / iOS 18.5 simulator is not installed" >&2
+            exit 1
+          fi
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          git rev-parse HEAD | tee "$REPORT_DIR/checked-out-sha.txt"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+      - name: Compile tests once for this arm
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project FeedMineApp/FeedMineApp.xcodeproj \
+            -scheme FeedMine -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > "$REPORT_DIR/build.log" 2>&1 || {
+              tail -n 120 "$REPORT_DIR/build.log"
+              exit 1
+            }
+          XCTESTRUN=$(find "$DERIVED_DATA/Build/Products" -maxdepth 1 -name '*.xctestrun' -print -quit)
+          if [[ -z "$XCTESTRUN" ]]; then
+            echo "build-for-testing did not produce an .xctestrun file" >&2
+            exit 1
+          fi
+          echo "XCTESTRUN=$XCTESTRUN" >> "$GITHUB_ENV"
+
+      - name: Run identical browser-return test three times (diagnostic once)
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'arm\trepetition\tresult\tcommit\tselector\n' > "$REPORT_DIR/results.tsv"
+          sha=$(git rev-parse HEAD)
+          failures=0
+          for ((i=1; i<=REPETITIONS; i++)); do
+            bundle="$REPORT_DIR/run-$i.xcresult"
+            log="$REPORT_DIR/run-$i.log"
+            echo "=== $ARM repetition $i/$REPETITIONS commit=$sha ==="
+            if xcodebuild test-without-building \
+              -xctestrun "$XCTESTRUN" \
+              -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+              -parallel-testing-enabled NO \
+              -only-testing:"$TEST_SELECTOR" \
+              -resultBundlePath "$bundle" \
+              CODE_SIGNING_ALLOWED=NO > "$log" 2>&1; then
+              outcome=pass
+            else
+              outcome=fail
+              failures=$((failures+1))
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\n' "$ARM" "$i" "$outcome" "$sha" "$TEST_SELECTOR" >> "$REPORT_DIR/results.tsv"
+            tail -n 45 "$log"
+            if [[ -d "$bundle" ]]; then
+              xcrun xcresulttool get test-results summary --path "$bundle" \
+                > "$REPORT_DIR/run-$i-summary.json" 2> "$REPORT_DIR/run-$i-xcresulttool.stderr" || true
+            fi
+          done
+          cat "$REPORT_DIR/results.tsv"
+          if ((failures > 0)); then
+            echo "$failures of $REPETITIONS XCTest runs failed"
+            exit 1
+          fi
+
+      - name: Save logs, per-run xcresult and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-${{ matrix.arm }}
+          path: ${{ runner.temp }}/feedmine-results/
+          retention-days: 7
+          if-no-files-found: warn
