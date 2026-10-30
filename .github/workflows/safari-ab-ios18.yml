@@ -77,6 +77,12 @@ jobs:
           fi
           echo "A/B test source identical: $control_blob"
 
+          # Keep each ref's source checkout isolated. Xcode/SPM is allowed to
+          # alter its own working tree without blocking the next arm.
+          for arm in control experiment diagnostic; do
+            git worktree add --detach "$RUNNER_TEMP/feedmine-src-$arm" "$(cat "$REPORT_DIR/$arm.sha")"
+          done
+
       - name: Build tests for three frozen refs (one simulator SDK)
         shell: bash
         run: |
@@ -84,12 +90,13 @@ jobs:
           printf 'arm\tbuild\n' > "$REPORT_DIR/builds.tsv"
           for arm in control experiment diagnostic; do
             mkdir -p "$REPORT_DIR/$arm"
-            git checkout --detach "$(cat "$REPORT_DIR/$arm.sha")"
+            worktree="$RUNNER_TEMP/feedmine-src-$arm"
+            test -f "$worktree/FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj"
             dd="${RUNNER_TEMP}/feedmine-derived-$arm"
             log="$REPORT_DIR/$arm/build.log"
             echo "Building $arm at $(git rev-parse HEAD)"
             if xcodebuild build-for-testing \
-              -project FeedMineApp/FeedMineApp.xcodeproj \
+              -project "$worktree/FeedMineApp/FeedMineApp.xcodeproj" \
               -scheme FeedMine -configuration Debug \
               -destination "platform=iOS Simulator,id=$DEVICE_ID" \
               -derivedDataPath "$dd" \
@@ -116,7 +123,6 @@ jobs:
             fi
           done
           cat "$REPORT_DIR/builds.tsv"
-          git checkout --detach "${GITHUB_SHA}"
 
       - name: Interleave three A/B tests on the same booted simulator and take diagnostic
         shell: bash
