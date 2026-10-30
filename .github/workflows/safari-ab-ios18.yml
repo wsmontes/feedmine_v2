@@ -64,6 +64,19 @@ jobs:
           done
           cat "$REPORT_DIR/branches.tsv"
 
+          # A/B results are comparable only if BOTH frozen commits contain the
+          # exact same XCTest source. Reject branch drift before any Xcode build.
+          test_path='FeedMineApp/FeedMineAppTests/ReadingSurfaceUITests.swift'
+          control_blob=$(git rev-parse "$(cat "$REPORT_DIR/control.sha"):$test_path")
+          experiment_blob=$(git rev-parse "$(cat "$REPORT_DIR/experiment.sha"):$test_path")
+          printf 'control=%s\nexperiment=%s\n' "$control_blob" "$experiment_blob" > "$REPORT_DIR/test-parity.txt"
+          if [[ "$control_blob" != "$experiment_blob" ]]; then
+            echo "A/B invalid: control and experiment do not contain the same UI test" >&2
+            cat "$REPORT_DIR/test-parity.txt"
+            exit 1
+          fi
+          echo "A/B test source identical: $control_blob"
+
       - name: Build tests for three frozen refs (one simulator SDK)
         shell: bash
         run: |
