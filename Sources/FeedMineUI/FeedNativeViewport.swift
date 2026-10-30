@@ -162,6 +162,7 @@ struct NativeFeedViewport: ViewModifier {
             .onDisappear {
                 guard matchesScope else { return }
                 capture.interaction.end()
+                capture.interruptTransientMotion()
                 store.setReadingInteractionActive(false)
                 #if canImport(UIKit)
                 capture.nativeScrollOffset.setInteractionActive(false)
