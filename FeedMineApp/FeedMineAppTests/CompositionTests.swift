@@ -4074,6 +4074,88 @@ final class FeedFrameBudgetTests: XCTestCase {
         await active.close()
     }
 
+    /// Three external source commits can arrive during a single adoption. The
+    /// first two are handled in one bounded turn; the third is enqueued behind a
+    /// reader filter that is already waiting, rather than starving navigation.
+    func testContinuousExternalSourceEditsYieldToQueuedReaderIntent() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
+        XCTAssertNil(composition.startupFailure)
+        let sources = composition.feeds
+        XCTAssertGreaterThanOrEqual(sources.count, 3)
+        let first = sources[0], second = sources[1]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let initial = try XCTUnwrap(preferences.load())
+        var settings = initial.settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let firstCommit = try preferences.changeSources(removing: [first.principal])
+        var passVersions: [UInt64] = []
+        var readerIntentFinished = false
+        var readerFinishedBeforeThirdPass = false
+        composition.sourceAdoptionDidRebuild = { version in
+            passVersions.append(version)
+            switch passVersions.count {
+            case 1:
+                _ = try preferences.changeSources(removing: [second.principal])
+            case 2:
+                _ = try preferences.changeSources(adding: [first.principal])
+            case 3:
+                readerFinishedBeforeThirdPass = readerIntentFinished
+            default:
+                XCTFail("No additional rebuild should be required without newer versions")
+            }
+        }
+        defer { composition.sourceAdoptionDidRebuild = nil }
+
+        let adoption = Task { await composition.adoptSelectionChange() }
+        let suspended = await gate.nextRead()
+        let readerIntent = Task { @MainActor in
+            try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+            readerIntentFinished = true
+        }
+        let waitDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < waitDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1,
+            "The reader must be waiting before the ongoing external rebuild finishes")
+
+        gate.answer(suspended, entries: [], subjects: [:])
+        await adoption.value
+        try await readerIntent.value
+        let finishDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while passVersions.count != 3,
+            ProcessInfo.processInfo.systemUptime < finishDeadline { await Task.yield() }
+
+        XCTAssertEqual(passVersions, [
+            firstCommit.selectionVersion,
+            firstCommit.selectionVersion + 1,
+            firstCommit.selectionVersion + 2])
+        XCTAssertTrue(readerFinishedBeforeThirdPass,
+            "The reader's earlier queued intent must finish before adoption requeues itself")
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        let latest = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(latest.selectionVersion, firstCommit.selectionVersion + 2)
+        let expected = sources.dropFirst(2).map(\.principal) + [first.principal]
+        XCTAssertEqual(latest.sourceKeys, expected)
+        XCTAssertEqual(composition.feeds.map(\.principal), expected)
+        XCTAssertEqual(composition.currentContextKey.filter.mood, .fun)
+        XCTAssertEqual(latest.activeContextKey, composition.currentContextKey)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertTrue(active.active)
+        XCTAssertEqual(active.feeds.map(\.principal), expected)
+        XCTAssertNil(composition.startupFailure)
+        await active.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
