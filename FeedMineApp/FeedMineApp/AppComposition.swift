@@ -134,6 +134,10 @@ final class AppComposition {
     @ObservationIgnored var sourceAdoptionDidRebuild: ((UInt64) throws -> Void)?
     @ObservationIgnored private(set) var sourceAdoptionContinuationSchedules = 0
     @ObservationIgnored private(set) var sourceAdoptionContinuationCompletions = 0
+    // Runs after a version-specific toggle proposal has been calculated but
+    // before its atomic commit. A test can inject a concurrent source-manager
+    // transaction deterministically, including repeated conflicts.
+    @ObservationIgnored var sourceToggleBeforeCommit: ((Int) throws -> Void)?
     var hasPendingSourceAdoptionContinuation: Bool { sourceAdoptionContinuationPending }
     #endif
 
@@ -680,39 +684,62 @@ final class AppComposition {
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
         }
-        guard let persisted = try preferences.load(), let database = libraryDatabase() else {
+        guard let database = libraryDatabase() else {
             throw ReaderPreferencesError.missingPreferences
         }
-        let removing = persisted.sourceKeys.contains(choice.principal)
-        let updatedKeys = persisted.sourceKeys.filter { $0 != choice.principal }
-            + (removing ? [] : [choice.principal])
-        guard !updatedKeys.isEmpty else { throw ReaderPreferencesError.invalidSelection }
         let identities = ReaderLibraryStore(database: database)
-        let next = try TrustedFeed.resolveAvailable(keys: updatedKeys,
-            fallback: selectedFeeds + [choice], readerSources: readerSourceEntries(),
-            catalogueURL: catalogueURL, identities: identities.sourceLinks())
-        guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
-        let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
-        let newKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
-            filter: currentContextKey.filter)
-        // The version check is performed inside the same SQLite transaction as
-        // the selection/context writes. An external commit between our snapshot
-        // and that write must not install a context derived from stale sources.
-        let saved = try preferences.commitSourceTransition(
-            adding: removing ? [] : [choice.principal],
-            removing: removing ? [choice.principal] : [],
-            context: newKey,
-            resolvedSources: next.map {
-                (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
-                    ? "reader" : "catalog")
-            },
-            expectedSelectionVersion: persisted.selectionVersion)
+        // A source-management surface can write outside this in-process gate.
+        // Retry only an optimistic version conflict, never an unrelated SQLite
+        // or resolution failure. Each retry recomputes the toggle from the latest
+        // durable source list; it does not replay the first snapshot's add/remove.
+        // The bound prevents a continuously writing source manager from starving
+        // queued reader navigation.
+        let maximumSelectionAttempts = 3
+        var committed: (record: ReaderPreferencesStore.Record, feeds: [TrustedFeed])?
+        for attempt in 1...maximumSelectionAttempts {
+            try Task.checkCancellation()
+            guard let persisted = try preferences.load() else {
+                throw ReaderPreferencesError.missingPreferences
+            }
+            let removing = persisted.sourceKeys.contains(choice.principal)
+            let updatedKeys = persisted.sourceKeys.filter { $0 != choice.principal }
+                + (removing ? [] : [choice.principal])
+            guard !updatedKeys.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+            let next = try TrustedFeed.resolveAvailable(keys: updatedKeys,
+                fallback: selectedFeeds + [choice], readerSources: readerSourceEntries(),
+                catalogueURL: catalogueURL, identities: identities.sourceLinks())
+            guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+            let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
+            let key = ContextKey(request: request, preset: presetAfterSelectionChange(),
+                filter: currentContextKey.filter)
+            #if DEBUG
+            try sourceToggleBeforeCommit?(attempt)
+            #endif
+            do {
+                let record = try preferences.commitSourceTransition(
+                    adding: removing ? [] : [choice.principal],
+                    removing: removing ? [choice.principal] : [],
+                    context: key,
+                    resolvedSources: next.map {
+                        (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
+                            ? "reader" : "catalog")
+                    },
+                    expectedSelectionVersion: persisted.selectionVersion)
+                committed = (record, next)
+                break
+            } catch ReaderPreferencesError.selectionConflict {
+                if attempt == maximumSelectionAttempts {
+                    throw ReaderPreferencesError.selectionConflict
+                }
+            }
+        }
+        guard let committed else { throw ReaderPreferencesError.selectionConflict }
         // Past this point the user's new selection is committed. Do not undo its
         // monotonic version on a late launch failure: instead attempt to recover
         // the newly requested session from the committed state.
-        selectedFeeds = next
-        selectionVersion = saved.selectionVersion
-        currentContextKey = saved.activeContextKey
+        selectedFeeds = committed.feeds
+        selectionVersion = committed.record.selectionVersion
+        currentContextKey = committed.record.activeContextKey
         if let retired = association { await retired.close() }
         association = nil
         do {
