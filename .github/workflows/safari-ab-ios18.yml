@@ -95,7 +95,14 @@ jobs:
               -derivedDataPath "$dd" \
               -parallel-testing-enabled NO \
               CODE_SIGNING_ALLOWED=NO > "$log" 2>&1; then
-              file=$(find "$dd/Build/Products" -maxdepth 1 -name '*.xctestrun' -print -quit)
+              # A success exit from xcodebuild is insufficient if the test manifest
+              # was not emitted. Avoid an unhandled find error under set -e: record
+              # the missing bundle explicitly so all three arms remain diagnosable.
+              products="$dd/Build/Products"
+              file=""
+              if [[ -d "$products" ]]; then
+                file=$(find "$products" -maxdepth 1 -name '*.xctestrun' -print -quit)
+              fi
               if [[ -n "$file" ]]; then
                 echo "$file" > "$REPORT_DIR/$arm/xctestrun-path.txt"
                 printf '%s\tpass\n' "$arm" >> "$REPORT_DIR/builds.tsv"
