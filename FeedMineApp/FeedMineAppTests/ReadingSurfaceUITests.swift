@@ -124,11 +124,27 @@ final class ReadingSurfaceUITests: XCTestCase {
         add(shot)
     }
 
-    // Only collect the expensive accessibility hierarchy when the opt-in
-    // diagnostic node disappears. A screenshot alone cannot establish whether
-    // UIKit removed the view or XCTest filtered it from its element tree.
+    // The probe can sit beyond the first 20,000 characters of a busy AX tree.
+    // Keep the area around its identifier when present. If absent, preserve
+    // both ends of the hierarchy instead of silently dropping everything late.
+    // This remains bounded and is invoked only on diagnostic failure paths.
     private func attachDiagnosticAccessibilityTree(_ app: XCUIApplication, stage: String) {
-        let tree = XCTAttachment(string: String(app.debugDescription.prefix(20_000)))
+        let hierarchy = app.debugDescription
+        let identifier = "native-viewport-diagnosis"
+        let excerpt: String
+        if let match = hierarchy.range(of: identifier) {
+            let from = hierarchy.index(match.lowerBound, offsetBy: -9_000,
+                limitedBy: hierarchy.startIndex) ?? hierarchy.startIndex
+            let to = hierarchy.index(match.upperBound, offsetBy: 9_000,
+                limitedBy: hierarchy.endIndex) ?? hierarchy.endIndex
+            excerpt = String(hierarchy[from..<to])
+        } else if hierarchy.count > 20_000 {
+            excerpt = String(hierarchy.prefix(10_000)) + "\n--- MIDDLE OMITTED ---\n" +
+                String(hierarchy.suffix(10_000))
+        } else {
+            excerpt = hierarchy
+        }
+        let tree = XCTAttachment(string: "totalCharacters=\(hierarchy.count); identifierFound=\(hierarchy.contains(identifier))\n" + excerpt)
         tree.name = "safari-diagnostic-ax-tree-\(stage)"
         tree.lifetime = .keepAlways
         add(tree)
@@ -300,6 +316,15 @@ final class ReadingSurfaceUITests: XCTestCase {
             attach(app, "safari-diagnosis-unreadable-before-safari")
             return XCTFail("native diagnostic must remain readable before opening Safari")
         }
+        // Commit the baseline before any UIKit presentation or subsequent AX
+        // query can fail. The return path still attaches its own two samples.
+        let baselineEvidence = XCTAttachment(string: [
+            "initial=\(initial)", "before=\(before)",
+            "tracked=\(tracked.identity)", "beforeY=\(tracked.frame.minY)"
+        ].joined(separator: "\n"))
+        baselineEvidence.name = "safari-native-baseline-before-presentation"
+        baselineEvidence.lifetime = .keepAlways
+        add(baselineEvidence)
         let card = byIdentifier(app, tracked.identity)
         XCTAssertTrue(card.exists && card.isHittable)
         let opener = openControl(card)
