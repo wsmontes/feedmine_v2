@@ -102,6 +102,22 @@ final class ReaderHostTests: XCTestCase {
             "and what went up is the controller the host built, not a second one")
     }
 
+    /// The reader is opaque, but the presenting feed must remain mounted behind it.
+    /// UIKit removes the presenting view hierarchy for .fullScreen. Retaining that hierarchy
+    /// prevents one source of native ScrollView teardown/re-attachment on browser close.
+    func testOpaqueReaderRetainsPresentingFeedHierarchy() async {
+        let platform = PlatformDouble()
+        let coordinator = coordinator(platform, Recorder())
+
+        coordinator.show(.site(Self.url))
+        await waitUntil { platform.up != nil }
+        let controller = try? XCTUnwrap(platform.up)
+        XCTAssertEqual(controller?.modalPresentationStyle, .overFullScreen,
+            "a fullScreen reader can detach the presenting SwiftUI ScrollView")
+        XCTAssertEqual(controller?.view.backgroundColor, UIColor.systemBackground,
+            "the reader must stay opaque even though the feed remains mounted")
+    }
+
     /// The reader is one presentation. A page its own chrome asks for — the site, from the text the app holds —
     /// changes what that one presentation draws; it is never presented as a second one, which would leave the
     /// controller underneath outliving the app state that put it there.
