@@ -640,23 +640,59 @@ final class AppComposition {
             currentContextKey.filter.isUnrestricted, currentContextKey.preset == .everything { return }
         replacingSession = true
         defer { replacingSession = false }
+        let previousKey = currentContextKey
+        // A failed checkpoint leaves the previous association alive: do not close it
+        // until its current reading position has actually been made durable.
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
         association = nil
-        // A surface switch is an explicit transition too, so a pending expiry is resolved here.
-        currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
-            filter: resolvedFilter(at: Date()))
-        _ = try preferences?.setContext(currentContextKey)
-        let next = try await association(contextKey: currentContextKey)
-        association = next
-        startupFailure = nil
-        try await next.launch()
-        // Answers received during this constructor belong to the finished transition too.
+        do {
+            // A surface switch is an explicit transition too, so a pending expiry is resolved here.
+            currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
+                filter: resolvedFilter(at: Date()))
+            _ = try preferences?.setContext(currentContextKey)
+            let next = try await association(contextKey: currentContextKey)
+            association = next
+            try await next.launch()
+            startupFailure = nil
+            startupFailureDetail = nil
+        } catch {
+            let transitionError = error
+            await restoreAfterFailedContextTransition(previousKey: previousKey, cause: transitionError)
+            throw transitionError
+        }
+        // A completed context transition may need one additional rebuild for answers
+        // received during construction. A failure of that later rebuild must not
+        // pretend the original A→B transition never succeeded.
         if pendingRebuild {
             replacingSession = false
             try await replaceSession()
+        }
+    }
+
+    /// Best-effort compensation for a failed context replacement. FeedAssociation.init
+    /// performs independent, already-committed database writes; we cannot just put the
+    /// old (closed) instance back on screen. Rebuild the prior identity from its durable
+    /// per-context checkpoint and put preferences back on the same identity.
+    /// If recovery also fails, report an explicit startup error instead of silently
+    /// retaining a nil association or claiming the failed destination succeeded.
+    private func restoreAfterFailedContextTransition(previousKey: ContextKey, cause: Error) async {
+        if let incomplete = association { await incomplete.close() }
+        association = nil
+        currentContextKey = previousKey
+        do {
+            _ = try preferences?.setContext(previousKey)
+            let restored = try await association(contextKey: previousKey)
+            association = restored
+            try await restored.launch()
+            startupFailure = nil
+            startupFailureDetail = nil
+        } catch {
+            startupFailure = "Não foi possível recuperar o feed anterior."
+            startupFailureDetail = "transition: \(cause); recovery: \(error)"
+            Self.log("failed context recovery: \(String(describing: error))")
         }
     }
 
