@@ -66,6 +66,11 @@ final class AppComposition {
 
     /// Whether an answer arrived while a rebuild was running: the running rebuild repeats for it.
     @ObservationIgnored private var pendingRebuild = false
+    #if DEBUG
+    /// Test-only one-shot construction failure after FeedAssociation.init has performed
+    /// its durable writes, but before the new association is handed to the app.
+    @ObservationIgnored var associationConstructionFault: (() throws -> Void)?
+    #endif
 
     /// F05: the evidence a run is judged by, written where the run can find it (beside the runtime database).
     @ObservationIgnored lazy var trace: RunwayTrace? = RunwayTrace(directory: directory)
@@ -707,11 +712,30 @@ final class AppComposition {
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
             searchScope: currentContextKey.searchScope)
         guard key != currentContextKey else { return }
+        let previousKey = currentContextKey
+        let previousExpiry = (try? preferences?.load())??.filterExpiry
         currentContextKey = key
-        _ = try preferences?.setContext(key)
-        // A new overlay selection starts the window again; a selection without overlay criteria has none.
-        _ = try preferences?.setFilterExpiry(filterExpiry(renewing: filter, at: Date()))
-        try await replaceSession()
+        do {
+            _ = try preferences?.setContext(key)
+            // A new overlay selection starts the window again; a selection without overlay criteria has none.
+            _ = try preferences?.setFilterExpiry(filterExpiry(renewing: filter, at: Date()))
+            try await replaceSession(recoveryKey: previousKey)
+        } catch {
+            // The filter is not committed as a navigable context until a session
+            // actually launches. Restore the raw identity and its expiry, not the
+            // association's globally-applied exclusions.
+            let transitionError = error
+            currentContextKey = previousKey
+            do {
+                _ = try preferences?.setContext(previousKey)
+                if let previousExpiry { _ = try preferences?.setFilterExpiry(previousExpiry) }
+            } catch {
+                startupFailure = "Não foi possível restaurar os filtros anteriores."
+                startupFailureDetail = "transition: \(transitionError); preferences: \(error)"
+                Self.log("failed filter rollback: \(String(describing: error))")
+            }
+            throw transitionError
+        }
     }
 
     /// T6: the expiry record for a selection applied now. V1's four-hour rule covers the overlay criteria
@@ -1343,13 +1367,19 @@ final class AppComposition {
         }
         let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
-        return connecting(try FeedAssociation(directory: directory, feeds: session.feeds,
+        let built = try FeedAssociation(directory: directory, feeds: session.feeds,
             discovery: read?.feeds ?? [], subjects: read?.subjects ?? [:],
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
             discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
-            discoveryProfile: profile, warmLaunch: warmLaunch))
+            discoveryProfile: profile, warmLaunch: warmLaunch)
+        #if DEBUG
+        // This seam runs after the constructor's separate durable transactions. A test
+        // can fail only the first attempt; compensating recovery then runs unmodified.
+        try associationConstructionFault?()
+        #endif
+        return connecting(built)
     }
 
     /// The association a **warm** launch starts from — the same session `launch()` would build, built
@@ -1730,32 +1760,42 @@ final class AppComposition {
         try? await replaceSession()
     }
 
-    func replaceSession() async throws {
+    func replaceSession(recoveryKey: ContextKey? = nil) async throws {
         guard !replacingSession else { pendingRebuild = true; return }
         replacingSession = true
         defer { replacingSession = false }
-        try await rebuildSessionWhileTransitionLocked()
+        try await rebuildSessionWhileTransitionLocked(recoveryKey: recoveryKey)
     }
 
     /// The caller already holds the @MainActor transition gate, including across awaits.
     /// An editorial answer arriving during construction sets pendingRebuild; it does not
     /// give another context transition a chance to overlap before that answer is applied.
-    private func rebuildSessionWhileTransitionLocked() async throws {
+    private func rebuildSessionWhileTransitionLocked(recoveryKey: ContextKey? = nil) async throws {
+        // Some callers (notably applyFilter) have already persisted the intended
+        // context. They must explicitly supply the last successfully readable raw
+        // identity; the association's applied key may contain global exclusions.
+        let previousKey = recoveryKey ?? currentContextKey
         repeat {
             pendingRebuild = false
             let retired = association
             // Preserve the live session if its required durability milestone fails.
-            // Previously association was set to nil BEFORE the throwing checkpoint.
             if let retired {
                 _ = try await retired.session.checkpointCurrentPosition(at: Date())
             }
             association = nil
             if let retired { await retired.close() }
-            let next = try await association(contextKey: currentContextKey)
-            association = next
-            try await next.launch()
-            startupFailure = nil
-            startupFailureDetail = nil
+            do {
+                let next = try await association(contextKey: currentContextKey)
+                association = next
+                try await next.launch()
+                startupFailure = nil
+                startupFailureDetail = nil
+            } catch {
+                let transitionError = error
+                await restoreAfterFailedContextTransition(previousKey: previousKey,
+                    cause: transitionError)
+                throw transitionError
+            }
         } while pendingRebuild
     }
 }
