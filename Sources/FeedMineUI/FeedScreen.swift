@@ -158,7 +158,8 @@ public struct FeedScreen: View {
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
                 #if DEBUG && canImport(UIKit)
-                .modifier(FeedNativeWindowProof(ids: items.map(\.id), access: capture.nativeScrollOffset, deferredWindows: capture.interaction.deferredWindows))
+                .modifier(FeedNativeWindowProof(ids: items.map(\.id), access: capture.nativeScrollOffset,
+                    deferredWindows: capture.interaction.deferredWindows, store: store, capture: $capture))
                 #endif
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
