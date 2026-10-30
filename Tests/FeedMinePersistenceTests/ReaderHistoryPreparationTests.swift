@@ -25,6 +25,46 @@ final class ReaderHistoryPreparationTests: XCTestCase {
         return point
     }
 
+    func testRetainedInventoryRejectsACheckpointWhoseCardBelongsToAnotherOwner() throws {
+        let db = try StorageFixture.database(self), bindings = ReaderHistoryBindingStore(database: db)
+        let sessions = SessionStore(database: db), ownerA = try bindings.resolve(logicalKey: key())
+        let activeA = try sessions.activateBinding(ownerA.id), a = try publish(db, key(), activeA)
+        let ownerB = try bindings.resolve(logicalKey: key("B"))
+        let activeB = try sessions.activateBinding(ownerB.id), b = try publish(db, key("B"), activeB)
+        try db.write { try $0.execute(sql: "UPDATE reader_history_checkpoints SET card_id = ? WHERE binding_id = ?",
+            arguments: [PersistenceValueCoding.uuid(b.cardID.rawValue), PersistenceValueCoding.uuid(ownerA.id)]) }
+        XCTAssertThrowsError(try bindings.retainedReadings()) {
+            XCTAssertEqual($0 as? ReaderHistoryBindingStore.Failure, .corruption)
+        }
+        XCTAssertEqual(try sessions.checkpoint(bindingActivation: activeB), b)
+        XCTAssertEqual(try bindings.owner(ofEditionID: a.editionID)?.id, ownerA.id)
+        XCTAssertEqual(try bindings.owner(ofEditionID: b.editionID)?.id, ownerB.id)
+    }
+
+    func testRetainedInventorySeparatesActiveAndPreparedSiblingEditionsOfOneLogicalBinding() throws {
+        let db = try StorageFixture.database(self), bindings = ReaderHistoryBindingStore(database: db)
+        let sessions = SessionStore(database: db), binding = try bindings.resolve(logicalKey: key())
+        let current = try sessions.activateBinding(binding.id), a = try publish(db, key(), current)
+        let pending = try sessions.prepareBinding(binding.id)
+        let reset = try sessions.resetPreparedBinding(pending, editionID: nil)
+        let b = try publish(db, key(), reset)
+        let readings = try bindings.retainedReadings()
+        XCTAssertEqual(Set(readings.map { $0.edition.id }), [a.editionID, b.editionID])
+        XCTAssertEqual(Set(readings.compactMap { $0.owner?.id }), [binding.id])
+        XCTAssertEqual(Set(readings.compactMap { $0.owner?.activeEditionID }), [a.editionID])
+        XCTAssertEqual(readings.flatMap(\.checkpoints).filter(\.isActive).map(\.point), [a])
+        XCTAssertEqual(readings.filter(\.isSelectedPreparation).map { $0.edition.id }, [b.editionID])
+        XCTAssertEqual(readings.first { $0.edition.id == b.editionID }?.checkpoints.map(\.point), [b])
+        XCTAssertTrue(try sessions.isPreparedBinding(reset))
+        XCTAssertEqual(try sessions.checkpoint(bindingActivation: current), a)
+        XCTAssertTrue(try sessions.cancelPreparedBinding(reset))
+        let cancelled = try bindings.retainedReadings()
+        XCTAssertEqual(cancelled.flatMap(\.checkpoints).filter(\.isActive).map(\.point), [a])
+        XCTAssertTrue(cancelled.allSatisfy { !$0.isSelectedPreparation })
+        XCTAssertEqual(cancelled.first { $0.edition.id == b.editionID }?.checkpoints.map(\.point), [b])
+        XCTAssertEqual(try sessions.checkpoint(bindingActivation: current), a)
+    }
+
     func testPreparedPublicationRetainsCurrentReaderUntilAtomicPromotion() throws {
         let db = try StorageFixture.database(self), bindings = ReaderHistoryBindingStore(database: db)
         let session = SessionStore(database: db), a = try bindings.resolve(logicalKey: key())

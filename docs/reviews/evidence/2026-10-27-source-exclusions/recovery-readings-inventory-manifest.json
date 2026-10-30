@@ -1,0 +1,30 @@
+{
+  "binary": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests",
+  "binary_sha256": "1f7326f3fbd933bc1aae96eb08892da6932889751acdd6b3a34455963f7c28f2",
+  "archives": [
+    {
+      "file": "recovery-readings-inventory-affected.log.gz",
+      "uncompressed_sha256": "dfd2e7fc442b32ec67cd34d83b442d393db7fce127fdde3b51dcf873f3bcb20e"
+    },
+    {
+      "file": "recovery-readings-inventory-final-affected.log.gz",
+      "uncompressed_sha256": "d957e1290822f97dc8d14b82d2c76fb319b8ea2a430d46f518dc118c58230837"
+    },
+    {
+      "file": "recovery-readings-inventory-full.log.gz",
+      "uncompressed_sha256": "b8e32abef5221becc269cf734255189adbc7f1193eb35a95e0ead62d119831ed"
+    },
+    {
+      "file": "recovery-readings-inventory-green.log.gz",
+      "uncompressed_sha256": "d0482c89bd2bf5a81cc80edc52a3b03e0d53e16a98421f8fcfd7e6235fcba7ff"
+    },
+    {
+      "file": "recovery-readings-inventory-red.log.gz",
+      "uncompressed_sha256": "eb6f7db786627c114ead2bc27a23d8ebc9d87dd4484cf0e6f18d9492dae9d7ca"
+    },
+    {
+      "file": "recovery-readings-inventory-source.patch.gz",
+      "uncompressed_sha256": "b2f1d97f8ba50284e032899313c5fed8895ebc9efe9ba9dbdeb7525a30efeec0"
+    }
+  ]
+}

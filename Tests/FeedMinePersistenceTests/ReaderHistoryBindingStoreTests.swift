@@ -43,6 +43,60 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
         XCTAssertEqual(try ReaderHistoryBindingStore(database: reopened).resolve(logicalKey: key([])), binding)
     }
 
+    func testRetainedReadingsInventoryIncludesOwnedAndUnownedSiblingsWithoutASingletonOrAuthorityChanges() throws {
+        let db = try StorageFixture.database(self), frozen = key(["old"])
+        let preferences = try prefs(db, words: [])
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.contentFilterTemplates = ["unresolved-retained-reading-template"]
+        _ = try preferences.setSettings(settings)
+        XCTAssertThrowsError(try preferences.wordExclusionSnapshot(templates: []),
+            "unresolved current publication policy must not prevent inspection of frozen readings")
+        let (a, _) = try published(db, key: frozen)
+        let b = StorageFixture.edition(revision: a.editorialRevision), card = StorageFixture.card()
+        try PublicationStore(database: db).createEdition(b, firstSegment: StorageFixture.segment(b, [card]), cards: [card])
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let aPoint = try XCTUnwrap(sessions.checkpoint())
+        let bPoint = SessionStore.CheckpointRecord(editionID: b.id, cardID: card.id,
+            anchorPlacement: "center", updatedAt: aPoint.updatedAt.addingTimeInterval(-10))
+        try db.write { try $0.execute(sql: "UPDATE context_checkpoints SET edition_id = ?, card_id = ?, anchor_placement = ?, updated_at = ?",
+            arguments: [PersistenceValueCoding.uuid(b.id.rawValue), PersistenceValueCoding.uuid(card.id.rawValue),
+                bPoint.anchorPlacement, bPoint.updatedAt.timeIntervalSince1970]) }
+        let empty = try store.resolve(logicalKey: key([]))
+        _ = try sessions.activateBinding(empty.id)
+        XCTAssertNil(try sessions.checkpoint())
+        let unowned = try store.retainedReadings()
+        XCTAssertEqual(Set(unowned.map { $0.edition.id }), [a.id, b.id])
+        XCTAssertTrue(unowned.allSatisfy { $0.owner == nil && !$0.isSelectedPreparation })
+        XCTAssertEqual(unowned.first { $0.edition.id == a.id }?.checkpoints.map(\.point), [aPoint])
+        XCTAssertEqual(unowned.first { $0.edition.id == b.id }?.checkpoints.map(\.point), [bPoint])
+        XCTAssertTrue(unowned.flatMap(\.checkpoints).allSatisfy { !$0.isActive })
+        XCTAssertEqual(try store.retainedReadings(), unowned, "inventory order and values are stable without choosing newest")
+        let owner = try store.resolve(logicalKey: frozen, adopting: .init(editionID: a.id,
+            publicationKey: frozen, evidence: .exactContext, checkpoint: aPoint))
+        let prepared = try sessions.prepareBinding(owner.id)
+        let hidden = try store.retainedReadings()
+        XCTAssertEqual(hidden.first { $0.edition.id == a.id }?.owner, owner)
+        XCTAssertEqual(hidden.first { $0.edition.id == a.id }?.isSelectedPreparation, true)
+        XCTAssertTrue(hidden.flatMap(\.checkpoints).allSatisfy { !$0.isActive },
+            "a hidden prepared history is not the displayed reader")
+        XCTAssertTrue(try sessions.isPreparedBinding(prepared), "reading inventory never revokes preparation")
+        try sessions.promotePreparedBinding(prepared)
+        let current = try store.retainedReadings()
+        XCTAssertEqual(current.flatMap(\.checkpoints).filter(\.isActive).map(\.point), [aPoint])
+        XCTAssertNil(try store.owner(ofEditionID: b.id))
+        XCTAssertEqual(try sessions.checkpoint(bindingActivation: prepared), aPoint)
+        let moved = SessionStore.CheckpointRecord(editionID: a.id, cardID: aPoint.cardID,
+            anchorPlacement: "center", updatedAt: aPoint.updatedAt.addingTimeInterval(20))
+        try sessions.saveCheckpoint(moved, bindingActivation: prepared)
+        XCTAssertEqual(try store.retainedReadings().first { $0.edition.id == a.id }?.checkpoints.map(\.point), [moved, aPoint],
+            "active and original statements remain separate, without replacing the original by latest")
+        try sessions.clearActiveCheckpoint(bindingActivation: prepared, expectedEditionID: a.id)
+        let cleared = try store.retainedReadings()
+        XCTAssertTrue(cleared.flatMap(\.checkpoints).allSatisfy { !$0.isActive })
+        XCTAssertEqual(cleared.first { $0.edition.id == a.id }?.checkpoints.map(\.point), [moved, aPoint])
+        XCTAssertNil(try sessions.checkpoint())
+    }
+
     func testRetainedCardAuthoritativeEvidenceSurvivesUnknownCardAndRepeatedPreservation() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }

@@ -1,5 +1,12 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — inventário completo de leituras retidas, 2026-10-30
+
+Consulta read-only de todas as Editions com owner opcional, critérios congelados, originais/checkpoints owned distintos, posição realmente ativa e preparação selecionada. Funciona sem singleton e sob política global não resolvida; não escolhe a Edition mais recente. **1855 testes completos, um ignorado, zero falhas; foco44/0**, revisão/followup sem achados. [Relatório](2026-10-30-f13-retained-readings-inventory.md).
+
+Sem nova execução iOS para a API ainda não consumida pelo host. Seleção explícita de Editions irmãs, UI e aceitação permanecem pendentes.
+
+
 ## Atualização — declarações legadas preservadas no cutover, 2026-10-30
 
 A suspeita de overwrite por checkpoints owned foi refutada: persistOwned já protege a linha legada. RED real: singleton A e contexto B distintos; refilar A na ativação perdia a evidência B. Corrigido com migração aditiva de declarações originais e Edition observada, preservação antes das ativações, inventário e adoção posteriores. **1852 testes completos, um ignorado, zero falhas; foco41/0 e nativo20/0**, revisão/followup sem achados pendentes nesta etapa. [Relatório](2026-10-30-f13-retained-legacy-statements.md).

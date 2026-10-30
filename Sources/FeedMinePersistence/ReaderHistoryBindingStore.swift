@@ -251,8 +251,14 @@ public struct ReaderHistoryBindingStore: Sendable {
     private static func read(_ key: ContextKey, in db: Database) throws -> Record? {
         guard let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE logical_identity = ?",
             arguments: [key.canonicalIdentity]) else { return nil }
+        let record = try decodeRecord(row)
+        guard record.logicalKey == key else { throw Failure.corruption }
+        return record
+    }
+
+    static func decodeRecord(_ row: Row) throws -> Record {
         let fields = PublicationRecordFields(row), logical = try Self.key(row, field: "logical_key_json")
-        guard logical == key, try fields.string("logical_identity") == logical.canonicalIdentity else { throw Failure.corruption }
+        guard try fields.string("logical_identity") == logical.canonicalIdentity else { throw Failure.corruption }
         return Record(id: try fields.uuid("id"), logicalKey: logical,
             runtimeNamespace: try fields.string("runtime_namespace"),
             activeEditionID: try fields.optionalUUID("active_edition_id").map { FeedEditionID(rawValue: $0) })
