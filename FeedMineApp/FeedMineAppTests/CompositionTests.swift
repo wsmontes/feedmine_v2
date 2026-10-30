@@ -4348,6 +4348,40 @@ final class FeedFrameBudgetTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// Source management writes outside the in-process gate. A toggle that has
+    /// not yet adopted that external change must base its next live association
+    /// on the committed source list, not the now-stale selectedFeeds array.
+    func testToggleAfterExternalSourceRemovalUsesCommittedSelection() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let choices = threeSourceFixture()
+        let composition = root(directory: directory, feeds: choices)
+        await composition.launch()
+        try await composition.searchSources("")
+        XCTAssertNil(composition.startupFailure)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let before = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(before.sourceKeys, choices.map(\.principal))
+        // A source-management write does not automatically mutate selectedFeeds.
+        let external = try preferences.changeSources(removing: [choices[1].principal])
+        XCTAssertEqual(external.selectionVersion, before.selectionVersion + 1)
+        XCTAssertEqual(composition.feeds.map(\.principal), choices.map(\.principal))
+
+        // The next explicit toggle must remove only the selected first source,
+        // yielding the externally retained third source and its own source context.
+        try await composition.toggleSource(choices[0].sourceID)
+        let persisted = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(persisted.sourceKeys, [choices[2].principal])
+        XCTAssertEqual(persisted.selectionVersion, before.selectionVersion + 2)
+        XCTAssertEqual(persisted.activeContextKey.request, .source(choices[2].sourceID))
+        XCTAssertEqual(composition.currentContextKey, persisted.activeContextKey)
+        XCTAssertEqual(composition.feeds.map(\.principal), [choices[2].principal])
+        XCTAssertEqual(composition.association?.feeds.map(\.principal), [choices[2].principal])
+        XCTAssertTrue(composition.association?.active == true)
+        await composition.association?.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
