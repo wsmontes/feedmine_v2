@@ -1036,7 +1036,8 @@ final class AppComposition {
         guard !(try collectionFeeds(id: id)).isEmpty else { throw ReaderPreferencesError.invalidSelection }
         let previousKey = currentContextKey
         let key = ContextKey(request: .main, preset: .collection(id), filter: .unrestricted)
-        if currentContextKey == key, association?.active == true { return }
+        // Reopening the same collection must still rebuild: its membership may
+        // have changed without its ContextKey changing.
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
