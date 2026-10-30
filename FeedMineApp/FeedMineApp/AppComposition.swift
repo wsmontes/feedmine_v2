@@ -667,8 +667,7 @@ final class AppComposition {
         // received during construction. A failure of that later rebuild must not
         // pretend the original A→B transition never succeeded.
         if pendingRebuild {
-            replacingSession = false
-            try await replaceSession()
+            try await rebuildSessionWhileTransitionLocked()
         }
     }
 
@@ -787,8 +786,7 @@ final class AppComposition {
         try await next.launch()
         // Answers received during this constructor belong to the finished transition too.
         if pendingRebuild {
-            replacingSession = false
-            try await replaceSession()
+            try await rebuildSessionWhileTransitionLocked()
         }
     }
 
@@ -1730,18 +1728,28 @@ final class AppComposition {
         guard !replacingSession else { pendingRebuild = true; return }
         replacingSession = true
         defer { replacingSession = false }
+        try await rebuildSessionWhileTransitionLocked()
+    }
+
+    /// The caller already holds the @MainActor transition gate, including across awaits.
+    /// An editorial answer arriving during construction sets pendingRebuild; it does not
+    /// give another context transition a chance to overlap before that answer is applied.
+    private func rebuildSessionWhileTransitionLocked() async throws {
         repeat {
             pendingRebuild = false
             let retired = association
-            association = nil
+            // Preserve the live session if its required durability milestone fails.
+            // Previously association was set to nil BEFORE the throwing checkpoint.
             if let retired {
                 _ = try await retired.session.checkpointCurrentPosition(at: Date())
-                await retired.close()
             }
+            association = nil
+            if let retired { await retired.close() }
             let next = try await association(contextKey: currentContextKey)
             association = next
-            startupFailure = nil
             try await next.launch()
+            startupFailure = nil
+            startupFailureDetail = nil
         } while pendingRebuild
     }
 }
