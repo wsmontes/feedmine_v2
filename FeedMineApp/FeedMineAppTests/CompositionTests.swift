@@ -3566,6 +3566,125 @@ final class FeedFrameBudgetTests: XCTestCase {
         await current.close()
     }
 
+    /// Two filter requests entered in a known order while discovery is held must
+    /// execute in that order, not merely leave the last preference value in SQLite.
+    func testTwoQueuedFilterTransitionsPreserveFIFOAndFinalSession() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        await composition.launch()
+        let initialKey = composition.currentContextKey
+        let firstEdition = try XCTUnwrap(composition.association?.store.state.presentation?.editionID)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let rebuilding = Task { try await composition.replaceSession() }
+        let suspended = await gate.nextRead()
+        var completed: [ReaderMood] = []
+        let first = Task { @MainActor in
+            try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+            completed.append(.fun)
+        }
+        let firstDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < firstDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1)
+
+        let second = Task { @MainActor in
+            try await composition.applyFilter(ReaderFilter(mood: .technical), preset: .everything)
+            completed.append(.technical)
+        }
+        let secondDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 2,
+            ProcessInfo.processInfo.systemUptime < secondDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 2)
+        XCTAssertEqual(composition.currentContextKey, initialKey)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, initialKey)
+
+        gate.answer(suspended, entries: [], subjects: [:])
+        try await rebuilding.value
+        try await first.value
+        try await second.value
+
+        XCTAssertEqual(completed, [.fun, .technical])
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        let expected = ContextKey(request: initialKey.request, preset: .everything,
+            filter: ReaderFilter(mood: .technical), searchScope: initialKey.searchScope)
+        XCTAssertEqual(composition.currentContextKey, expected)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, expected)
+        let current = try XCTUnwrap(composition.association)
+        XCTAssertTrue(current.active)
+        XCTAssertEqual(current.contextKey.filter.mood, .technical)
+        let checkpoints = SessionStore(database: database)
+        XCTAssertEqual(try checkpoints.checkpoint(for: initialKey)?.editionID, firstEdition)
+        if let edition = current.store.state.presentation?.editionID {
+            XCTAssertEqual(try checkpoints.checkpoint()?.editionID, edition)
+        } else {
+            XCTAssertNil(try checkpoints.checkpoint())
+        }
+        await current.close()
+    }
+
+    /// Cancelling a queued request must remove it, resume its continuation with
+    /// CancellationError, and leave the next legitimate request able to proceed.
+    func testCancelledQueuedFilterDoesNotBlockLaterFilter() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        await composition.launch()
+        let initialKey = composition.currentContextKey
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let rebuilding = Task { try await composition.replaceSession() }
+        let suspended = await gate.nextRead()
+        let cancelled = Task {
+            try await composition.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+        }
+        let firstDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < firstDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1)
+        cancelled.cancel()
+        do {
+            try await cancelled.value
+            XCTFail("A cancelled filter request must not apply")
+        } catch is CancellationError {}
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        XCTAssertEqual(composition.currentContextKey, initialKey)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, initialKey)
+
+        let following = Task {
+            try await composition.applyFilter(ReaderFilter(mood: .technical), preset: .everything)
+        }
+        let secondDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < secondDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1)
+        gate.answer(suspended, entries: [], subjects: [:])
+        try await rebuilding.value
+        try await following.value
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        XCTAssertEqual(composition.currentContextKey.filter.mood, .technical)
+        XCTAssertEqual(try preferences.load()?.activeContextKey.filter.mood, .technical)
+        XCTAssertTrue(composition.association?.active == true)
+        await composition.association?.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
