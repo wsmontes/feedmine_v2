@@ -92,7 +92,8 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
             publicationHistory: .init(database: database), imageDecoder: decoder)
         let bounds = FeedPresentationBounds(
             backwardCapacity: 0, forwardCapacity: 2, keepsAdmittedHead: true)
-        let initial = try XCTUnwrap(try await session.admitPresentation(.restore(bounds)))
+        let initialResult = try await session.admitPresentation(.restore(bounds))
+        let initial = try XCTUnwrap(initialResult)
         let ids = records.map(\.id)
         XCTAssertEqual(initial.window.items.map(\.id), ids)
         XCTAssertEqual(initial.window.anchor.cardID, hero.id)
@@ -103,7 +104,8 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         let heroObservation = ViewportObservation(
             anchor: .init(cardID: hero.id, placement: .center))
 
-        let away = try XCTUnwrap(try await session.submitViewport(lastObservation))
+        let awayResult = try await session.submitViewport(lastObservation)
+        let away = try XCTUnwrap(awayResult)
         XCTAssertEqual(away.window.anchor.cardID, last.id)
         XCTAssertEqual(away.window.items.map(\.id), ids,
             "Keeping the head must preserve historical identity and ordering")
@@ -112,7 +114,8 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
 
         // Positive control: an existing local asset can rematerialize the hero
         // before it becomes the current anchored card again.
-        let returned = try XCTUnwrap(try await session.submitViewport(heroObservation))
+        let returnedResult = try await session.submitViewport(heroObservation)
+        let returned = try XCTUnwrap(returnedResult)
         XCTAssertEqual(returned.window.anchor.cardID, hero.id)
         XCTAssertEqual(returned.window.items.map(\.id), ids)
         XCTAssertNotNil(returned.window.items.first?.image,
@@ -120,13 +123,14 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         XCTAssertEqual(returned.window.items.last?.id, last.id,
             "The already-ready text sibling must remain reachable")
 
-        _ = try XCTUnwrap(try await session.submitViewport(lastObservation))
+        let secondAwayResult = try await session.submitViewport(lastObservation)
+        _ = try XCTUnwrap(secondAwayResult)
         try FileManager.default.removeItem(at: png.file)
 
         // Failure control: when local bytes disappear, a return must not make
         // the undecodable hero the reader's active anchor or consume its retry.
         let missingReturn = try await session.submitViewport(heroObservation)
-        let afterMissing = try await session.currentPresentation()
+        let afterMissing = await session.currentPresentation()
         XCTAssertNotEqual(missingReturn?.window.anchor.cardID, hero.id,
             "An undecodable historical hero cannot be readmitted as the active card")
         XCTAssertEqual(afterMissing?.window.anchor.cardID, last.id,
@@ -136,7 +140,8 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         // Make the same frozen published asset local again; no new publication,
         // identity or editorial layout is created to repair the previous failure.
         try png.bytes.write(to: png.file)
-        let retried = try XCTUnwrap(try await session.submitViewport(heroObservation))
+        let retriedResult = try await session.submitViewport(heroObservation)
+        let retried = try XCTUnwrap(retriedResult)
         XCTAssertEqual(retried.window.anchor.cardID, hero.id)
         XCTAssertEqual(retried.window.items.map(\.id), ids)
         XCTAssertNotNil(retried.window.items.first?.image,
