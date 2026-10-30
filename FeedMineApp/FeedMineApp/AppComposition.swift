@@ -133,6 +133,7 @@ final class AppComposition {
     /// exact boundary between one completed adoption rebuild and its version reread.
     @ObservationIgnored var sourceAdoptionDidRebuild: ((UInt64) throws -> Void)?
     @ObservationIgnored private(set) var sourceAdoptionContinuationSchedules = 0
+    @ObservationIgnored private(set) var sourceAdoptionContinuationCompletions = 0
     var hasPendingSourceAdoptionContinuation: Bool { sourceAdoptionContinuationPending }
     #endif
 
@@ -1401,6 +1402,9 @@ final class AppComposition {
             self.sourceAdoptionContinuationPending = false
             defer { self.releaseSessionTransition() }
             await self.reconcileSourceSelectionWhileLocked()
+            #if DEBUG
+            self.sourceAdoptionContinuationCompletions += 1
+            #endif
         }
     }
 
