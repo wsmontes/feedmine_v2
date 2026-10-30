@@ -317,6 +317,21 @@ final class DiscoveryGate: @unchecked Sendable {
 @MainActor
 final class CompositionTests: XCTestCase {
 
+    /// Five concurrency regressions need three independently selectable sources.
+    /// TrustedFeed.development intentionally contains only two; keep that shared
+    /// fixture unchanged and add one deterministic source for these tests alone.
+    private func threeSourceFixture() -> [TrustedFeed] {
+        TrustedFeed.development + [
+            TrustedFeed(
+                targetID: .init(rawValue: UUID(uuidString: "40000000-0000-4000-8000-000000000003")!),
+                sourceID: .init(rawValue: UUID(uuidString: "50000000-0000-4000-8000-000000000003")!),
+                bindingID: .init(rawValue: UUID(uuidString: "60000000-0000-4000-8000-000000000003")!),
+                principal: "bbc-technology",
+                endpoint: URL(string: "https://feeds.bbci.co.uk/news/technology/rss.xml")!,
+                displayName: "BBC Technology")
+        ]
+    }
+
     private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil,
         feeds: [TrustedFeed] = TrustedFeed.development) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
@@ -3908,7 +3923,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         let gate = DiscoveryGate()
-        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+        let composition = AppComposition(directory: directory, feeds: threeSourceFixture(),
             transportConfiguration: configuration, discoveryQuery: gate.query)
         try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
@@ -4075,7 +4090,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         let gate = DiscoveryGate()
-        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+        let composition = AppComposition(directory: directory, feeds: threeSourceFixture(),
             transportConfiguration: configuration, discoveryQuery: gate.query)
         try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
@@ -4138,7 +4153,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         let gate = DiscoveryGate()
-        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+        let composition = AppComposition(directory: directory, feeds: threeSourceFixture(),
             transportConfiguration: configuration, discoveryQuery: gate.query)
         try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         let originalFeeds = composition.feeds
@@ -4180,7 +4195,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         let gate = DiscoveryGate()
-        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+        let composition = AppComposition(directory: directory, feeds: threeSourceFixture(),
             transportConfiguration: configuration, discoveryQuery: gate.query)
         try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         XCTAssertNil(composition.startupFailure)
@@ -4263,7 +4278,7 @@ final class FeedFrameBudgetTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         let gate = DiscoveryGate()
-        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+        let composition = AppComposition(directory: directory, feeds: threeSourceFixture(),
             transportConfiguration: configuration, discoveryQuery: gate.query)
         try await launchAnsweringInitialDiscovery(composition, gate: gate, directory: directory)
         let sources = composition.feeds
