@@ -669,30 +669,44 @@ final class AppComposition {
         // the selection that exists when this intent actually acquires the gate.
         try await acquireFilterTransition()
         defer { releaseSessionTransition() }
-        guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }
-        var next = selectedFeeds
-        let removing = next.firstIndex(where: { $0.sourceID == sourceID })
-        if let removing { next.remove(at: removing) }
-        else { next.append(choice) }
-        guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
-        // Keep the old association alive through the entire preference transaction.
-        // If it fails, the reader still has the same usable session and durable selection.
+        guard let choice = sourceChoices[sourceID], let preferences else {
+            throw ReaderPreferencesError.invalidSelection
+        }
+        // The source manager commits directly to preferences without acquiring
+        // this in-process gate. Checkpoint first, then calculate the requested
+        // toggle from the *durable* choice list, not stale selectedFeeds.
+        // Otherwise an external removal may be silently reintroduced into the
+        // active session even while the SQLite transaction is individually atomic.
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
         }
+        guard let persisted = try preferences.load(), let database = libraryDatabase() else {
+            throw ReaderPreferencesError.missingPreferences
+        }
+        let removing = persisted.sourceKeys.contains(choice.principal)
+        let updatedKeys = persisted.sourceKeys.filter { $0 != choice.principal }
+            + (removing ? [] : [choice.principal])
+        guard !updatedKeys.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+        let identities = ReaderLibraryStore(database: database)
+        let next = try TrustedFeed.resolveAvailable(keys: updatedKeys,
+            fallback: selectedFeeds + [choice], readerSources: readerSourceEntries(),
+            catalogueURL: catalogueURL, identities: identities.sourceLinks())
+        guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
         let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
         let newKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
             filter: currentContextKey.filter)
-        // D1: change only the toggled key. Unavailable reader-owned sources remain
-        // durable because commitSourceTransition merges with persisted sourceKeys.
+        // The version check is performed inside the same SQLite transaction as
+        // the selection/context writes. An external commit between our snapshot
+        // and that write must not install a context derived from stale sources.
         let saved = try preferences.commitSourceTransition(
-            adding: removing == nil ? [choice.principal] : [],
-            removing: removing == nil ? [] : [choice.principal],
+            adding: removing ? [] : [choice.principal],
+            removing: removing ? [choice.principal] : [],
             context: newKey,
             resolvedSources: next.map {
                 (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
                     ? "reader" : "catalog")
-            })
+            },
+            expectedSelectionVersion: persisted.selectionVersion)
         // Past this point the user's new selection is committed. Do not undo its
         // monotonic version on a late launch failure: instead attempt to recover
         // the newly requested session from the committed state.
