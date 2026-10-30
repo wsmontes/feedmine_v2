@@ -60,10 +60,12 @@ struct NativeFeedViewport: ViewModifier {
                 #if DEBUG
                 FeedVisualCapture.scrollPhaseEvents += 1
                 #endif
+                // A phase from a retired presentation must not poison the next capture's
+                // animation latch: identity is checked before any visual-state mutation.
+                guard matchesScope else { return }
                 // Uma animação programática não é um gesto do leitor: enquanto ela corre, o desenho não está em
                 // repouso e nada do que ele mostrar no meio vira posição durável.
                 capture.motion.animating = phase == .animating
-                guard matchesScope else { return }
                 #if DEBUG
                 if FeedVisualCapture.tracesCapture {
                     Logger(subsystem: "com.feedmine.development", category: "native-capture").info("native SwiftUI phase=\(String(describing: oldPhase), privacy: .public)->\(String(describing: phase), privacy: .public)")
