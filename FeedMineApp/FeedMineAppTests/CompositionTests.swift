@@ -3784,6 +3784,79 @@ final class FeedFrameBudgetTests: XCTestCase {
         await composition.association?.close()
     }
 
+    /// Two explicit intents arriving during a held rebuild must not be discarded.
+    /// The toggle changes the selected source set; the following navigation must
+    /// validate against that new set and commit only after its turn acquires the gate.
+    func testQueuedSourceToggleThenContextNavigationPreservesBothIntents() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let gate = DiscoveryGate()
+        let composition = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        await composition.launch()
+        XCTAssertNil(composition.startupFailure)
+        try await composition.searchSources("")
+        let initiallySelected = composition.feeds
+        XCTAssertGreaterThanOrEqual(initiallySelected.count, 3)
+        let removed = initiallySelected[0], remaining = initiallySelected[1]
+        let initialKey = composition.currentContextKey
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let initialSources = try XCTUnwrap(preferences.load()).sourceKeys
+        var settings = try XCTUnwrap(preferences.load()).settings
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+
+        let rebuilding = Task { try await composition.replaceSession() }
+        let heldRead = await gate.nextRead()
+        var completed: [String] = []
+        let toggle = Task { @MainActor in
+            try await composition.toggleSource(removed.sourceID)
+            completed.append("toggle")
+        }
+        let firstDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 1,
+            ProcessInfo.processInfo.systemUptime < firstDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 1)
+
+        let navigate = Task { @MainActor in
+            try await composition.selectContext(.source(remaining.sourceID))
+            completed.append("navigate")
+        }
+        let secondDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while composition.waitingFilterTransitions != 2,
+            ProcessInfo.processInfo.systemUptime < secondDeadline { await Task.yield() }
+        XCTAssertEqual(composition.waitingFilterTransitions, 2)
+        XCTAssertEqual(composition.currentContextKey, initialKey)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, initialSources)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, initialKey)
+
+        gate.answer(heldRead, entries: [], subjects: [:])
+        try await rebuilding.value
+        try await toggle.value
+        try await navigate.value
+
+        XCTAssertEqual(completed, ["toggle", "navigate"])
+        XCTAssertEqual(composition.waitingFilterTransitions, 0)
+        XCTAssertFalse(composition.feeds.contains(where: { $0.sourceID == removed.sourceID }))
+        XCTAssertTrue(composition.feeds.contains(where: { $0.sourceID == remaining.sourceID }))
+        let expected = ContextKey(request: .source(remaining.sourceID))
+        XCTAssertEqual(composition.currentContextKey, expected)
+        XCTAssertEqual(try preferences.load()?.activeContextKey, expected)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, initialSources.filter { $0 != removed.principal })
+        let finalAssociation = try XCTUnwrap(composition.association)
+        XCTAssertTrue(finalAssociation.active)
+        XCTAssertEqual(finalAssociation.contextKey.request, .source(remaining.sourceID))
+        XCTAssertEqual(finalAssociation.feeds.map(\.principal),
+            initiallySelected.filter { $0.sourceID != removed.sourceID }.map(\.principal))
+        if let displayed = finalAssociation.store.state.presentation {
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, displayed.editionID)
+        }
+        await finalAssociation.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
