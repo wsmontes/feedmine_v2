@@ -690,18 +690,24 @@ final class AppComposition {
         let identities = ReaderLibraryStore(database: database)
         // A source-management surface can write outside this in-process gate.
         // Retry only an optimistic version conflict, never an unrelated SQLite
-        // or resolution failure. Each retry recomputes the toggle from the latest
-        // durable source list; it does not replay the first snapshot's add/remove.
+        // or resolution failure. Each retry merges the same desired state for
+        // the tapped source with the latest durable state of every other source.
         // The bound prevents a continuously writing source manager from starving
         // queued reader navigation.
         let maximumSelectionAttempts = 3
         var committed: (record: ReaderPreferencesStore.Record, feeds: [TrustedFeed])?
+        // A toggle is a single reader intent. Capture its desired end-state from
+        // the first durable snapshot, then retain that intent across conflicts.
+        // Recalculating "toggle" on each retry could re-add a source that the
+        // reader just removed if source management removed it concurrently.
+        var removeRequestedSource: Bool?
         for attempt in 1...maximumSelectionAttempts {
             try Task.checkCancellation()
             guard let persisted = try preferences.load() else {
                 throw ReaderPreferencesError.missingPreferences
             }
-            let removing = persisted.sourceKeys.contains(choice.principal)
+            let removing = removeRequestedSource ?? persisted.sourceKeys.contains(choice.principal)
+            removeRequestedSource = removing
             let updatedKeys = persisted.sourceKeys.filter { $0 != choice.principal }
                 + (removing ? [] : [choice.principal])
             guard !updatedKeys.isEmpty else { throw ReaderPreferencesError.invalidSelection }
