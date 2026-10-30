@@ -310,6 +310,8 @@ final class ReadingSurfaceUITests: XCTestCase {
             value.split(separator: ";").first { $0.hasPrefix("\(key)=") }
                 .map { String($0.dropFirst(key.count + 1)) }
         }
+        XCTAssertTrue(before.hasSuffix(";diagnosticComplete=1"),
+            "the baseline accessibility value must be complete, not a truncated snapshot")
         XCTAssertNotNil(UUID(uuidString: field("captureInstance", in: before) ?? ""),
             "before opening Safari, the capture adapter must have a real identity")
         XCTAssertEqual(field("captureBindingMatches", in: before), "true",
@@ -326,6 +328,8 @@ final class ReadingSurfaceUITests: XCTestCase {
             "the initial publication must have a positive revision")
         XCTAssertTrue(before.contains("positionID=") && before.contains("presentedTop="),
             "the first observation must include a visual capture position")
+        XCTAssertTrue(after.hasSuffix(";diagnosticComplete=1"),
+            "the post-dismissal accessibility value must be complete, not a truncated snapshot")
         XCTAssertTrue(after.contains("captureInstance=") && after.contains("captureBindingInstance=")
             && after.contains("captureBindingMatches=") && after.contains("scrollInstances=")
             && after.contains("windowSequence=") && after.contains("windowRevision=")
