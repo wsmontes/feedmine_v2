@@ -81,3 +81,5 @@ Ruling: use an explicit read-only PublicationHistory over the captured durable s
 - [ ] Existing fixed-size More-menu and empty-reader recovery routes, pt/en and accessibility, ordinary host tests and actual large-text UI/tail proof.
 
 No claim that preview plumbing alone fulfills ambiguity recovery. Native selection continues to fail safely until the full presentation/choice route consumes it.
+
+Task2e host-state slice: ReaderHistoryRecovery captures the active statement on initial ambiguous/unresolved selection, without a FeedAssociation/publication owners. Uses local decoder/bounds/session/store and the same bounded viewport ingress with rendered evidence. UI is intentionally not connected until recovery choices work; startup failure stays unchanged. Native test covers retained window, no ownership/position mutation, no HTTP from lifecycle/filter callbacks and delayed viewport ordinal. Remaining: explicit choices and retained inventory, retirement at chosen-association installation, rendering/empty-reader/More-menu/pt-en/tail. See docs/reviews/2026-10-30-f13-native-recovery-reader.md.

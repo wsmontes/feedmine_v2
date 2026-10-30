@@ -1,0 +1,50 @@
+[
+  {
+    "file": "recovery-host-state-clean-red-build.log.gz",
+    "uncompressed_sha256": "2c8a33f34bd22ef678b919f2fbf80e003c599ab36d9c8f5535b8b29e39299acd"
+  },
+  {
+    "file": "recovery-host-state-green-build.log.gz",
+    "uncompressed_sha256": "0e730f60ee7d1c34be7434c6cdfde60b7b2be63fe3fbd0dfcda1958d3cae44be"
+  },
+  {
+    "file": "recovery-host-state-ingress-build.log.gz",
+    "uncompressed_sha256": "9180155186ed688dbc49ff14968f1463bbee934623b1fa7894d5af49f1b8d399"
+  },
+  {
+    "file": "recovery-host-state-ingress-tests.log.gz",
+    "uncompressed_sha256": "5fa961da7bd32af4649c186011961fcd845ac490a2a6389c8bbcd3258c1eff1e"
+  },
+  {
+    "file": "recovery-host-state-red-build.log.gz",
+    "uncompressed_sha256": "956af9cd7401c39c230e823e251d0fa97b47481a90b460af9aabd6d2b34a976b"
+  },
+  {
+    "file": "recovery-host-state-tests.log.gz",
+    "uncompressed_sha256": "9834d7d0ddcd55e8567bd5a02b41af30bc24d77669c499c55fd99825b82a9304"
+  },
+  {
+    "file": "recovery-host-state-typed-build.log.gz",
+    "uncompressed_sha256": "57347145a2606811ce78da9979dc8c786915fb40fdea5c92281c7f5db48df4d1"
+  },
+  {
+    "file": "recovery-host-state-clean-red-build.patch.gz",
+    "uncompressed_sha256": "5d27273fedcd087b11144b34df42d4fbb13fd4ebb6a4e62decf5c589293f2d34"
+  },
+  {
+    "file": "recovery-host-state-green-build.patch.gz",
+    "uncompressed_sha256": "cc9818f7f219f3a44aee2cf6d317430a3812c3c97cbe2c8e2bdd94a8dcd036d6"
+  },
+  {
+    "file": "recovery-host-state-ingress-build.patch.gz",
+    "uncompressed_sha256": "258627005013a54aa44c951e04f5d72cae54be7e23a3ac9b3a74033e5ad2d1d7"
+  },
+  {
+    "file": "recovery-host-state-red-build.patch.gz",
+    "uncompressed_sha256": "6d891f14f5a4f275ce3c4fd2946b5e7dff82608c85a90c5ee94f753a3e093916"
+  },
+  {
+    "file": "recovery-host-state-typed-build.patch.gz",
+    "uncompressed_sha256": "75ec0003677d1a26ca97fe6d232383d5fbb42a38fe020a12629e2d14bdd5e30a"
+  }
+]

@@ -1,5 +1,10 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — reader retido no host, 2026-10-30
+
+O host captura uma leitura de recuperação sem driver/publicação quando a seleção inicial falha por ambiguidade e há checkpoint ativo. Rolagem apenas local, ingresso limitado e evidência contra eventos antigos. **17 testes nativos, zero falhas**, revisão independente concluída. [Relatório](2026-10-30-f13-native-recovery-reader.md). A tela ainda não renderiza esse estado: escolhas explícitas e integração UI continuam pendentes. Pacote inalterado desde a suíte1847/um ignorado/0.
+
+
 ## Atualização — preview de recuperação, 2026-10-30
 
 PublicationHistory pode projetar um checkpoint capturado sem ativar ownership, gravar posição ou registrar visto. Card-authoritative/archived/unknown preservados. **1847 testes completos, um ignorado, zero falhas**; foco21/0 e revisão independente concluída. [Relatório](2026-10-30-f13-recovery-preview.md). A interface/seleção da recuperação ambígua ainda não consome esta API e permanece pendente; a validação nativa42 refere-se ao checkpoint anterior.

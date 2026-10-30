@@ -1,0 +1,40 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineR4UnitProbe_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-only-testing:FeedMineAppTests/ContentFilterTests",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-host-state-ingress-tests.xcresult",
+    "-collect-test-diagnostics",
+    "never"
+  ],
+  "compiled_build_report": "recovery-host-state-ingress-build.json",
+  "compiled_build_report_sha256": "d9c1b1db0fb96a627151a1eb1e145fd835f19ac14c3f9e89c44a47e2551bb1f1",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/FeedMineUITests-Runner": "7e36729d4fbf984e023e98952e7a2b878c735240c41c14f1f8a6b1544b20d233",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests": "7c06247f132c57766183cba2015c26b37b917c74ee5475b094d63cfc6fbd6542",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "0587bdd047e8ffd38e565a61034f7e03e339b5a1c3c43faa495cdf498bc0e0f4",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests": "b8eb1a1717bdd9dfb2813d60210a080bdd8136a7df86fbc79e7e53d1ca090484"
+  },
+  "xctestrun_sha256": "f9a79718e4eb928ee97e568dfcfc42135d2ee38ca6d99de71783b6aa3dedd628",
+  "exit_code": 0,
+  "stopped_for_disk_budget": false,
+  "free_before": 989921280,
+  "minimum_observed_free": 774975488,
+  "free_after": 975122432,
+  "reserved_free_floor": 734003200,
+  "elapsed_seconds": 34.09,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-host-state-ingress-tests.xcresult",
+  "scope": "actual iOS simulator app unit tests, existing Debug build without symbols; not benchmark or UI journey"
+}

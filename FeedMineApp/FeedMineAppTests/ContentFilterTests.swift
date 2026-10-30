@@ -4,6 +4,7 @@ import FeedMineDomain
 import FeedMinePersistence
 import FeedMineComposition
 import FeedMineUI
+import FeedMineRuntime
 @testable import FeedMine
 
 /// The reader's content filters, inside the app: a rule hides the cards it matches, and the master switch turns
@@ -250,6 +251,33 @@ final class ContentFilterTests: XCTestCase {
         let opened = root(directory: directory)
         await opened.launch()
         XCTAssertNotNil(opened.startupFailure, "explicit recoverable choice is still pending; the host must not guess word origin")
+        let recovery = try XCTUnwrap(opened.historyRecovery)
+        XCTAssertEqual(recovery.logicalContextKey, opened.currentContextKey)
+        XCTAssertEqual(recovery.checkpoint, point)
+        XCTAssertEqual(recovery.store.state.presentation?.editionID, before.editionID)
+        XCTAssertEqual(recovery.store.state.presentation?.window.anchor, before.window.anchor)
+        XCTAssertEqual(recovery.publicationContextKey, frozen)
+        XCTAssertNil(opened.association, "a recovery preview must not construct publication owners")
+        let requests = FixtureTransport.requests.withLock { $0.count }
+        await opened.foreground()
+        await opened.reapplyReaderFilters()
+        await opened.background()
+        XCTAssertEqual(FixtureTransport.requests.withLock { $0.count }, requests)
+        let preview = try XCTUnwrap(recovery.store.state.presentation)
+        let nextCard = try XCTUnwrap(preview.window.items.dropFirst().first)
+        let observation = ViewportObservation(anchor: .init(cardID: nextCard.id, placement: .top))
+        try await recovery.viewport(observation)
+        XCTAssertEqual(recovery.store.state.presentation?.window.anchor.cardID, nextCard.id)
+        let current = try XCTUnwrap(recovery.store.state.presentation)
+        let earlier = ViewportObservation(anchor: preview.window.anchor)
+        let late = try XCTUnwrap(preview.evidence(for: earlier, ordinal: 1))
+        let latest = try XCTUnwrap(current.evidence(for: observation, ordinal: 2))
+        try await recovery.viewport(observation, evidence: latest)
+        let afterLatest = recovery.store.state.presentation
+        try await recovery.viewport(earlier, activity: .backward, evidence: late)
+        XCTAssertEqual(recovery.store.state.presentation, afterLatest, "older viewport ordinals cannot rewind recovery")
+
+
         XCTAssertNil(try ReaderHistoryBindingStore(database: database).binding(for: opened.currentContextKey))
         XCTAssertEqual(try SessionStore(database: database).checkpoint(), point)
         XCTAssertEqual(try publication.edition(id: before.editionID), record)

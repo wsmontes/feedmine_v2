@@ -30,10 +30,81 @@ enum ReaderSearchFailure: Error, Equatable {
     var selectionIsSaved: Bool { if case .storedNotActivated = self { true } else { false } }
 }
 
+/// A retained reading before recovery criteria have been chosen. It owns only local projection;
+/// no acquisition, publication driver, binding activation, checkpoint writer or lifecycle work exists here.
+@MainActor
+@Observable
+final class ReaderHistoryRecovery {
+    let logicalContextKey: ContextKey
+    let checkpoint: SessionStore.CheckpointRecord
+    let publicationContextKey: ContextKey
+    @ObservationIgnored private let session: FeedSession
+    @ObservationIgnored private var delivery: Task<Void, Never>?
+    @ObservationIgnored private var pending = FeedAssociation.PendingViewportIngress()
+    @ObservationIgnored private var ingressOrdinal: UInt64 = 0
+    private(set) var failureDetail: String?
+    @ObservationIgnored lazy var store = FeedScreenStore(onViewport: { [weak self] observation, activity in
+        self?.enqueue(observation, activity: activity, evidence: nil)
+    }, onRenderedViewport: { [weak self] evidence, activity in
+        self?.enqueue(evidence.observation, activity: activity, evidence: evidence)
+    }, availableActions: [])
+
+    init(logicalContextKey: ContextKey, checkpoint: SessionStore.CheckpointRecord,
+        database: RuntimeDatabase, directory: URL) throws {
+        self.logicalContextKey = logicalContextKey
+        self.checkpoint = checkpoint
+        let history = PublicationHistory(database: database, previewing: checkpoint)
+        guard let retained = try history.restore(backwardCapacity: 0, forwardCapacity: 0) else {
+            throw PublicationHistoryError.missingEdition
+        }
+        publicationContextKey = retained.edition.editorialRevision.contextKey
+        let device = DeviceMediaConditions.currentOnMain()
+        let decoder = PresentationImageDecoder(assetDirectory: directory.appendingPathComponent("Media", isDirectory: true),
+            heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth)
+        let warm = try FeedSession.warmStart(publicationHistory: history, imageDecoder: decoder,
+            bounds: FeedAssociation.presentationBounds(publicationContextKey))
+        session = FeedSession(publicationHistory: history, imageDecoder: decoder, warmStart: warm)
+        try store.install(FeedPresentationHandoff.receive(snapshot: warm?.snapshot, into: store.state))
+        try store.installBookmarks(PublicationStore(database: database).bookmarkedCardIDs())
+    }
+
+    private func enqueue(_ observation: ViewportObservation, activity: RunwayActivity,
+        evidence: RenderedViewportEvidence?) {
+        ingressOrdinal &+= 1
+        pending.record(.init(observation: observation, activity: activity, evidence: evidence,
+            sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, ordinal: ingressOrdinal))
+        guard delivery == nil else { return }
+        delivery = Task { [weak self] in
+            guard let self else { return }
+            while let fact = pending.takeNext(), !Task.isCancelled {
+                do { try await viewport(fact.observation, activity: fact.activity, evidence: fact.evidence) }
+                catch { failureDetail = String(describing: error) }
+            }
+            delivery = nil
+        }
+    }
+
+    /// Admits only already-published local history. Reading here never establishes a durable choice.
+    func viewport(_ observation: ViewportObservation, activity: RunwayActivity = .forward,
+        evidence: RenderedViewportEvidence? = nil) async throws {
+        if let evidence {
+            guard evidence.observation == observation, let current = store.state.presentation,
+                evidence.belongs(to: current) else { return }
+        }
+        let moved = try await session.submitViewport(observation, from: evidence, deliberate: true)
+        try store.install(FeedPresentationHandoff.receive(snapshot: moved, into: store.state))
+        let admission: FeedPresentationAdmission = activity == .backward
+            ? .backwardScroll(observation) : .forwardScroll(observation)
+        let extended = try await session.admitPresentation(admission)
+        try store.install(FeedPresentationHandoff.receive(snapshot: extended, into: store.state))
+    }
+}
+
 @MainActor
 @Observable
 final class AppComposition {
     private(set) var association: FeedAssociation?
+    private(set) var historyRecovery: ReaderHistoryRecovery?
     /// The product-facing message the reader sees when the composition cannot start.
     private(set) var startupFailure: String?
     /// D7-A: what the V1 upgrade carried and what remains inaccessible, owed to the reader on the first open
@@ -2145,11 +2216,11 @@ final class AppComposition {
         let candidate: ReaderHistoryBindingStore.LegacyCandidate?
         if active.count == 1 { candidate = active[0] }
         else if active.isEmpty, compatible.count <= 1 { candidate = compatible.first }
-        else { throw HistorySelectionFailure.ambiguousLegacyHistory }
+        else { throw historySelectionFailure(.ambiguousLegacyHistory, raw: raw, database: database) }
         if let candidate {
             let activePoint = candidate.checkpoints.first(where: \.isActive)?.point
             guard activePoint != nil || candidate.checkpoints.count <= 1 else {
-                throw HistorySelectionFailure.ambiguousLegacyHistory
+                throw historySelectionFailure(.ambiguousLegacyHistory, raw: raw, database: database)
             }
             return try bindings.resolve(logicalKey: raw, adopting: .init(editionID: candidate.edition.id,
                 publicationKey: candidate.edition.editorialRevision.contextKey, evidence: candidate.evidence,
@@ -2169,11 +2240,26 @@ final class AppComposition {
                     filter: raw.filter.replacing(exclusions: words.exclusions), searchScope: raw.searchScope,
                     identitySchemaVersion: raw.identitySchemaVersion)
                 if withoutHistoricalWords == raw, frozen != raw, frozen != forward {
-                    throw HistorySelectionFailure.unresolvedLegacyHistory
+                    throw historySelectionFailure(.unresolvedLegacyHistory, raw: raw, database: database)
                 }
             }
         }
         return try bindings.resolve(logicalKey: raw)
+    }
+
+    private func historySelectionFailure(_ reason: HistorySelectionFailure, raw: ContextKey,
+        database: RuntimeDatabase) -> HistorySelectionFailure {
+        // During an explicit transition the existing association remains the presented reader.
+        // At startup retain the active statement for a separate, non-authoritative recovery reader.
+        if association == nil, historyRecovery == nil {
+            do {
+                if let point = try SessionStore(database: database).checkpoint() {
+                    historyRecovery = try ReaderHistoryRecovery(logicalContextKey: raw, checkpoint: point,
+                        database: database, directory: directory)
+                }
+            } catch { Self.log("retained recovery projection unavailable: \(String(describing: error))") }
+        }
+        return reason
     }
 
     private func publicationEdition(of point: SessionStore.CheckpointRecord, database: RuntimeDatabase) throws -> FeedEditionID {
@@ -4332,7 +4418,7 @@ final class FeedAssociation {
     /// One viewport fact as it arrived at the reader's callback, **before** any suspension. `sampledAt` is the
     /// reader's own instant: the runway measures consumption over the intervals between samples, so a fact that is
     /// delivered late by coalescing must still say when the reader produced it. `ordinal` is the ingress order.
-    private struct IngressViewportFact: Sendable {
+    fileprivate struct IngressViewportFact: Sendable {
         let observation: ViewportObservation
         let activity: RunwayActivity
         let evidence: RenderedViewportEvidence?
@@ -4347,7 +4433,7 @@ final class FeedAssociation {
     /// (reversal, explicit tail approach, rest, local reconciliation) survives even when a later event of another
     /// kind arrives. Every slot holds one fact, so the pending work is bounded by the number of kinds — never by
     /// the size of the burst.
-    private struct PendingViewportIngress {
+    fileprivate struct PendingViewportIngress {
         var firstMovement: IngressViewportFact?
         var latest: IngressViewportFact?
         var latestBackward: IngressViewportFact?
