@@ -97,6 +97,7 @@ public struct ReaderHistoryBindingStore: Sendable {
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
                 try SessionStore.checkpoint(row) == independentCheckpoint else { throw Failure.incompatibleAdoption }
         }
+        if adoption != nil || independentCheckpoint != nil { try Self.retainLegacyCheckpoints(in: db) }
         let existing = try Self.read(logicalKey, in: db)
         if let existing, adoption == nil { return existing }
         if let existing, let adoption, let active = existing.activeEditionID {
@@ -185,12 +186,16 @@ public struct ReaderHistoryBindingStore: Sendable {
             arguments: [PersistenceValueCoding.uuid(original.cardID.rawValue)])
             + Row.fetchAll(db, sql: "SELECT * FROM context_checkpoints WHERE card_id = ?",
                 arguments: [PersistenceValueCoding.uuid(original.cardID.rawValue)])
-        guard try rows.contains(where: { try SessionStore.checkpoint($0) == original }) else {
+        let retained = try Self.retainedLegacyStatements(in: db).filter { $0.point == original }
+        guard try rows.contains(where: { try SessionStore.checkpoint($0) == original }) || !retained.isEmpty else {
             throw Failure.incompatibleAdoption
         }
-        let resolvedEdition = try PublicationStore.location(ofCard: original.cardID, in: db)?.editionID
-            ?? original.editionID
-        guard resolvedEdition == editionID else { throw Failure.incompatibleAdoption }
+        let resolvedEditions: Set<FeedEditionID>
+        if let located = try PublicationStore.location(ofCard: original.cardID, in: db) {
+            resolvedEditions = [located.editionID]
+        } else if !retained.isEmpty { resolvedEditions = Set(retained.map(\.resolvedEditionID)) }
+        else { resolvedEditions = [original.editionID] }
+        guard resolvedEditions == [editionID] else { throw Failure.incompatibleAdoption }
         return .init(editionID: editionID, cardID: original.cardID, anchorPlacement: original.anchorPlacement,
             updatedAt: original.updatedAt, topDelta: original.topDelta, cardHeight: original.cardHeight)
     }

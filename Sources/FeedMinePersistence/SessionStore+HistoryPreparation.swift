@@ -88,6 +88,7 @@ extension SessionStore {
                     try Self.checkpoint(row) == expectedLegacyCheckpoint else { throw SessionStoreError.staleHistoryBinding }
             }
             let prepared = try Self.requirePreparation(handle, in: db), fields = PublicationRecordFields(prepared)
+            try ReaderHistoryBindingStore.retainLegacyCheckpoints(in: db)
             let editionID = try fields.optionalUUID("edition_id").map { FeedEditionID(rawValue: $0) }
             let present = try fields.integer("checkpoint_present") == 1
             let target = try editionID.flatMap { try Self.ownedCheckpoint(bindingID: handle.bindingID, editionID: $0, in: db) }

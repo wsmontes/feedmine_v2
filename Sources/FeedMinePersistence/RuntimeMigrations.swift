@@ -770,6 +770,21 @@ public enum RuntimeMigrations {
                 CREATE UNIQUE INDEX reader_history_one_selected_preparation ON reader_history_preparations(selected) WHERE selected = 1;
                 """)
         }
+        migrator.registerMigration("reader-history-legacy-checkpoints-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_history_legacy_checkpoints (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    resolved_edition_id TEXT NOT NULL REFERENCES feed_editions(id),
+                    edition_id TEXT NOT NULL REFERENCES feed_editions(id),
+                    card_id TEXT NOT NULL,
+                    anchor_placement TEXT NOT NULL CHECK(anchor_placement IN ('top', 'center')),
+                    updated_at REAL NOT NULL,
+                    anchor_top_delta REAL,
+                    anchor_height REAL
+                );
+                CREATE INDEX reader_history_legacy_checkpoint_card ON reader_history_legacy_checkpoints(resolved_edition_id, card_id);
+                """)
+        }
         return migrator
     }
 

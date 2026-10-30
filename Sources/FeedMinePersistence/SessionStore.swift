@@ -145,6 +145,7 @@ public struct SessionStore: Sendable {
     /// Old history/checkpoints remain retained.
     public func activateContext(_ key: ContextKey) throws {
         try database.write { db in
+            try ReaderHistoryBindingStore.retainLegacyCheckpoints(in: db)
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
                 try Self.persistContext(Self.decode(row, in: db), in: db)
             }

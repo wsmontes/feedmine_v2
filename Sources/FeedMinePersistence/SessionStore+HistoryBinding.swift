@@ -15,6 +15,7 @@ extension SessionStore {
             let id = PersistenceValueCoding.uuid(bindingID)
             guard let binding = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
                 arguments: [id]) else { throw SessionStoreError.missingHistoryBinding }
+            try ReaderHistoryBindingStore.retainLegacyCheckpoints(in: db)
             try db.execute(sql: "UPDATE reader_history_preparations SET selected = 0 WHERE selected = 1")
             if let current = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
                 let point = try Self.checkpoint(current)

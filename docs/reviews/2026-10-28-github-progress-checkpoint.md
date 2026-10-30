@@ -1,5 +1,12 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — declarações legadas preservadas no cutover, 2026-10-30
+
+A suspeita de overwrite por checkpoints owned foi refutada: persistOwned já protege a linha legada. RED real: singleton A e contexto B distintos; refilar A na ativação perdia a evidência B. Corrigido com migração aditiva de declarações originais e Edition observada, preservação antes das ativações, inventário e adoção posteriores. **1852 testes completos, um ignorado, zero falhas; foco41/0 e nativo20/0**, revisão/followup sem achados pendentes nesta etapa. [Relatório](2026-10-30-f13-retained-legacy-statements.md).
+
+UI e seleção de históricos irmãos continuam pendentes. A seção anterior registra a hipótese inicial, supersedida por esta evidência.
+
+
 ## Atualização — APIs de escolha de recuperação, 2026-10-30
 
 Critérios anteriores completos ou critérios atuais podem ser escolhidos pelo backend nativo. Intenção e adoção transacionadas juntas; falha posterior mantém escolha salva/preview para retry. Promoção revalida o checkpoint legado exato. **1849 testes completos, um ignorado, zero falhas; 20 testes nativos sem falhas**. [Relatório e limites](2026-10-30-f13-recovery-choices.md).

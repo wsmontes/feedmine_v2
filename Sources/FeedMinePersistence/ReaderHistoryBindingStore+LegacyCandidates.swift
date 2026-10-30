@@ -44,11 +44,19 @@ extension ReaderHistoryBindingStore {
                 SELECT * FROM context_checkpoints ORDER BY context_identity COLLATE BINARY
                 """)
                 .map(SessionStore.checkpoint)
+            let preserved = try Self.retainedLegacyStatements(in: db)
+            let known = Dictionary(grouping: preserved, by: \.point)
             var seen = Set<SessionStore.CheckpointRecord>()
             var statements: [(FeedEditionID, LegacyCheckpoint)] = []
-            for point in (active.map({ [$0] }) ?? []) + retained {
+            for point in (active.map({ [$0] }) ?? []) + retained + preserved.map(\.point) {
                 guard seen.insert(point).inserted else { continue }
-                let editionID = try PublicationStore.location(ofCard: point.cardID, in: db)?.editionID ?? point.editionID
+                let editionID: FeedEditionID
+                if let located = try PublicationStore.location(ofCard: point.cardID, in: db) { editionID = located.editionID }
+                else if let evidence = known[point] {
+                    let resolved = Set(evidence.map(\.resolvedEditionID))
+                    guard resolved.count == 1, let recorded = resolved.first else { throw Failure.corruption }
+                    editionID = recorded
+                } else { editionID = point.editionID }
                 statements.append((editionID, LegacyCheckpoint(point: point, isActive: point == active)))
             }
             return try editions.map { edition in

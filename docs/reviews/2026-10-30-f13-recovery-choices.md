@@ -19,3 +19,5 @@ REDs de compilação e GREENs focais da persistência preservados. O teste trans
 ## Dependência obrigatória antes de expor a UI
 
 A auditoria identificou uma lacuna de retenção futura: se raw atual == chave legada, a nova leitura tem namespace próprio, mas seu próximo checkpoint pode substituir a única linha antiga em context_checkpoints. Os testes desta etapa provam o ponto de corte e a preservação imediata; não provam a retenção dessa posição após checkpoints futuros no mesmo contexto. É necessário um registro durável independente das declarações originais e sua inclusão no inventário/adoção antes de ligar as ações à interface (Task2g). Não há novo caminho UI alcançável nesta etapa.
+
+Atualização posterior: o teste de gravação owned no mesmo contexto refutou a suspeita literal acima; persistOwned já protege essa linha legada. O RED real envolve singleton A/context B distintos antes da ativação. [Diagnóstico corrigido e correção](2026-10-30-f13-retained-legacy-statements.md). Mantém-se o registro histórico da hipótese inicial.

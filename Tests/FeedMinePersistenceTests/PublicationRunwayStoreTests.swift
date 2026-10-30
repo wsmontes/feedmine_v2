@@ -275,7 +275,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
                  "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
                  "publication-media-identity-v1", "continuity-relative-position-v1",
                  "selection-supply-media-deferral-v1", "selection-supply-media-deferral-v2",
-                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1", "reader-history-preparation-v1"])
+                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1", "reader-history-preparation-v1", "reader-history-legacy-checkpoints-v1"])
         }
     }
 
@@ -590,7 +590,21 @@ extension PublicationRunwayStoreTests {
                 )
                 """,
                 "reader_history_one_selected_preparation:CREATE UNIQUE INDEX reader_history_one_selected_preparation ON reader_history_preparations(selected) WHERE selected = 1",
-                "sqlite_autoindex_reader_history_preparations_1:"
+                "sqlite_autoindex_reader_history_preparations_1:",
+                """
+                reader_history_legacy_checkpoints:CREATE TABLE reader_history_legacy_checkpoints (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    resolved_edition_id TEXT NOT NULL REFERENCES feed_editions(id),
+                    edition_id TEXT NOT NULL REFERENCES feed_editions(id),
+                    card_id TEXT NOT NULL,
+                    anchor_placement TEXT NOT NULL CHECK(anchor_placement IN ('top', 'center')),
+                    updated_at REAL NOT NULL,
+                    anchor_top_delta REAL,
+                    anchor_height REAL
+                )
+                """,
+                "reader_history_legacy_checkpoint_card:CREATE INDEX reader_history_legacy_checkpoint_card ON reader_history_legacy_checkpoints(resolved_edition_id, card_id)",
+                "sqlite_autoindex_reader_history_legacy_checkpoints_1:"
             ]
             // D7-A: the V1 upgrade receipt, additive only. The two tables state what the upgrade carried and
             // every reported skip; nothing here rewrites a shipped row.
