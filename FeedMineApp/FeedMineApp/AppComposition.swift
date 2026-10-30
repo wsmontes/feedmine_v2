@@ -661,31 +661,44 @@ final class AppComposition {
         if let removing { next.remove(at: removing) }
         else { next.append(choice) }
         guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+        // Keep the old association alive through the entire preference transaction.
+        // If it fails, the reader still has the same usable session and durable selection.
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
-            await retired.close()
         }
-        association = nil
-        // D1: only the toggled key changes. Operationally unresolved keys remain durable
-        // in preferences; rebuilding from selectedFeeds would silently deselect them.
-        let saved = try preferences.changeSources(adding: removing == nil ? [choice.principal] : [],
-            removing: removing == nil ? [] : [choice.principal])
-        if let database = libraryDatabase() {
-            try ReaderLibraryStore(database: database).rememberResolvedSources(next.map {
+        let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
+        let newKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
+            filter: currentContextKey.filter)
+        // D1: change only the toggled key. Unavailable reader-owned sources remain
+        // durable because commitSourceTransition merges with persisted sourceKeys.
+        let saved = try preferences.commitSourceTransition(
+            adding: removing == nil ? [choice.principal] : [],
+            removing: removing == nil ? [] : [choice.principal],
+            context: newKey,
+            resolvedSources: next.map {
                 (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
                     ? "reader" : "catalog")
             })
-        }
+        // Past this point the user's new selection is committed. Do not undo its
+        // monotonic version on a late launch failure: instead attempt to recover
+        // the newly requested session from the committed state.
         selectedFeeds = next
         selectionVersion = saved.selectionVersion
-        let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
-        currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
-            filter: currentContextKey.filter)
-        _ = try preferences.setContext(currentContextKey)
-        let nextAssociation = try await association(contextKey: currentContextKey)
-        association = nextAssociation
-        startupFailure = nil
-        try await nextAssociation.launch()
+        currentContextKey = saved.activeContextKey
+        if let retired = association { await retired.close() }
+        association = nil
+        do {
+            let nextAssociation = try await association(contextKey: currentContextKey)
+            association = nextAssociation
+            try await nextAssociation.launch()
+            startupFailure = nil
+            startupFailureDetail = nil
+        } catch {
+            let transitionError = error
+            await restoreAfterFailedContextTransition(previousKey: currentContextKey,
+                cause: transitionError)
+            throw transitionError
+        }
         try await searchSources("")
     }
 
