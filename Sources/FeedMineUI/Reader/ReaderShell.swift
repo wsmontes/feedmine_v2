@@ -26,12 +26,15 @@ public struct ReaderShell<Status: View, Lens: View, Content: View>: View {
     private let lens: Lens
     private let content: Content
     private let onManageSourceExclusions: (@MainActor () -> Void)?
+    private let onRecoverHistory: (@MainActor () -> Void)?
+    private let readingIsPaused: Bool
 
     @State private var headerHeight: CGFloat = ReaderHeaderHeightKey.defaultValue
     @State private var searchDraft: String = ""
 
     public init(store: FeedScreenStore, appearance: ReaderAppearance,
         onManageSourceExclusions: (@MainActor () -> Void)? = nil,
+        onRecoverHistory: (@MainActor () -> Void)? = nil, readingIsPaused: Bool = false,
         @ViewBuilder status: () -> Status, @ViewBuilder lens: () -> Lens,
         @ViewBuilder content: () -> Content) {
         self.store = store
@@ -40,6 +43,8 @@ public struct ReaderShell<Status: View, Lens: View, Content: View>: View {
         self.lens = lens()
         self.content = content()
         self.onManageSourceExclusions = onManageSourceExclusions
+        self.onRecoverHistory = onRecoverHistory
+        self.readingIsPaused = readingIsPaused
     }
 
     /// V1 `feedTopPadding` (478–481): header height, plus the search surface when it is open.
@@ -69,6 +74,7 @@ public struct ReaderShell<Status: View, Lens: View, Content: View>: View {
                     onFilters: { store.navigate(to: .filters) },
                     onNavigate: { store.navigate(to: $0) },
                     onManageSourceExclusions: onManageSourceExclusions,
+                    onRecoverHistory: onRecoverHistory, readingIsPaused: readingIsPaused,
                     status: { status },
                     lens: { lens })
                     .background(GeometryReader { proxy in

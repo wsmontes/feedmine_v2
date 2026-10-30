@@ -1,0 +1,37 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineRecoveryUIProbe_iphonesimulator26.5-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72",
+    "-parallel-testing-enabled",
+    "NO",
+    "-maximum-concurrent-test-simulator-destinations",
+    "1",
+    "-enableCodeCoverage",
+    "NO",
+    "-resultBundlePath",
+    "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-visible-red-test.xcresult",
+    "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testLegacyRecoveryContinuesPreviousCriteriaInPortuguese"
+  ],
+  "compiled_build_report": "recovery-visible-red-build.json",
+  "compiled_build_report_sha256": "98c054178f32d43ea6f10a0480c217ba2769575c81e6b2f2a104356f3feabefd",
+  "binaries_sha256": {
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/FeedMineUITests-Runner": "7e36729d4fbf984e023e98952e7a2b878c735240c41c14f1f8a6b1544b20d233",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests": "119537ab18a0ed8dac8f52cdffb5e88bef273a7160f98ad7c251653c5a217673",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine": "d824da7ad0d612ea193ac45d00a1646a09b0e832811bb05f8ce332a31f848a43",
+    ".build/f13-ios-tests/Build/Products/Debug-iphonesimulator/FeedMine.app/FeedMine.debug.dylib": "926ab54886633344d90bb0a0782512d6015b5b780cd9c1de99f3cbad38da9e59"
+  },
+  "xctestrun_sha256": "f4f36ea55d6f617607d31d544519854053efd56d78dc79206e200eede8b4167f",
+  "exit_code": -15,
+  "stopped_for_disk_budget": true,
+  "free_before": 1007751168,
+  "minimum_observed_free": 693571584,
+  "free_after": 693571584,
+  "reserved_free_floor": 734003200,
+  "elapsed_seconds": 74.28,
+  "result_bundle": "/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/recovery-visible-red-test.xcresult",
+  "scope": "actual XCUI controls/process-persistence journey; not full F13 publication acceptance or benchmark"
+}

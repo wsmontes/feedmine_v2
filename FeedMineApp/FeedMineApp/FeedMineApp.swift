@@ -17,6 +17,7 @@ struct FeedMineApp: App {
     /// no placeholder routes for T6–T11 work.
     @State private var savedPath: [ReaderDestination] = []
     @State private var readerError: String?
+    @State private var historyRecoveryMessage: String?
     /// A filter selection that was durably saved but not presented. The retry uses the existing activation
     /// owner; the alert is above the feed, not behind the closed sheet.
     @State private var filterActivationFailure = false
@@ -96,6 +97,7 @@ struct FeedMineApp: App {
         case collections
         case settings
         case contentFilters
+        case historyRecovery
         case curatedHood
         case export
         case filters
@@ -110,6 +112,7 @@ struct FeedMineApp: App {
             case .collections: return "collections"
             case .settings: return "settings"
             case .contentFilters: return "contentFilters"
+            case .historyRecovery: return "historyRecovery"
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
@@ -539,6 +542,16 @@ struct FeedMineApp: App {
                                 FeedFrameEvidenceSurface()
                             }
                             #endif
+                    } else if let recovery = composition.historyRecovery {
+                        FeedScreen(store: recovery.store, appearance: appearance,
+                            statusChip: AnyView(Text(String(localized: "Leitura anterior"))),
+                            onRecoverHistory: { historyRecoveryMessage = nil; present(.historyRecovery) },
+                            readingIsPaused: true)
+                            .accessibilityIdentifier("history-recovery-reader")
+                            .onAppear {
+                                recovery.store.noteFirstScreenAppeared(hasSources: true, maximumWait: composition.firstScreenWait)
+                                recovery.store.reportFirstScreenSurfaceIfReading()
+                            }
                     } else if let failure = composition.startupFailure {
                         Text(failure).padding()
                     } else {
@@ -662,6 +675,8 @@ struct FeedMineApp: App {
                                 ProgressView("Abrindo as caixas de salvos")
                             }
                         }
+                    case .historyRecovery:
+                        historyRecoverySurface
                     case .contentFilters:
                         contentFilterSurface
                     case .settings:
@@ -2058,6 +2073,55 @@ struct ReaderHost: UIViewControllerRepresentable {
     private var sourceExclusionRecoveryAction: (@MainActor () -> Void)? {
         guard composition.hasActiveSourceExclusions else { return nil }
         return { present(.contentFilters) }
+    }
+
+    private var historyRecoverySurface: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(String(localized: "As novas publicações estão pausadas até você escolher os critérios desta leitura."))
+                    Text(String(localized: "Os critérios anteriores incluem todas as palavras guardadas na leitura. As novas exclusões afetam apenas itens futuros."))
+                }
+                Section {
+                    Button(String(localized: "Continuar com os critérios anteriores")) {
+                        activateHistoryRecovery(.previousCriteria)
+                    }.accessibilityIdentifier("history-recovery-previous")
+                    Button(String(localized: "Abrir os critérios atuais")) {
+                        activateHistoryRecovery(.currentCriteria)
+                    }.accessibilityIdentifier("history-recovery-current")
+                }.disabled(composition.contextSwitchInProgress)
+                if composition.contextSwitchInProgress {
+                    ProgressView(String(localized: "Abrindo leitura"))
+                        .accessibilityIdentifier("history-recovery-progress")
+                }
+                if let historyRecoveryMessage {
+                    Section { Text(historyRecoveryMessage).accessibilityIdentifier("history-recovery-message") }
+                }
+            }
+            .navigationTitle(String(localized: "Escolha como continuar"))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(String(localized: "Concluir")) { popSurface() }
+                        .disabled(composition.contextSwitchInProgress)
+                }
+            }
+            .interactiveDismissDisabled(composition.contextSwitchInProgress)
+        }
+    }
+
+    private func activateHistoryRecovery(_ choice: ReaderHistoryRecoveryChoice) {
+        guard let recovery = composition.historyRecovery, !composition.contextSwitchInProgress else { return }
+        historyRecoveryMessage = nil
+        Task {
+            do {
+                try await composition.recoverHistory(choice, from: recovery)
+                popSurface()
+            } catch ReaderHistoryRecoveryError.selectionStoredNotActivated {
+                historyRecoveryMessage = String(localized: "Sua escolha foi salva, mas não foi possível abrir a leitura. A leitura anterior continua disponível. Tente novamente.")
+            } catch {
+                historyRecoveryMessage = String(localized: "Não foi possível aplicar esta escolha. A leitura anterior foi preservada. Tente novamente.")
+            }
+        }
     }
 
     private var contentFilterSurface: some View {

@@ -69,7 +69,7 @@ public struct ReaderHistoryBindingStore: Sendable {
     /// Later activation may fail, but a relaunch must honour the choice already saved here.
     public func chooseRecoveryCriteria(_ key: ContextKey, adopting adoption: Adoption? = nil,
         preservingActiveCheckpoint checkpoint: SessionStore.CheckpointRecord,
-        expectedContext: ContextKey) throws -> Record {
+        expectedContext: ContextKey, selectedPosition: SessionStore.CheckpointRecord? = nil) throws -> Record {
         try database.write { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
                 try SessionStore.checkpoint(row) == checkpoint,
@@ -78,6 +78,22 @@ public struct ReaderHistoryBindingStore: Sendable {
             }
             let binding = try Self.resolve(logicalKey: key, adopting: adoption,
                 independentCheckpoint: adoption == nil ? checkpoint : nil, in: db)
+            if let selectedPosition {
+                guard let adoption, selectedPosition.editionID == adoption.editionID,
+                    ["top", "center"].contains(selectedPosition.anchorPlacement),
+                    try SessionStore.member(db, editionID: selectedPosition.editionID, cardID: selectedPosition.cardID),
+                    try Bool.fetchOne(db, sql: """
+                        SELECT EXISTS(SELECT 1 FROM session_reader_binding a JOIN reader_history_bindings b ON b.id = a.binding_id
+                            WHERE a.binding_id = ? AND b.active_edition_id = ?)
+                        """, arguments: [PersistenceValueCoding.uuid(binding.id), PersistenceValueCoding.uuid(selectedPosition.editionID.rawValue)]) == false
+                else { throw Failure.incompatibleAdoption }
+                _ = try PersistenceValueCoding.date(selectedPosition.updatedAt, field: "updated_at")
+                if selectedPosition.topDelta != nil || selectedPosition.cardHeight != nil {
+                    guard let delta = selectedPosition.topDelta, let height = selectedPosition.cardHeight,
+                        CardTopOffset(topDelta: delta, height: height) != nil else { throw Failure.incompatibleAdoption }
+                }
+                try SessionStore.persistOwned(selectedPosition, bindingID: binding.id, in: db)
+            }
             _ = try ReaderPreferencesStore.setContext(key, in: db)
             return binding
         }

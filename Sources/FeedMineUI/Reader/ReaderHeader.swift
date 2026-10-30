@@ -39,12 +39,15 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
     public let onFilters: () -> Void
     public let onNavigate: (ReaderDestination) -> Void
     private let onManageSourceExclusions: (@MainActor () -> Void)?
+    private let onRecoverHistory: (@MainActor () -> Void)?
+    private let readingIsPaused: Bool
 
     public init(appearance: ReaderAppearance, isSearching: Bool, bookmarkBoxActive: Bool,
         filterCount: Int, menuEntries: [ReaderMenuEntry],
         onToggleSearch: @escaping () -> Void, onBookmarks: @escaping () -> Void,
         onFilters: @escaping () -> Void, onNavigate: @escaping (ReaderDestination) -> Void,
         onManageSourceExclusions: (@MainActor () -> Void)? = nil,
+        onRecoverHistory: (@MainActor () -> Void)? = nil, readingIsPaused: Bool = false,
         @ViewBuilder status: () -> Status, @ViewBuilder lens: () -> Lens) {
         self.appearance = appearance
         self.isSearching = isSearching
@@ -56,6 +59,8 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
         self.onFilters = onFilters
         self.onNavigate = onNavigate
         self.onManageSourceExclusions = onManageSourceExclusions
+        self.onRecoverHistory = onRecoverHistory
+        self.readingIsPaused = readingIsPaused
         self.status = status()
         self.lens = lens()
     }
@@ -85,6 +90,7 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
                     .contentTransition(.symbolEffect(.replace))
                     .readerHeaderButton(accent: appearance.accent)
             }
+            .disabled(readingIsPaused)
             .accessibilityIdentifier("search-button")
             .accessibilityLabel(isSearching
                 ? String(localized: "Fechar busca")
@@ -94,6 +100,7 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
                 Image(systemName: bookmarkBoxActive ? "bookmark.fill" : "bookmark")
                     .readerHeaderButton(accent: appearance.accent)
             }
+            .disabled(readingIsPaused)
             .accessibilityIdentifier("bookmark-boxes-button")
             // The header control *opens* the saved boxes; `Salvos` names the surface itself and is the menu
             // entry's own title. Two controls answering to the same string is also an accessibility problem —
@@ -110,6 +117,7 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
                 Image(systemName: "line.3.horizontal.decrease")
                     .readerHeaderButton(accent: appearance.accent)
             }
+            .disabled(readingIsPaused)
             .accessibilityIdentifier("filter-button")
             .accessibilityLabel(String(localized: "Filtros"))
             .overlay(alignment: .topTrailing) {
@@ -129,6 +137,12 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
     /// V1's ellipsis menu. Only the entries the host offered are drawn (T4's rule: no dead control).
     private var menu: some View {
         Menu {
+            if let onRecoverHistory {
+                Button(action: onRecoverHistory) {
+                    Label(String(localized: "Escolher como continuar"), systemImage: "clock.arrow.circlepath")
+                }.accessibilityIdentifier("history-recovery-action")
+                Divider()
+            }
             if let onManageSourceExclusions {
                 Button(action: onManageSourceExclusions) {
                     Label(String(localized: "Rever fontes excluídas"), systemImage: "eye.slash")
@@ -166,7 +180,7 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
         }
         .accessibilityIdentifier("more-menu")
         .accessibilityLabel(String(localized: "Mais"))
-        .accessibilityValue(onManageSourceExclusions != nil
-            ? Text(String(localized: "Fontes excluídas")) : Text(""))
+        .accessibilityValue(readingIsPaused ? Text(String(localized: "Escolha de critérios pendente"))
+            : (onManageSourceExclusions != nil ? Text(String(localized: "Fontes excluídas")) : Text("")))
     }
 }

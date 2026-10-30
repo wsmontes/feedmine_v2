@@ -8,6 +8,80 @@ final class SourceExclusionJourneyUITests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyRecoveryContinuesPreviousCriteriaInPortuguese() throws {
+        try legacyRecovery(previous: true, english: false)
+    }
+
+    @MainActor
+    func testLegacyRecoveryOpensCurrentCriteriaInEnglishLargeType() throws {
+        try legacyRecovery(previous: false, english: true)
+    }
+
+    @MainActor
+    private func legacyRecovery(previous: Bool, english: Bool) throws {
+        var arguments = ["-AppleLanguages", english ? "(en)" : "(pt-BR)", "-AppleLocale", english ? "en_US" : "pt_BR"]
+        if english { arguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        let app = SurfaceTest.launchFixture(["FEEDMINE_RECOVERY_LEGACY_FIXTURE": "1",
+            "FEEDMINE_DISABLE_CATALOGUE_SYNC": "1", "FEEDMINE_FIXTURE_ITEMS": "6", "FEEDMINE_TRACE_CAPTURE": "1"], arguments: arguments)
+        defer { app.terminate() }
+        let marker = app.descendants(matching: .any)["history-recovery-reader"].firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["search-button"].isEnabled)
+        let proof = app.staticTexts["feed-window-proof"]
+        XCTAssertTrue(proof.exists)
+        let feed = app.scrollViews.firstMatch
+        if previous {
+            for _ in 0..<12 {
+                let ids = String(proof.label.split(separator: ";")[0]).dropFirst(4).split(separator: ",")
+                let tail = SurfaceTest.element(app, try XCTUnwrap(ids.last).description)
+                if tail.exists, tail.frame.maxY <= feed.frame.maxY + 1, tail.frame.intersection(feed.frame).height > 30 { break }
+                feed.swipeUp(velocity: .slow)
+            }
+        }
+        let initial = String(proof.label.split(separator: ";")[0])
+        let tailID = try XCTUnwrap(initial.dropFirst(4).split(separator: ",").last).description
+        let tail = SurfaceTest.element(app, tailID)
+        let before = tail.frame
+        let beforeDelta = before.minY - feed.frame.minY
+        app.buttons["more-menu"].tap()
+        let action = app.buttons["history-recovery-action"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        action.tap()
+        XCTAssertTrue(app.staticTexts[english ? "Choose how to continue" : "Escolha como continuar"].waitForExistence(timeout: 10))
+        app.buttons[english ? "Done" : "Concluir"].tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["history-recovery-previous"], timeout: 10))
+        if previous {
+            XCTAssertEqual(tail.frame.minY, before.minY, accuracy: 1, "opening and cancelling recovery must not move the tail")
+        }
+        app.buttons["more-menu"].tap()
+        app.buttons["history-recovery-action"].tap()
+        let chosen = app.buttons[previous ? "history-recovery-previous" : "history-recovery-current"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(chosen, in: app, timeout: 15))
+        chosen.tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(marker, timeout: 40))
+        XCTAssertTrue(SurfaceTest.waitForAbsence(chosen, timeout: 15))
+        XCTAssertTrue(proof.waitForExistence(timeout: 20))
+        if previous { XCTAssertEqual(String(proof.label.split(separator: ";")[0]), initial, "continuing frozen criteria preserves the exact reading") }
+        if previous {
+            XCTAssertGreaterThan(tail.frame.intersection(feed.frame).height, 20)
+            XCTAssertEqual(tail.frame.minY - feed.frame.minY, beforeDelta, accuracy: 2,
+                "continuing must preserve the visible retained card relative to the viewport")
+        }
+        let installed = String(proof.label.split(separator: ";")[0])
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 30))
+        XCTAssertTrue(proof.waitForExistence(timeout: 30))
+        XCTAssertFalse(marker.exists)
+        XCTAssertEqual(String(proof.label.split(separator: ";")[0]), installed, "the system process relaunch honours the chosen history")
+        if previous {
+            XCTAssertGreaterThan(tail.frame.intersection(feed.frame).height, 20)
+            XCTAssertEqual(tail.frame.minY - feed.frame.minY, beforeDelta, accuracy: 2,
+                "process relaunch must restore the chosen visible position, not only its IDs")
+        }
+    }
+
+    @MainActor
     func testImportedRuleCancelConfirmRelaunchAndRemoveInPortuguese() throws {
         try journey(language: "pt-BR", locale: "pt_BR", largeType: false)
     }

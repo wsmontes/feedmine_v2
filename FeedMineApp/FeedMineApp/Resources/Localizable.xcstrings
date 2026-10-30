@@ -4371,6 +4371,182 @@
           }
         }
       }
+    },
+    "Leitura anterior": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leitura anterior"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous reading"
+          }
+        }
+      }
+    },
+    "Escolher como continuar": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher como continuar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose how to continue"
+          }
+        }
+      }
+    },
+    "Escolha como continuar": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha como continuar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose how to continue"
+          }
+        }
+      }
+    },
+    "Continuar com os critérios anteriores": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar com os critérios anteriores"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue with previous criteria"
+          }
+        }
+      }
+    },
+    "Abrir os critérios atuais": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir os critérios atuais"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open current criteria"
+          }
+        }
+      }
+    },
+    "Abrindo leitura": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrindo leitura"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening reading"
+          }
+        }
+      }
+    },
+    "As novas publicações estão pausadas até você escolher os critérios desta leitura.": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As novas publicações estão pausadas até você escolher os critérios desta leitura."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New publication is paused until you choose the criteria for this reading."
+          }
+        }
+      }
+    },
+    "Os critérios anteriores incluem todas as palavras guardadas na leitura. As novas exclusões afetam apenas itens futuros.": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os critérios anteriores incluem todas as palavras guardadas na leitura. As novas exclusões afetam apenas itens futuros."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous criteria include every word saved with this reading. New exclusions affect future items only."
+          }
+        }
+      }
+    },
+    "Sua escolha foi salva, mas não foi possível abrir a leitura. A leitura anterior continua disponível. Tente novamente.": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sua escolha foi salva, mas não foi possível abrir a leitura. A leitura anterior continua disponível. Tente novamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your choice was saved, but the reading could not be opened. The previous reading is still available. Try again."
+          }
+        }
+      }
+    },
+    "Não foi possível aplicar esta escolha. A leitura anterior foi preservada. Tente novamente.": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível aplicar esta escolha. A leitura anterior foi preservada. Tente novamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This choice could not be applied. The previous reading was preserved. Try again."
+          }
+        }
+      }
+    },
+    "Escolha de critérios pendente": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha de critérios pendente"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading criteria choice pending"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

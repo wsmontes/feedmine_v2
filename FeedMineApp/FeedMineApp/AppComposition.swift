@@ -45,16 +45,22 @@ final class ReaderHistoryRecovery {
     @ObservationIgnored private var delivery: Task<Void, Never>?
     @ObservationIgnored private var pending = FeedAssociation.PendingViewportIngress()
     @ObservationIgnored private var ingressOrdinal: UInt64 = 0
+    @ObservationIgnored private var viewportFrozen = false
+    @ObservationIgnored private var presentedPosition: PresentationAnchor?
     private(set) var failureDetail: String?
     private(set) var isRetired = false
     private(set) var selectedContextKey: ContextKey?
 
     func recordSelection(_ key: ContextKey) { selectedContextKey = key }
-    @ObservationIgnored lazy var store = FeedScreenStore(onViewport: { [weak self] observation, activity in
+    @ObservationIgnored lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
         self?.enqueue(observation, activity: activity, evidence: nil)
     }, onRenderedViewport: { [weak self] evidence, activity in
         self?.enqueue(evidence.observation, activity: activity, evidence: evidence)
-    }, availableActions: [])
+    }, availableActions: [], onPresentedPosition: { [weak self] anchor, _ in
+        guard let self, !isRetired, !viewportFrozen,
+            store.state.presentation?.window.items.contains(where: { $0.id == anchor.cardID }) == true else { return }
+        presentedPosition = anchor
+    })
 
     init(logicalContextKey: ContextKey, checkpoint: SessionStore.CheckpointRecord,
         database: RuntimeDatabase, directory: URL) throws {
@@ -77,7 +83,7 @@ final class ReaderHistoryRecovery {
 
     private func enqueue(_ observation: ViewportObservation, activity: RunwayActivity,
         evidence: RenderedViewportEvidence?) {
-        guard !isRetired else { return }
+        guard !isRetired, !viewportFrozen else { return }
         ingressOrdinal &+= 1
         pending.record(.init(observation: observation, activity: activity, evidence: evidence,
             sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, ordinal: ingressOrdinal))
@@ -90,6 +96,26 @@ final class ReaderHistoryRecovery {
             }
             delivery = nil
         }
+    }
+
+    func freezeViewportForChoice() async {
+        viewportFrozen = true
+        await delivery?.value
+    }
+
+    func resumeViewportAfterFailedChoice() { viewportFrozen = false }
+
+    func selectedPosition(at date: Date) -> SessionStore.CheckpointRecord? {
+        guard let snapshot = store.state.presentation, snapshot.unavailablePositionCardID == nil else { return nil }
+        let anchor = presentedPosition ?? snapshot.window.anchor
+        guard snapshot.window.items.contains(where: { $0.id == anchor.cardID }) else { return nil }
+        // An untouched preview keeps the exact original statement, including its date and offset.
+        let placement = anchor.placement == .top ? "top" : "center"
+        if anchor.cardID == checkpoint.cardID, placement == checkpoint.anchorPlacement,
+            anchor.progress?.topDelta == checkpoint.topDelta, anchor.progress?.height == checkpoint.cardHeight { return nil }
+        return .init(editionID: snapshot.editionID, cardID: anchor.cardID,
+            anchorPlacement: anchor.placement == .top ? "top" : "center", updatedAt: date,
+            topDelta: anchor.progress?.topDelta, cardHeight: anchor.progress?.height)
     }
 
     func retire() {
@@ -106,7 +132,8 @@ final class ReaderHistoryRecovery {
             guard evidence.observation == observation, let current = store.state.presentation,
                 evidence.belongs(to: current) else { return }
         }
-        let moved = try await session.submitViewport(observation, from: evidence, deliberate: true)
+        let moved = try await session.submitViewport(observation, from: evidence,
+            deliberate: (activity != .stationary && evidence?.isPositionReconciliation != true) || evidence?.establishesPosition == true)
         guard !isRetired else { return }
         try store.install(FeedPresentationHandoff.receive(snapshot: moved, into: store.state))
         let admission: FeedPresentationAdmission = activity == .backward
@@ -719,6 +746,24 @@ final class AppComposition {
 
     func launch() async {
         guard !replacingSession, startupFailure == nil else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["FEEDMINE_RECOVERY_LEGACY_FIXTURE"] == "1",
+            ProcessInfo.processInfo.environment["FEEDMINE_RUNTIME_NAMESPACE"].flatMap(UUID.init(uuidString:)) != nil,
+            association == nil, let database = libraryDatabase(),
+            (try? ReaderHistoryBindingStore(database: database).retainedReadings().isEmpty) == true {
+            do {
+                let raw = currentContextKey
+                let frozen = ContextKey(request: raw.request, preset: raw.preset,
+                    filter: raw.filter.replacing(exclusions: .init(isEnabled: true, rules: ["unexplained legacy fixture words"])),
+                    searchScope: raw.searchScope, identitySchemaVersion: raw.identitySchemaVersion)
+                let legacy = try FeedAssociation(directory: directory, feeds: selectedFeeds,
+                    configuration: transportConfiguration, database: database, contextKey: frozen,
+                    selectionVersion: selectionVersion, catalogueURL: nil, editorialExposure: editorialExposure)
+                try await legacy.launch()
+                await legacy.close()
+            } catch { Self.log("legacy recovery fixture publication failed: \(error)") }
+        }
+        #endif
         // P15: the anchor for the launch's own timing. `first_frame` states attach → presented frame; this states
         // when the host started the launch, on the same clock, so a journey reads launch → first presented frame
         // without a console and without guessing a process start from outside the sandbox. It is not the exec
@@ -2276,7 +2321,15 @@ final class AppComposition {
         guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
         guard let preferences, let database = libraryDatabase() else { throw ReaderHistoryRecoveryError.unavailable }
         replacingSession = true
-        defer { replacingSession = false }
+        defer {
+            replacingSession = false
+            if !recovery.isRetired { recovery.resumeViewportAfterFailedChoice() }
+        }
+        await recovery.freezeViewportForChoice()
+        guard historyRecovery === recovery, !recovery.isRetired, association == nil,
+            currentContextKey == (recovery.selectedContextKey ?? recovery.logicalContextKey) else {
+            throw ReaderHistoryRecoveryError.staleChoice
+        }
         let expectedContext = currentContextKey
         let key = choice == .previousCriteria ? recovery.publicationContextKey : recovery.logicalContextKey
         let allowed = allowsSourceOutsideSelection(key)
@@ -2290,7 +2343,8 @@ final class AppComposition {
                 checkpoint: recovery.checkpoint)
         } else { adoption = nil }
         _ = try ReaderHistoryBindingStore(database: database).chooseRecoveryCriteria(key, adopting: adoption,
-            preservingActiveCheckpoint: recovery.checkpoint, expectedContext: expectedContext)
+            preservingActiveCheckpoint: recovery.checkpoint, expectedContext: expectedContext,
+            selectedPosition: choice == .previousCriteria ? recovery.selectedPosition(at: Date()) : nil)
         // This is a durable user choice, even if preparing/activating its reader later fails.
         currentContextKey = key
         recovery.recordSelection(key)

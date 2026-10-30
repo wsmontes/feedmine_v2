@@ -135,7 +135,16 @@ extension SessionStore {
                     CheckpointRecord(editionID: $0.editionID, cardID: point.cardID, anchorPlacement: point.anchorPlacement,
                         updatedAt: point.updatedAt, topDelta: point.topDelta, cardHeight: point.cardHeight)
                 }
-                if corrected == nil || corrected != target { try Self.persistContext(point, in: db) }
+                // A prior explicit choice may retain a newer point even if another choice is now promoted.
+                // Without a current binding token, the old singleton cannot overwrite owned history.
+                let sourceEdition = corrected?.editionID ?? point.editionID
+                let sourceOwner = try String.fetchOne(db, sql: "SELECT binding_id FROM reader_history_editions WHERE edition_id = ?",
+                    arguments: [PersistenceValueCoding.uuid(sourceEdition.rawValue)])
+                let retainedOwned = try sourceOwner.flatMap {
+                    try Self.ownedCheckpoint(bindingID: PersistenceValueCoding.uuid($0, field: "binding_id"),
+                        editionID: sourceEdition, in: db)
+                }
+                if retainedOwned == nil { try Self.persistContext(point, in: db) }
             }
             let id = PersistenceValueCoding.uuid(handle.bindingID)
             try db.execute(sql: "UPDATE reader_history_bindings SET active_edition_id = ? WHERE id = ?",

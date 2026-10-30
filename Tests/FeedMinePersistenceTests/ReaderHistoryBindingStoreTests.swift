@@ -43,6 +43,43 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
         XCTAssertEqual(try ReaderHistoryBindingStore(database: reopened).resolve(logicalKey: key([])), binding)
     }
 
+    func testLegacySingletonDoesNotOverwriteSavedLocalPositionWhenAnotherChoiceIsPromoted() throws {
+        let db = try StorageFixture.database(self), raw = key([]), frozen = key(["old"])
+        _ = try prefs(db, words: [])
+        let (edition, card) = try published(db, key: frozen)
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let original = try XCTUnwrap(sessions.checkpoint())
+        let local = SessionStore.CheckpointRecord(editionID: edition.id, cardID: card.id,
+            anchorPlacement: "center", updatedAt: original.updatedAt.addingTimeInterval(10), topDelta: -15, cardHeight: 220)
+        let previous = try store.chooseRecoveryCriteria(frozen,
+            adopting: .init(editionID: edition.id, publicationKey: frozen, evidence: .exactContext, checkpoint: original),
+            preservingActiveCheckpoint: original, expectedContext: raw, selectedPosition: local)
+        // Activation may fail after a durable choice; selecting current criteria next must keep that saved point.
+        let current = try store.chooseRecoveryCriteria(raw, preservingActiveCheckpoint: original, expectedContext: frozen)
+        let prepared = try sessions.prepareBinding(current.id)
+        try sessions.promotePreparedBinding(prepared, expectedLegacyCheckpoint: original)
+        XCTAssertEqual(try sessions.checkpoint(bindingID: previous.id), local)
+        XCTAssertNil(try sessions.checkpoint())
+    }
+
+    func testRecoveryChoiceCarriesExplicitLocalPositionWithoutReplacingOriginalValidationEvidence() throws {
+        let db = try StorageFixture.database(self), raw = key([]), frozen = key(["old"])
+        _ = try prefs(db, words: [])
+        let (edition, card) = try published(db, key: frozen)
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let original = try XCTUnwrap(sessions.checkpoint())
+        let local = SessionStore.CheckpointRecord(editionID: edition.id, cardID: card.id,
+            anchorPlacement: "center", updatedAt: original.updatedAt.addingTimeInterval(10), topDelta: -15, cardHeight: 220)
+        let binding = try store.chooseRecoveryCriteria(frozen,
+            adopting: .init(editionID: edition.id, publicationKey: frozen, evidence: .exactContext, checkpoint: original),
+            preservingActiveCheckpoint: original, expectedContext: raw, selectedPosition: local)
+        XCTAssertEqual(try sessions.checkpoint(bindingID: binding.id), local)
+        XCTAssertEqual(try sessions.checkpoint(), original, "the original remains the promotion fence until cutover")
+        let prepared = try sessions.prepareBinding(binding.id)
+        try sessions.promotePreparedBinding(prepared, expectedLegacyCheckpoint: original)
+        XCTAssertEqual(try sessions.checkpoint(), local)
+    }
+
     func testRetainedReadingsInventoryIncludesOwnedAndUnownedSiblingsWithoutASingletonOrAuthorityChanges() throws {
         let db = try StorageFixture.database(self), frozen = key(["old"])
         let preferences = try prefs(db, words: [])

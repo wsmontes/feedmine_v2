@@ -1,5 +1,16 @@
 # GitHub progress checkpoint — 2026-10-28
 
+
+## Atualização — checkpoint da recuperação visível em andamento, 2026-10-30
+
+Snapshot do trabalho local solicitado para sincronização com o GitHub, sobre `3db33a6d`. O host agora renderiza o reader legado pausado, oferece escolhas de critérios anteriores/atuais pelo menu e estado vazio, e mantém mensagens de escolha salva/ativação pendente. Textos PT/EN, fixture DEBUG isolada e jornadas XCUI com retorno ao processo e posição relativa à viewport foram adicionados.
+
+A posição rolada no preview é transportada para a escolha anterior com validação transacional; a promoção preparada preserva um checkpoint owned já salvo em vez de sobrescrevê-lo com o singleton legado. **Verificação deste snapshot: 48 testes Swift dos módulos afetados, zero falhas, exit0** (`recovery-visible-github-affected-unsandboxed.json`). A primeira tentativa foi impedida pelo sandbox do cache do compilador; repetição autorizada concluída. Logs/patches preservados sem perdas e com hashes em `recovery-visible-checkpoint-manifest.json`.
+
+**Trabalho em andamento, sem aceite de produção.** O último build iOS concluído precede o ajuste final de persistência. A jornada XCUI foi interrompida pela reserva de disco (exit−15), portanto não há GREEN end-to-end deste snapshot. A suíte completa1857/um ignorado/0 e os33 testes nativos referem-se ao checkpoint anterior `3db33a6d`, não a estas mudanças.
+
+Próximos passos: estender a proteção de checkpoint owned aos caminhos `activateBinding`/`activateContext`, ampliar a regressão correspondente, reconstruir o app com o código final e concluir as duas jornadas PT/EN-XXXL/relaunch. Seleção de leituras retidas ainda sem UI, ausência de singleton/política não resolvida e gates B02/B04/B05 abertos; B03 FAIL e B06 NOT_RUN permanecem. O scheme temporário de teste e `capacity-ready.json` ficam fora do envio; uma cópia do scheme está arquivada nas evidências.
+
 ## Atualização — preparação explícita de Edition owned, 2026-10-30
 
 A seleção prepara a Edition pedida com checkpoint owned e token do leitor atual, sem mover a leitura apresentada. Valida snapshot/owner/Edition/checkpoint antes de revogar outra candidata. A→B→A restaura o último ponto real de A. **1857 testes completos, um ignorado, zero falhas; foco46/0; regressão nativa Content20+NF0313=33/0**, revisão/followup sem achados. [Relatório e limites](2026-10-30-f13-owned-reading-selection.md).

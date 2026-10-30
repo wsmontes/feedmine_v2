@@ -31,6 +31,8 @@ public struct FeedScreen: View {
     private let onTryAgain: @MainActor () -> Void
     private let onAdjustInterests: @MainActor () -> Void
     private let onManageSourceExclusions: (@MainActor () -> Void)?
+    private let onRecoverHistory: (@MainActor () -> Void)?
+    private let readingIsPaused: Bool
     /// The host's editorial row: offered between cards, and only where the host says there is something truthful
     /// to ask. Nil — or a nil answer for a card — draws nothing, so the feed surface never invents an offer.
     private let editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)?
@@ -43,6 +45,7 @@ public struct FeedScreen: View {
         onTryAgain: @escaping @MainActor () -> Void = {},
         onAdjustInterests: @escaping @MainActor () -> Void = {},
         onManageSourceExclusions: (@MainActor () -> Void)? = nil,
+        onRecoverHistory: (@MainActor () -> Void)? = nil, readingIsPaused: Bool = false,
         editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)? = nil) {
         self.store = store
         self.appearance = appearance
@@ -54,6 +57,8 @@ public struct FeedScreen: View {
         self.onTryAgain = onTryAgain
         self.onAdjustInterests = onAdjustInterests
         self.onManageSourceExclusions = onManageSourceExclusions
+        self.onRecoverHistory = onRecoverHistory
+        self.readingIsPaused = readingIsPaused
         self.editorial = editorial
     }
 
@@ -65,7 +70,8 @@ public struct FeedScreen: View {
             // V1 drew this surface instead of the feed, with the reader's chrome: nothing is being prepared,
             // so there is no progress to state.
             ReaderShell(store: store, appearance: appearance,
-                onManageSourceExclusions: headerSourceRecoveryAction, status: { statusChip },
+                onManageSourceExclusions: headerSourceRecoveryAction,
+                onRecoverHistory: onRecoverHistory, readingIsPaused: readingIsPaused, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 FeedSourcesEmptyStateView(appearance: appearance, onChooseSources: onChooseSources)
             }
@@ -74,7 +80,8 @@ public struct FeedScreen: View {
         // loading surface over a search that had already completed.
         } else if store.isSearching || !store.renderedItems.isEmpty {
             ReaderShell(store: store, appearance: appearance,
-                onManageSourceExclusions: headerSourceRecoveryAction, status: { statusChip },
+                onManageSourceExclusions: headerSourceRecoveryAction,
+                onRecoverHistory: onRecoverHistory, readingIsPaused: readingIsPaused, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 // The cover and its accessibility hiding are scoped to the **feed content**, never to the shell:
                 // the reader's own header (context chip, sources, saved, filters, menu) stays usable while the
@@ -101,7 +108,8 @@ public struct FeedScreen: View {
             // no way back to Main or to the sources (measured 2026-10-23: more than seven minutes, no control).
             // The same chrome is mounted over the loading content; the content stays the work surface it was.
             ReaderShell(store: store, appearance: appearance,
-                onManageSourceExclusions: headerSourceRecoveryAction, status: { statusChip },
+                onManageSourceExclusions: headerSourceRecoveryAction,
+                onRecoverHistory: onRecoverHistory, readingIsPaused: readingIsPaused, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 loadingSurface
             }
@@ -272,7 +280,13 @@ public struct FeedScreen: View {
     }
 
     @ViewBuilder private var loadingSurface: some View {
-        if store.work == .idle, onManageSourceExclusions != nil {
+        if let onRecoverHistory {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(String(localized: "As novas publicações estão pausadas até você escolher os critérios desta leitura."))
+                Button(String(localized: "Escolher como continuar"), action: onRecoverHistory)
+                    .accessibilityIdentifier("history-recovery-empty-action")
+            }.padding()
+        } else if store.work == .idle, onManageSourceExclusions != nil {
             // Idle is not evidence of a search or definitive exhaustion. State only the active rules.
             sourceExclusionRecovery.frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
