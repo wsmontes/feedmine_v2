@@ -108,3 +108,12 @@ Read-only inventory lists each committed Edition with its frozen publication met
 
 - [x] RED/GREEN inventory across unowned/owned siblings, absent singleton, selected preparation, promotion and explicit clear; stable order and authority unchanged. Foco44/0; full1855/one skip/0, independent review/followup clean. See docs/reviews/2026-10-30-f13-retained-readings-inventory.md.
 - [ ] Explicit retained selection including sibling Editions under one logical binding, stale-evidence checks, native host and recovery UI.
+
+## Task 2i — prepare an explicitly selected owned Edition
+
+Introduce a transactional preparation entry point taking the retained-reading snapshot, its exact owned checkpoint and the current reader activation. Revalidate Edition/owner metadata, checkpoint, membership and current token before revoking any preparation. Explicitly select that Edition rather than automatic retained/base choice. Do not move the binding active pointer or active checkpoint; current reader can still save its final point. Promotion uses existing predecessor/base/token fences and preserves A before installing B. Returning A restores its final point, not the point observed before B prepared.
+
+- [x] Owned sibling A→B→A RED/GREEN and stale selection/token/checkpoint failures without revoking another pending candidate. Foco46/0, full1857/one skip/0, native Content20+NF0313=33/0; review/followup clean. See docs/reviews/2026-10-30-f13-owned-reading-selection.md.
+- [ ] Native consumption and unowned retained selection into an existing logical binding; no implicit ownership or namespace sharing.
+
+This primitive requires a current bound reader and a checkpoint already owned by the selected binding. Absence of a current binding, original-only points, unowned sibling adoption, per-history namespace compatibility and UI choices remain required work, not silently treated as a fresh context.

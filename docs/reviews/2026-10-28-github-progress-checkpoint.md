@@ -1,5 +1,12 @@
 # GitHub progress checkpoint — 2026-10-28
 
+## Atualização — preparação explícita de Edition owned, 2026-10-30
+
+A seleção prepara a Edition pedida com checkpoint owned e token do leitor atual, sem mover a leitura apresentada. Valida snapshot/owner/Edition/checkpoint antes de revogar outra candidata. A→B→A restaura o último ponto real de A. **1857 testes completos, um ignorado, zero falhas; foco46/0; regressão nativa Content20+NF0313=33/0**, revisão/followup sem achados. [Relatório e limites](2026-10-30-f13-owned-reading-selection.md).
+
+Novo entry point ainda sem consumidor no host. Adoção de irmãos unowned em binding existente, ausência de predecessor bound, namespace, UI e aceitação permanecem pendentes.
+
+
 ## Atualização — inventário completo de leituras retidas, 2026-10-30
 
 Consulta read-only de todas as Editions com owner opcional, critérios congelados, originais/checkpoints owned distintos, posição realmente ativa e preparação selecionada. Funciona sem singleton e sob política global não resolvida; não escolhe a Edition mais recente. **1855 testes completos, um ignorado, zero falhas; foco44/0**, revisão/followup sem achados. [Relatório](2026-10-30-f13-retained-readings-inventory.md).

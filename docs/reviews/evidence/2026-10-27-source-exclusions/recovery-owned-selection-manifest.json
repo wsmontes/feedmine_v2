@@ -1,0 +1,42 @@
+{
+  "binary": ".build/index-build/arm64-apple-macosx/debug/FeedMinePackageTests.xctest/Contents/MacOS/FeedMinePackageTests",
+  "binary_sha256": "a301ad24096bcbf4e5e58ffe58e0268ff8d6f9e4ec9bbfba9e6f322f567243b7",
+  "archives": [
+    {
+      "file": "recovery-owned-selection-affected.log.gz",
+      "uncompressed_sha256": "5e8ad3102a5db6e50234f2367708f1104f75b0e3f744f7be78a10d5fb306f5d3"
+    },
+    {
+      "file": "recovery-owned-selection-fixture-green.log.gz",
+      "uncompressed_sha256": "87f40550f5959d9ae479cb902d53bcf7e86d7d2e9a37aa5ef4eb42f4c13234a7"
+    },
+    {
+      "file": "recovery-owned-selection-full.log.gz",
+      "uncompressed_sha256": "2f62da9ea29ef9f6b0c2ad6b4f7a422cf4b2b219120b48191935093075ea27e1"
+    },
+    {
+      "file": "recovery-owned-selection-green.log.gz",
+      "uncompressed_sha256": "9279513d8f0e6b3fcc3dc4119a4b566e2abc086dba755e888f651d571d388e92"
+    },
+    {
+      "file": "recovery-owned-selection-native-build.log.gz",
+      "uncompressed_sha256": "01e85428196686b0790061143f0dad6e542d151e68211521baf0b7a7b9ec21df"
+    },
+    {
+      "file": "recovery-owned-selection-native-tests.log.gz",
+      "uncompressed_sha256": "7539d3035bed7ec9ab4feab7033ec852eeca010e7ea3e1a33f2244ec5984e7e2"
+    },
+    {
+      "file": "recovery-owned-selection-red.log.gz",
+      "uncompressed_sha256": "82e861803d9ac45a2d8d458cfb7a38c0e60061da8cc2ef6ff67e3bce5b32f5bf"
+    },
+    {
+      "file": "recovery-owned-selection-native-build.patch.gz",
+      "uncompressed_sha256": "193df368204310f7d6504ee6bb8cf7d386cab0d3b624a919f591f545c272e82e"
+    },
+    {
+      "file": "recovery-owned-selection-source.patch.gz",
+      "uncompressed_sha256": "bbb35f5cce2725759235ad11fdef0675e024dd25effa0aaf36863f9c0087779a"
+    }
+  ]
+}

@@ -6,42 +6,73 @@ extension SessionStore {
     /// A hidden replacement may publish/read its own history while the presented reader keeps its token.
     /// The selected preparation and its predecessor are durable fences, never permission to save a viewport.
     public func prepareBinding(_ bindingID: UUID) throws -> BindingActivation {
+        try database.write { try Self.prepareBinding(bindingID, explicitEditionID: nil, in: $0) }
+    }
+
+    /// Selects an already-owned saved reading, without changing the presented reader or its point.
+    /// Snapshot, checkpoint and predecessor must all remain current before any preparation is revoked.
+    public func prepareRetainedReading(_ reading: ReaderHistoryBindingStore.RetainedReading,
+        checkpoint: CheckpointRecord, replacing current: BindingActivation) throws -> BindingActivation {
         try database.write { db in
-            let id = PersistenceValueCoding.uuid(bindingID)
-            guard let binding = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?", arguments: [id]) else {
-                throw SessionStoreError.missingHistoryBinding
+            try Self.requireActivation(current, in: db)
+            guard let owner = reading.owner else { throw SessionStoreError.invalidMembership }
+            guard !reading.isSelectedPreparation,
+                let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
+                    arguments: [PersistenceValueCoding.uuid(owner.id)]),
+                try ReaderHistoryBindingStore.decodeRecord(row) == owner,
+                let edition = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
+                    arguments: [PersistenceValueCoding.uuid(reading.edition.id.rawValue)]),
+                try PublicationStore.decodeEdition(edition) == reading.edition else {
+                throw SessionStoreError.staleHistoryBinding
             }
-            let previous = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_preparations WHERE binding_id = ?", arguments: [id])
-            let base = try PublicationRecordFields(binding).optionalUUID("active_edition_id")
-            let priorBase = try previous.flatMap { try PublicationRecordFields($0).optionalUUID("base_edition_id") }
-            let candidate = try previous.flatMap { try PublicationRecordFields($0).optionalUUID("edition_id") }
-            var editionID = ((priorBase == base ? candidate : nil) ?? base).map { FeedEditionID(rawValue: $0) }
-            if let declared = editionID, let point = try Self.ownedCheckpoint(bindingID: bindingID, editionID: declared, in: db),
-                let location = try PublicationStore.location(ofCard: point.cardID, in: db), location.editionID != declared {
-                guard try Self.isOwned(location.editionID, by: bindingID, in: db) else { throw SessionStoreError.invalidMembership }
-                let corrected = CheckpointRecord(editionID: location.editionID, cardID: point.cardID,
-                    anchorPlacement: point.anchorPlacement, updatedAt: point.updatedAt, topDelta: point.topDelta, cardHeight: point.cardHeight)
-                try Self.persistOwned(corrected, bindingID: bindingID, in: db)
-                editionID = location.editionID
+            guard try Self.isOwned(reading.edition.id, by: owner.id, in: db) else { throw SessionStoreError.invalidMembership }
+            guard reading.checkpoints.contains(where: { $0.point == checkpoint }),
+                try Self.ownedCheckpoint(bindingID: owner.id, editionID: reading.edition.id, in: db) == checkpoint,
+                try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_preparations WHERE edition_id = ? AND selected = 1)",
+                    arguments: [PersistenceValueCoding.uuid(reading.edition.id.rawValue)]) == false else {
+                throw SessionStoreError.staleHistoryBinding
             }
-            let point = try editionID.flatMap { try Self.ownedCheckpoint(bindingID: bindingID, editionID: $0, in: db) }
-            let current = try Row.fetchOne(db, sql: "SELECT * FROM session_reader_binding WHERE singleton_id = 1")
-            let currentFields = current.map(PublicationRecordFields.init)
-            let token = UUID()
-            try db.execute(sql: "UPDATE reader_history_preparations SET selected = 0 WHERE selected = 1")
-            try db.execute(sql: """
-                INSERT INTO reader_history_preparations(binding_id, edition_id, base_edition_id, checkpoint_present, activation_token,
-                    selected, replacing_binding_id, replacing_activation_token) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-                ON CONFLICT(binding_id) DO UPDATE SET edition_id = excluded.edition_id, base_edition_id = excluded.base_edition_id,
-                    checkpoint_present = excluded.checkpoint_present, activation_token = excluded.activation_token,
-                    selected = 1, replacing_binding_id = excluded.replacing_binding_id,
-                    replacing_activation_token = excluded.replacing_activation_token
-                """, arguments: [id, editionID.map { PersistenceValueCoding.uuid($0.rawValue) }, base.map(PersistenceValueCoding.uuid), point == nil ? 0 : 1,
-                    PersistenceValueCoding.uuid(token), currentFields?.optionalString("binding_id"),
-                    currentFields?.optionalString("activation_token")])
-            return BindingActivation(bindingID: bindingID, token: token)
+            return try Self.prepareBinding(owner.id, explicitEditionID: reading.edition.id, in: db)
         }
     }
+
+    private static func prepareBinding(_ bindingID: UUID, explicitEditionID: FeedEditionID?, in db: Database) throws -> BindingActivation {
+        let id = PersistenceValueCoding.uuid(bindingID)
+        guard let binding = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?", arguments: [id]) else {
+            throw SessionStoreError.missingHistoryBinding
+        }
+        let previous = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_preparations WHERE binding_id = ?", arguments: [id])
+        let base = try PublicationRecordFields(binding).optionalUUID("active_edition_id")
+        let priorBase = try previous.flatMap { try PublicationRecordFields($0).optionalUUID("base_edition_id") }
+        let candidate = try previous.flatMap { try PublicationRecordFields($0).optionalUUID("edition_id") }
+        var editionID = explicitEditionID ?? ((priorBase == base ? candidate : nil) ?? base).map { FeedEditionID(rawValue: $0) }
+        if let declared = editionID, let point = try Self.ownedCheckpoint(bindingID: bindingID, editionID: declared, in: db),
+            let location = try PublicationStore.location(ofCard: point.cardID, in: db), location.editionID != declared {
+            guard explicitEditionID == nil else { throw SessionStoreError.invalidMembership }
+            guard try Self.isOwned(location.editionID, by: bindingID, in: db) else { throw SessionStoreError.invalidMembership }
+            let corrected = CheckpointRecord(editionID: location.editionID, cardID: point.cardID,
+                anchorPlacement: point.anchorPlacement, updatedAt: point.updatedAt, topDelta: point.topDelta, cardHeight: point.cardHeight)
+            try Self.persistOwned(corrected, bindingID: bindingID, in: db)
+            editionID = location.editionID
+        }
+        let point = try editionID.flatMap { try Self.ownedCheckpoint(bindingID: bindingID, editionID: $0, in: db) }
+        let current = try Row.fetchOne(db, sql: "SELECT * FROM session_reader_binding WHERE singleton_id = 1")
+        let currentFields = current.map(PublicationRecordFields.init)
+        let token = UUID()
+        try db.execute(sql: "UPDATE reader_history_preparations SET selected = 0 WHERE selected = 1")
+        try db.execute(sql: """
+            INSERT INTO reader_history_preparations(binding_id, edition_id, base_edition_id, checkpoint_present, activation_token,
+                selected, replacing_binding_id, replacing_activation_token) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(binding_id) DO UPDATE SET edition_id = excluded.edition_id, base_edition_id = excluded.base_edition_id,
+                checkpoint_present = excluded.checkpoint_present, activation_token = excluded.activation_token,
+                selected = 1, replacing_binding_id = excluded.replacing_binding_id,
+                replacing_activation_token = excluded.replacing_activation_token
+            """, arguments: [id, editionID.map { PersistenceValueCoding.uuid($0.rawValue) }, base.map(PersistenceValueCoding.uuid), point == nil ? 0 : 1,
+                PersistenceValueCoding.uuid(token), currentFields?.optionalString("binding_id"),
+                currentFields?.optionalString("activation_token")])
+        return BindingActivation(bindingID: bindingID, token: token)
+    }
+
 
     public func editionID(bindingActivation: BindingActivation) throws -> FeedEditionID? {
         try database.read { try Self.scopedEdition(bindingActivation, in: $0) }
