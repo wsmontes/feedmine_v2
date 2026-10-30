@@ -3387,6 +3387,43 @@ final class FeedFrameBudgetTests: XCTestCase {
             b.editionID, "The archived B checkpoint must not be erased")
     }
 
+    /// Both the destination construction and rollback recovery fail on the same SQLite
+    /// visibility boundary. The app must report the recovery failure explicitly rather
+    /// than expose a half-launched association as if it could present a readable feed.
+    func testFailedRecoveryReportsStartupErrorWithoutHalfLaunchedSession() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let firstKey = composition.currentContextKey
+        let source = TrustedFeed.development[1].sourceID
+        // Prime both Editions so both future constructors perform setVisibility.
+        try await composition.selectContext(.source(source))
+        try await composition.selectContext(firstKey.request)
+        let url = RuntimeDatabaseLocation(directory: directory).databaseURL
+        try executeTransitionTestSQL("""
+            CREATE TRIGGER feedmine_test_fail_both_visibility
+            BEFORE UPDATE OF visible ON edition_reading_state
+            BEGIN SELECT RAISE(ABORT, 'injected persistent visibility failure'); END
+            """, at: url)
+        defer { try? executeTransitionTestSQL("DROP TRIGGER IF EXISTS feedmine_test_fail_both_visibility", at: url) }
+
+        do {
+            try await composition.selectContext(.source(source))
+            XCTFail("Expected construction of B to fail")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("injected persistent visibility failure"))
+        }
+        XCTAssertNil(composition.association,
+            "A failed recovery must not expose a partially initialized association")
+        XCTAssertNotNil(composition.startupFailure,
+            "The app must explicitly report that even the previous session could not be restored")
+        XCTAssertNotNil(composition.startupFailureDetail)
+        XCTAssertEqual(composition.currentContextKey, firstKey)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.activeContextKey, firstKey)
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
