@@ -4607,6 +4607,109 @@ final class FeedFrameBudgetTests: XCTestCase {
         await active.close()
     }
 
+    /// An editorial rebuild is requested while the toggle gate is held, but the
+    /// toggle's own preference transaction never begins. The failed explicit
+    /// request must preserve selection and surface the error, while the queued
+    /// editorial work still replaces the old association and keeps its checkpoint.
+    func testFailedToggleBeforeCommitStillDrainsEditorialRebuild() async throws {
+        enum InjectedFailure: Error { case beforeCommit }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory, feeds: threeSourceFixture())
+        await composition.launch()
+        try await composition.searchSources("")
+        let previous = try XCTUnwrap(composition.association)
+        let previousEdition = previous.store.state.presentation?.editionID
+        let candidate = try XCTUnwrap(composition.feeds.first)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let original = try XCTUnwrap(preferences.load())
+        var seamCalls = 0
+        composition.sourceToggleBeforeCommit = { attempt in
+            seamCalls += 1
+            XCTAssertEqual(attempt, 1)
+            try await composition.replaceSession() // deferred by the toggle's gate
+            throw InjectedFailure.beforeCommit
+        }
+        defer { composition.sourceToggleBeforeCommit = nil }
+
+        do {
+            try await composition.toggleSource(candidate.sourceID)
+            XCTFail("The injected pre-commit error must reach the explicit caller")
+        } catch InjectedFailure.beforeCommit {}
+        XCTAssertEqual(seamCalls, 1)
+        XCTAssertEqual(try preferences.load(), original)
+        XCTAssertEqual(composition.currentContextKey, original.activeContextKey)
+        XCTAssertFalse(previous.active, "The pending editorial replacement must not be dropped")
+        let recovered = try XCTUnwrap(composition.association)
+        XCTAssertTrue(recovered.active)
+        XCTAssertFalse(recovered === previous)
+        XCTAssertEqual(recovered.feeds.map(\.principal), original.sourceKeys)
+        XCTAssertEqual(recovered.policy.userSelectionVersion.rawValue, original.selectionVersion)
+        XCTAssertNil(composition.startupFailure)
+        if let previousEdition {
+            XCTAssertEqual(recovered.store.state.presentation?.editionID, previousEdition)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID, previousEdition)
+        }
+        await recovered.close()
+    }
+
+    /// The source change IS committed, but the first new constructor fails.
+    /// Recovery opens the committed identity, then the deferred editorial rebuild
+    /// must also run, leaving the newest selection and an active final session.
+    func testFailedToggleAfterCommitStillDrainsEditorialRebuild() async throws {
+        enum InjectedFailure: Error { case afterConstructor }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory, feeds: threeSourceFixture())
+        await composition.launch()
+        try await composition.searchSources("")
+        let previous = try XCTUnwrap(composition.association)
+        let candidate = try XCTUnwrap(composition.feeds.first)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        let original = try XCTUnwrap(preferences.load())
+        var editorialRequests = 0
+        var constructions = 0
+        composition.sourceToggleBeforeCommit = { attempt in
+            XCTAssertEqual(attempt, 1)
+            editorialRequests += 1
+            try await composition.replaceSession() // deferred while gate is held
+        }
+        composition.associationConstructionFault = {
+            constructions += 1
+            if constructions == 1 { throw InjectedFailure.afterConstructor }
+        }
+        defer {
+            composition.sourceToggleBeforeCommit = nil
+            composition.associationConstructionFault = nil
+        }
+
+        do {
+            try await composition.toggleSource(candidate.sourceID)
+            XCTFail("The first post-commit constructor must fail")
+        } catch InjectedFailure.afterConstructor {}
+
+        XCTAssertEqual(editorialRequests, 1)
+        XCTAssertEqual(constructions, 3,
+            "Failed constructor, recovered committed session, then deferred editorial rebuild")
+        let committed = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(committed.selectionVersion, original.selectionVersion + 1)
+        XCTAssertEqual(committed.sourceKeys, original.sourceKeys.filter { $0 != candidate.principal })
+        XCTAssertEqual(composition.currentContextKey, committed.activeContextKey)
+        XCTAssertFalse(previous.active)
+        let recovered = try XCTUnwrap(composition.association)
+        XCTAssertTrue(recovered.active)
+        XCTAssertEqual(recovered.feeds.map(\.principal), committed.sourceKeys)
+        XCTAssertEqual(recovered.policy.userSelectionVersion.rawValue, committed.selectionVersion)
+        XCTAssertNil(composition.startupFailure)
+        if let presentation = recovered.store.state.presentation {
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.editionID,
+                presentation.editionID)
+        }
+        await recovered.close()
+    }
+
     /// The separate SQLite connection installs a narrow fault at the actual storage layer.
     /// The helper has no effect on the application binary or Release configuration.
     private func executeTransitionTestSQL(_ sql: String, at url: URL) throws {
