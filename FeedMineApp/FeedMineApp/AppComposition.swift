@@ -33,17 +33,55 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
-    // Filter requests must not mutate durable preferences while another transition owns
-    // the session. Waiters resume FIFO; each recomputes its key after acquiring the gate.
-    @ObservationIgnored private var filterTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+    // Filter intents wait without modifying preferences. A direct handoff reserves the
+    // transition gate for the next waiter, so another @MainActor task cannot overtake it
+    // between resume() and the waiting task's actual resumption.
+    private struct FilterTransitionWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    @ObservationIgnored private var filterTransitionWaiters: [FilterTransitionWaiter] = []
     #if DEBUG
     var waitingFilterTransitions: Int { filterTransitionWaiters.count }
     #endif
 
+    private func cancelWaitingFilterTransition(id: UUID) {
+        guard let index = filterTransitionWaiters.firstIndex(where: { $0.id == id }) else { return }
+        filterTransitionWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
+
+    private func acquireFilterTransition() async throws {
+        try Task.checkCancellation()
+        if !replacingSession {
+            replacingSession = true
+            return
+        }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    filterTransitionWaiters.append(.init(id: id, continuation: continuation))
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancelWaitingFilterTransition(id: id) }
+        }
+        // The previous owner handed this task the gate without setting it false.
+        // If cancellation won the race with resume, hand that reservation onward.
+        if Task.isCancelled {
+            releaseSessionTransition()
+            throw CancellationError()
+        }
+    }
+
     private func releaseSessionTransition() {
-        replacingSession = false
-        if !filterTransitionWaiters.isEmpty {
-            filterTransitionWaiters.removeFirst().resume()
+        if filterTransitionWaiters.isEmpty {
+            replacingSession = false
+        } else {
+            // Keep replacingSession=true until the next owner returns or releases it.
+            filterTransitionWaiters.removeFirst().continuation.resume()
         }
     }
     /// One verification shared between foreground and a BGAppRefresh grant.
@@ -725,14 +763,8 @@ final class AppComposition {
         // A rebuild may be suspended on discovery. Do not write a new context into
         // preferences and return as if applied: replaceSession() would merely mark
         // pendingRebuild while its gate is held. Queue the user's *intent* instead.
-        while replacingSession {
-            await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
-                filterTransitionWaiters.append(waiter)
-            }
-        }
-        replacingSession = true
+        try await acquireFilterTransition()
         defer { releaseSessionTransition() }
-        try Task.checkCancellation()
         // Derive the request only after acquiring the gate. A queued request must
         // use the context actually active when its turn begins, not stale context.
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
