@@ -111,7 +111,11 @@ public struct FeedScreen: View {
                                     // tem agora — comparada pela **identidade publicada**, nunca pela posição do
                                     // leitor (era essa leitura, dentro do corpo, que re-renderizava a lista a cada
                                     // avanço).
-                                    guard store.renderedItems.contains(where: { $0.id == card.id }),
+                                    // A retained descriptor with released or absent bitmap is
+                                    // not a measured visual card. Preserve its historical
+                                    // identity/geometry for now, but never mint viewport proof.
+                                    guard card.isRenderReady,
+                                        store.renderedItems.contains(where: { $0.id == card.id }),
                                         let current = store.state.presentation,
                                         store.renderedEditionID == current.editionID,
                                         store.renderedContextKey == current.contextKey,
