@@ -182,9 +182,13 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertEqual(retained.cards.map(\.id), [readyBefore.id, missing.id, ready.id],
             "Not rendering a missing hero must not delete its publication identity")
 
-        // No decoder: an image-bearing card is necessarily not render-ready.
+        // Use a real decoder, exactly as in the positive control. The only
+        // difference is that this published SHA-256 has no local bytes.
         // The checkpoint itself is a legitimate ready text card.
-        let session = FeedSession(publicationHistory: history)
+        let decoder = try XCTUnwrap(PresentationImageDecoder(
+            assetDirectory: directory.appendingPathComponent("Media"),
+            heroMaxPixel: 64, thumbnailMaxPixel: 32))
+        let session = FeedSession(publicationHistory: history, imageDecoder: decoder)
         let result = try await session.admitPresentation(
             .restore(.init(backwardCapacity: 2, forwardCapacity: 0)))
         let snapshot = try XCTUnwrap(result)
