@@ -92,6 +92,10 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertEqual(snapshot.window.items.map(\.id), [readyHero.id, textSibling.id],
             "Ready hero must retain its original slot and neighbouring text")
         XCTAssertEqual(snapshot.window.anchor.cardID, readyHero.id)
+        XCTAssertTrue(snapshot.window.items[0].isRenderReady,
+            "A valid locally decoded hero is a visual proof candidate")
+        XCTAssertTrue(snapshot.window.items[1].isRenderReady,
+            "Text-only sibling is ready without any image bytes")
         XCTAssertNotNil(snapshot.evidence(for: .init(anchor: .init(
             cardID: readyHero.id, placement: .center)), ordinal: 1),
             "A genuinely decoded hero must remain eligible to generate visual evidence")
@@ -202,6 +206,12 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
             .restore(.init(backwardCapacity: 2, forwardCapacity: 0)))
         let snapshot = try XCTUnwrap(result)
         XCTAssertEqual(snapshot.window.anchor.cardID, ready.id)
+        let readyVisualIDs = snapshot.window.items.filter { $0.isRenderReady }.map(\.id)
+        XCTAssertEqual(readyVisualIDs, [readyBefore.id, ready.id],
+            "The shared visual proof predicate must not stall ready text siblings")
+        XCTAssertFalse(try XCTUnwrap(snapshot.window.items.first {
+            $0.id == missing.id
+        }).isRenderReady, "Missing published bytes are historical data, not visual evidence")
         let missingObservation = ViewportObservation(
             anchor: .init(cardID: missing.id, placement: .center))
         let readyObservation = ViewportObservation(
