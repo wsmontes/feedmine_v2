@@ -50,15 +50,15 @@ final class SessionStoreTests: XCTestCase {
         let lease = try XCTUnwrap(store.hiddenTail(editionID: edition.id))
         XCTAssertEqual(lease.highWaterCardID, cards[0].id, "Only A was visually observed")
         XCTAssertEqual(lease.protectedThroughCardID, cards[2].id, "Saved C cannot be replaced")
-        let seen = try store.seenMaterial(lease: lease, originIDs: cards.map(\\.originRecordID))
+        let seen = try store.seenMaterial(lease: lease, originIDs: cards.map(\.originRecordID))
         XCTAssertEqual(Set(seen.keys), [cards[0].originRecordID],
             "Editorial material must not mistake the protected B/C for viewed content")
 
         let replacement = StorageFixture.card()
         XCTAssertEqual(try store.succeedTail(lease: lease, segmentID: FeedSegmentID(),
             cards: [replacement], createdAt: Date(timeIntervalSince1970: 500)), .applied)
-        XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\\.cardIDs),
-            Array(cards.prefix(3)).map(\\.id) + [replacement.id])
+        XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\.cardIDs),
+            Array(cards.prefix(3)).map(\.id) + [replacement.id])
         XCTAssertEqual(try sessions.checkpoint(), checkpoint)
     }
 
