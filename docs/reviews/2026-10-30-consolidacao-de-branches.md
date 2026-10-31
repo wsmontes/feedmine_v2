@@ -37,9 +37,11 @@ integrável (ver §3):
 - `fba2486a` + `a43cf051` — escritor espera o lock (`writerBusyTimeout = 10`, modo `.timeout`, não retry) e o banco de build mais novo é recusado, com `RuntimeDatabaseHardeningTests`;
 - `87ce1259` — a janela valida o segmento cruzado pelo agregado, não por carta (`PublicationStore+Presentation`), com `PublicationWindowCrossedSegmentTests`.
 
-Também entraram, sem conflito de conteúdo, `c0ee5fb4` (script que prova que `archive` e
-`-exportArchive` recebem as mesmas flags — o script já usava `SIGN_ARGS` para o mesmo fim) e
-`9608ac04` (B06 declara o *gap* do Energy Log em vez de renomear o template).
+Também entraram por cherry-pick `c0ee5fb4` e `9608ac04`, **com conflito**: 3 hunks em
+`scripts/release-testflight.sh` e 1 em `scripts/b06-evidence.sh`, todos resolvidos a favor do código
+que já existia (o script usava `SIGN_ARGS` para o mesmo fim; o B06 já declarava `Power Profiler`). O
+que de novo entrou foi `scripts/test-export-signing-flags.sh` (240 linhas) e os 81 ajustes do
+`b06-evidence.sh` que não colidiam.
 
 De `fix/trace-posix-numbers`, o commit `737393ed` entrou por cherry-pick: a linha
 `feed-window-proof` passa a ser serializada com `en_US_POSIX` (`traceLine`) e desenhada com
@@ -98,6 +100,14 @@ Decisões, todas registradas no commit de merge `22cf0fcc` e no `ceb81942`:
 | `instruments/journey-*` (três variantes) | `instruments/journey/journey.py` já está na linha; as variantes diferem em recortes de governança. |
 | `codex/candidate54-*`, `codex/bisect-946`, `codex/care-audio-preserved`, `wip/3r4`, `gate/pd8-r1`, `gate/r6e`, `integration/chatgpt`, `refactor/feed-screen-split`, `refactor/publication-store-split` | conteúdo já presente (`callerPagesPending`, `onPublication`, `R03/P04`, splits) ou WIP/experimento de uma linha de candidata que a build 56 sucedeu. |
 | `phase/*`, `design/*`, `docs/*` antigos, `kiro/k-*` remanescentes | ancestrais da main ou já integrados por patch-id. |
+| `fix/db-audit` | conteúdo na `main` pelos cherry-picks `034a9d75`/`fba2486a`/`87ce1259`; o `git cherry` ainda acusa patch “novo” porque os hunks foram resolvidos contra o `sqlTrace` atual. `refusesUnknownAppliedMigrations`, `writerBusyTimeout` e `PublicationWindowCrossedSegmentTests` estão na árvore. |
+| `release/export-signing-flags`, `fix/b06-energy-template`, `fix/trace-posix-numbers`, `fix/deferral-invalidates-list`, `fix/content-filter-locale` | integrados por cherry-pick nesta rodada. Os dois primeiros tiveram hunks conflitados resolvidos a favor do código mais novo; `trace-posix-numbers` e `content-filter-locale` foram integrados com conflito resolvido somando o contrato (traço POSIX; línguas do leitor no adaptador de filtros). |
+| `perf/cold-start-width` | mede a largura da primeira passada sobre `initialWorkCapacity`, constante que não existe no desenho de recursos atual; a medição não se aplica e a branch não entra. |
+| `fix/ux-localization`, `fix/a11y-dynamic-type`, `feat/device-region-discovery`, `fix/ux-failed-feed-exit`, `fix/header-wordmark-ax` | comportamento presente na linha: rotas de saída do feed que falhou (`Tentar novamente`/`Ajustar interesses`), `@ScaledMetric` e alvo de 44 pt, `composer-region`, `lineLimit(1)` no wordmark. São recortes de 2026-10-17 sobre a suíte de UI que a build 56 reescreveu. |
+| `test/locale-determinism`, `test/keep-head-premise` | infraestrutura e expectativa de teste; `LaunchLocale.swift` e `FeedMine.xctestplan` não existem nesta linha, e a asserção de cabeça mantida já está coberta pelos testes atuais. Não integradas. |
+| `integration/chatgpt` | relatório de rodada e testes da cauda oculta, mecanismo retirado por PD-5. |
+| `codex/feed-layout-hang`, `codex/scroll-gesture-regression`, `wip/3r4-inprogress-2026-10-08` | trabalho de outro agente em worktree vivo e snapshot 618 commits atrás; fora deste lote por decisão, não por esquecimento. |
+| `monitor/architecture` | integrada; a branch recebeu depois um novo parecer (047) e ele entrou no merge `eb0f0f68`. |
 
 ## 4. Verificação executada nesta rodada
 
@@ -122,6 +132,14 @@ Os testes do alvo `FeedMineAppTests` rodaram no simulador `FeedMine OMP` (iOS 26
 árvore integrada:      Executed 229 tests, with 17 failures (4 unexpected) in 611.7 s
 product/nf04 (c0392741): mesmas 17 asserções, nas mesmas 12 funções
 ```
+
+O build e os testes do app usaram o `catalog.sqlite` local (`42e60234…`), que **não** é o descrito
+pelo `catalog.manifest.json` da árvore (`1825fdae…`, o par staged do build 56). Isso serve como prova
+de compilação e de execução, não como evidência de release: PD-10 exige manifesto e catálogo
+versionados juntos, e esse par não existe nesta máquina.
+
+Suítes específicas dos consertos desta rodada: `FeedNativeScrollTraceTests` 3/3 e
+`ContentFilterTests` 20/0 (o adaptador passa a resolver as palavras do modelo nas línguas do leitor).
 
 A atribuição foi medida, não suposta: um worktree em `origin/product/nf04-tail-truth`
 (`c0392741`) rodou as mesmas suítes com os mesmos insumos e reproduziu **exatamente** as falhas —
