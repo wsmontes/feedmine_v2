@@ -123,7 +123,8 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertEqual(screen.renderedItems.first?.image, decoded)
 
         var interaction = FeedInteractionPresentation()
-        interaction.begin(snapshot, owner: ObjectIdentifier(screen))
+        interaction.begin(snapshot, owner: ObjectIdentifier(screen),
+            renderedItems: screen.renderedItems)
         let held = try XCTUnwrap(interaction.heldItems(matching: screen))
         XCTAssertEqual(held.map(\.id), [readyHero.id, textSibling.id],
             "Gesture-held surface must retain the same ready hero identity")
@@ -258,21 +259,21 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         screen.submitViewport(readyObservation, activity: .stationary, rendered: snapshot)
         XCTAssertEqual(observedReadyIDs, [ready.id],
             "Withholding an image cannot suppress a ready text observation")
-        XCTAssertEqual(screen.renderedItems.map(\.id), [readyBefore.id, ready.id],
-            "Only prepared cells cross the visual handoff; history remains retrievable")
+        XCTAssertEqual(screen.renderedItems.map(\.id), [ready.id],
+            "The physical rail starts at the durable ready anchor; never bridge a deferred hero")
         XCTAssertFalse(screen.renderedItems.contains {
             $0.isImageBearing && $0.image == nil
         }, "An image-bearing placeholder must not be treated as a rendered card")
-        XCTAssertEqual(screen.renderedItems.map(\.title), ["Ready before", "Ready text"],
-            "Neither a ready predecessor nor a ready successor may be blocked by missing media")
+        XCTAssertEqual(screen.renderedItems.map(\.title), ["Ready text"],
+            "The other ready sibling stays in logical history until measured cross-gap re-entry")
 
         // The held interaction is a second drawing route: it must not bypass
         // the same visual readiness gate while a finger owns the old snapshot.
         var interaction = FeedInteractionPresentation()
         interaction.begin(snapshot, owner: ObjectIdentifier(screen))
         XCTAssertEqual(interaction.heldItems(matching: screen)?.map(\.id),
-            [readyBefore.id, ready.id],
-            "A held viewport must not resurrect undecodable images after store admission")
+            [ready.id],
+            "A held viewport borrows exactly the installed ready cells")
         interaction.end()
 
         // A rejected historical observation must not erase the visible text
@@ -286,7 +287,7 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         if let afterRejected {
             try screen.install(FeedPresentationState(presentation: afterRejected))
         }
-        XCTAssertEqual(screen.renderedItems.map(\.id), [readyBefore.id, ready.id],
-            "A rejected image return cannot remove either ready sibling")
+        XCTAssertEqual(screen.renderedItems.map(\.id), [ready.id],
+            "Rejected image return cannot change the physically installed ready run")
     }
 }
