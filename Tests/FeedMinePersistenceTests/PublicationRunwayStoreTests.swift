@@ -136,6 +136,32 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(try store.exposure(editionID:edition.id,originIDs:[cards[0].originRecordID]).publishedOriginIDs,[cards[0].originRecordID])
     }
 
+    func testEditorialUnseenTracksOnlyConfirmedVisualHighWaterNotSavedPosition() throws {
+        let (db, store, edition, cards) = try fixture()
+        let requested = cards.map(\.originRecordID)
+        let published = Set(requested)
+        // A restored or prepared window cannot supply seen evidence.
+        XCTAssertEqual(try store.exposure(editionID: edition.id,
+            originIDs: requested).unseenOriginIDs, published)
+        let sessions = SessionStore(database: db)
+        try sessions.saveCheckpoint(.init(editionID: edition.id, cardID: cards[2].id,
+            anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 100)))
+        XCTAssertEqual(try store.exposure(editionID: edition.id,
+            originIDs: requested).unseenOriginIDs, published,
+            "Saving logical position C cannot mark A/B/C visually observed")
+
+        try store.markSeen(editionID: edition.id, cardID: cards[0].id)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,
+            originIDs: requested).unseenOriginIDs, Set(requested.dropFirst()),
+            "Observed A and protected C are independent frontiers")
+        try store.markSeen(editionID: edition.id, cardID: cards[2].id)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,
+            originIDs: requested).unseenOriginIDs, Set(requested.dropFirst(3)),
+            "Only explicit accepted visual exposure can advance the editorial seen boundary")
+        XCTAssertTrue(try store.exposure(editionID: edition.id,
+            originIDs: []).unseenOriginIDs.isEmpty)
+    }
+
     func testReadyOnlyValidatesAnchorAndTailSchemaRatherThanAuditingOldSegments() throws {
         let (db, store, edition, c) = try fixture()
         try db.write { try $0.execute(sql: "UPDATE feed_segments SET publication_schema_version = 99 WHERE ordinal = 0") }

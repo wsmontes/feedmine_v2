@@ -331,7 +331,6 @@ public actor FeedRunwayDriver {
                     let request = LocalProductionSlice.Request(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), editionID: intent.scope.editionID,
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,
                         segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
-                        readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID,
                         operation: intent.operation)
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
@@ -374,9 +373,10 @@ public actor FeedRunwayDriver {
         editionID: FeedEditionID, operation: FeedReplenishmentOperationID) async throws -> [OriginRevisionID] {
         let window = try candidateProvider.candidates(for: plan, after: cursor, examinedCapacity: capacity,
             operation: operation, consult: "preparation", trace: trace)
-        let anchor = await session.currentPresentation()?.window.anchor.cardID
+        // The projected presentation anchor can precede physical viewport proof;
+        // editorial recurrence must use only durable seen high-water.
         let facts = try publicationHistory.exposure(editionID: editionID,
-            originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: anchor)
+            originIDs: window.candidates.map(\.originRecordID))
         let effectivePolicy = try acquisition.policyIncludingDiscovery(policy)
         let recurring = effectivePolicy.exposure == .excludePublishedMaterial
         return window.candidates.filter { candidate in

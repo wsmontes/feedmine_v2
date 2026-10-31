@@ -141,6 +141,57 @@ final class LocalProductionSliceTests: XCTestCase {
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).count,2)
     }
 
+    func testEditedCardWaitsForConfirmedSeenEvenWithRestoredCursorAhead() throws {
+        let a = LocalSliceFixture.revision(1)
+        let b = LocalSliceFixture.revision(2)
+        let c = LocalSliceFixture.revision(3)
+        let f = try fixture(initial: [a, b, c])
+        for revision in [a, b, c] { try f.admit(revision) }
+        let editedB = OriginRevision(id: OriginRevisionID(rawValue: LocalSliceFixture.uuid(2020)),
+            originRecordID: b.originRecordID, externalVersionIdentity: nil,
+            headline: "Edited B headline", summary: "Materially edited B summary",
+            bodyText: b.bodyText, authoredAt: b.authoredAt,
+            modifiedAt: Date(timeIntervalSince1970: 22),
+            observedAt: Date(timeIntervalSince1970: 22), language: b.language,
+            primaryLink: b.primaryLink, searchProjection: b.searchProjection,
+            providerID: b.providerID)
+        try f.admit(editedB, previous: b.id)
+        let store = PublicationStore(database: f.database)
+        let slice = LocalProductionSlice(database: f.database)
+        func assertNotRepublished(_ segment: Int, file: StaticString = #filePath,
+            line: UInt = #line) throws {
+            let outcome = try slice.run(f.request(exposure: .excludePublishedMaterial,
+                segment: segment)) { _ in throw PreparationFailure.refused }
+            guard case .advancedWithoutPublication = outcome else {
+                return XCTFail("Edited B cannot recur while its earlier occurrence is unseen",
+                    file: file, line: line)
+            }
+            XCTAssertEqual(try store.segments(editionID: f.editionID).flatMap(\.cardIDs),
+                f.initialCardIDs, file: file, line: line)
+        }
+        // No viewport proof: every published origin is protected.
+        try assertNotRepublished(44010)
+        // A was observed, but C is only the logical saved cursor. B is unread.
+        try store.markSeen(editionID: f.editionID, cardID: f.initialCardIDs[0])
+        try SessionStore(database: f.database).saveCheckpoint(.init(
+            editionID: f.editionID, cardID: f.initialCardIDs[2],
+            anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 50)))
+        try assertNotRepublished(44011)
+
+        // Simulate the explicit accepted viewport seen transition.
+        try store.markSeen(editionID: f.editionID, cardID: f.initialCardIDs[2])
+        let (_, receipt) = try published(slice.run(
+            f.request(exposure: .excludePublishedMaterial, segment: 44012)) {
+                LocalSliceFixture.prepared($0)
+            })
+        XCTAssertEqual(receipt.cardIDs.count, 1)
+        XCTAssertEqual(try store.card(id: receipt.cardIDs[0])?.originRevisionID, editedB.id)
+        XCTAssertEqual(try store.segments(editionID: f.editionID).flatMap(\.cardIDs),
+            f.initialCardIDs + receipt.cardIDs)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.cardID,
+            f.initialCardIDs[2], "Editorial recurrence cannot move the reader cursor")
+    }
+
     func testNewRevisionOfSameOriginAdvancesWithoutRepublicationAndAnotherEditionCanSelectIt() throws {
         let old = LocalSliceFixture.revision(1), new = LocalSliceFixture.revision(1,version: 20)
         let f = try fixture(initial: [old])
