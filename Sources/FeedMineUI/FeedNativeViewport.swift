@@ -46,14 +46,22 @@ struct NativeFeedViewport: ViewModifier {
             capture.readyWindowHandshake = nil
             return
         }
-        if capture.readyWindowHandshake?.displayed?.snapshot != installed.snapshot {
+        // A newer semantic projection can revoke an earlier candidate.
+        // Never leave a stale pending handoff ready to activate on later idle
+        // geometry; no in-flight provisional transaction is reset here.
+        let pending = store.pendingNativeReadyWindow
+        let staleStaged = capture.readyWindowHandshake?.pending != nil &&
+            capture.readyWindowHandshake?.pending?.snapshot != pending?.snapshot
+        if capture.readyWindowHandshake?.displayed?.snapshot != installed.snapshot ||
+            (staleStaged && capture.readyWindowHandshake?.provisionalID == nil &&
+                capture.readyWindowHandshake?.rollbackRequired == nil) {
             capture.readyWindowHandshake?.reset()
             var handshake = FeedNativeReadyWindowHandshake(
                 owner: ObjectIdentifier(store), native: capture.nativeScrollOffset)
             guard handshake.installInitial(installed) else { return }
             capture.readyWindowHandshake = handshake
         }
-        if let candidate = store.pendingNativeReadyWindow {
+        if let candidate = pending {
             _ = capture.readyWindowHandshake?.stage(candidate)
         }
         #endif
