@@ -326,6 +326,15 @@ final class FeedScreenStoreTests: XCTestCase {
             Array(ids[0..<3]), "Staged is not rendered before witness and transaction")
         XCTAssertEqual(nativeOwner.pending?.cards.map(\.id), Array(ids[1..<4]))
         XCTAssertEqual(publishedEvents, 0)
+
+        // A later append-only ready projection becomes physical by the already
+        // safe path; its older non-prefix proposal must not remain available.
+        let appended = try snapshot(0..<4, ordinal: 3)
+        try store.install(.init(presentation: appended))
+        XCTAssertNil(store.pendingNativeReadyWindow)
+        XCTAssertEqual(store.renderedItems.map(\.id), ids)
+        XCTAssertEqual(store.displayedPresentation, appended)
+        XCTAssertEqual(publishedEvents, 0)
     }
 
     /// The one observable physical projection exists because logical state
