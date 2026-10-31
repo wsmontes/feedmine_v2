@@ -70,15 +70,17 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         try store.install(FeedPresentationState(presentation: s2))
         XCTAssertTrue(ownership.stage(second, owner: owner))
         XCTAssertEqual(ownership.displayed(owner: owner)?.cards.map(\.id), [a.id, b.id])
-        XCTAssertNil(ownership.acknowledgeHandoff(owner: owner,
-            before: witness(b.id), after: witness(b.id, top: 420)),
-            "An active gesture cannot commit a new physical rail")
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)),
+            "An active gesture cannot even provisionally install a physical rail")
         XCTAssertEqual(ownership.installed?.snapshot, s1)
         ownership.endGesture(owner: owner)
         XCTAssertEqual(ownership.displayed(owner: owner)?.cards.map(\.id), [a.id, b.id],
             "Ending a gesture alone does not authorize a physical swap")
-        let transition = try XCTUnwrap(ownership.acknowledgeHandoff(owner: owner,
-            before: witness(b.id), after: witness(b.id, top: 420)))
+        XCTAssertEqual(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id))?.snapshot, s2)
+        let transition = try XCTUnwrap(ownership.commitProvisionalHandoff(owner: owner,
+            after: witness(b.id, top: 420)))
         XCTAssertEqual(transition.witnessID, b.id)
         XCTAssertEqual(transition.offsetAdjustment, 240, accuracy: 0.001)
         XCTAssertEqual(ownership.displayed(owner: owner)?.cards.map(\.id), [a.id, b.id, c.id])
@@ -103,8 +105,10 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertFalse(ownership.beginGesture(owner: stranger))
         XCTAssertFalse(ownership.stage(invalid, owner: owner))
         XCTAssertFalse(ownership.stage(installed, owner: stranger))
-        XCTAssertNil(ownership.acknowledgeHandoff(owner: stranger,
-            before: witness(b.id), after: witness(b.id)))
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: stranger,
+            before: witness(b.id)))
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: stranger,
+            after: witness(b.id)))
         XCTAssertEqual(ownership.installed?.snapshot, original)
     }
 
@@ -237,10 +241,10 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         var ownership = FeedReadyWindowOwnership()
         XCTAssertTrue(ownership.installInitial(first, owner: owner))
         XCTAssertTrue(ownership.stage(next, owner: owner))
-        XCTAssertNil(ownership.acknowledgeHandoff(owner: owner,
-            before: nil, after: witness(b.id)))
-        XCTAssertNil(ownership.acknowledgeHandoff(owner: owner,
-            before: witness(a.id, top: 900), after: witness(a.id)))
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: nil))
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(a.id, top: 900)))
         XCTAssertEqual(ownership.displayed(owner: owner)?.visualAnchorID, b.id)
         XCTAssertEqual(ownership.displayed(owner: owner)?.cards.map(\.id), [a.id, b.id])
         XCTAssertEqual(ownership.pending?.snapshot.provenance.position, 2,
