@@ -41,6 +41,13 @@ Também entraram, sem conflito de conteúdo, `c0ee5fb4` (script que prova que `a
 `-exportArchive` recebem as mesmas flags — o script já usava `SIGN_ARGS` para o mesmo fim) e
 `9608ac04` (B06 declara o *gap* do Energy Log em vez de renomear o template).
 
+De `fix/trace-posix-numbers`, o commit `737393ed` entrou por cherry-pick: a linha
+`feed-window-proof` passa a ser serializada com `en_US_POSIX` (`traceLine`) e desenhada com
+`Text(verbatim:)`, porque sob pt-BR o mesmo `CGFloat` saía `0,000000` e o leitor
+`Double(step)`/`Int(value)` de `ArticleReadingDiagnosisUITests` devolvia `nil` — um falso vermelho do
+instrumento, não da rolagem. O arquivo do teste novo foi adicionado ao `project.pbxproj` com IDs
+próprios (`139`/`13A`), sem reutilizar identificadores existentes; os 3 testes passam no simulador.
+
 De `fix/deferral-invalidates-list`, o commit `10bc0bd7` foi trazido por cherry-pick: o livro de
 janelas adiadas sai do estado observado (`FeedDeferralLedger`), `incoming` não muta, e a captura só
 escreve no fim do empréstimo. A parte de reestruturação de `FeedScreen`/`FeedMineApp` não foi adotada
