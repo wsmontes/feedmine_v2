@@ -253,6 +253,12 @@ struct NativeFeedViewport: ViewModifier {
                 }
                 settlePendingJump()
             }
+            // A new causal projection can retain exactly the same window
+            // IDs while advancing its provenance. Keep the native owner in
+            // sync with that case too; window equality alone misses it.
+            .onChange(of: store.state.presentation?.provenance.position) { _, _ in
+                synchronizeNativeReadyOwnership()
+            }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
                 synchronizeNativeReadyOwnership()
