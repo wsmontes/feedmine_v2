@@ -112,9 +112,15 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         XCTAssertNil(away.window.items.first?.image,
             "The historical bitmap must be released outside the residency band")
 
-        // Positive control: an existing local asset can rematerialize the hero
-        // before it becomes the current anchored card again.
-        let returnedResult = try await session.submitViewport(heroObservation)
+        // B05: the current kept-head window retains the old hero identity
+        // without pixels; it cannot claim to have rendered the hero.
+        XCTAssertNil(away.evidence(for: heroObservation, ordinal: 19),
+            "A released historical descriptor is not a viewport witness")
+        // The genuinely rendered earlier window may still be borrowed during
+        // an active gesture. That older proof remains valid for reconciliation.
+        let heldHeroProof = try XCTUnwrap(initial.evidence(
+            for: heroObservation, ordinal: 19))
+        let returnedResult = try await session.submitViewport(heroObservation, from: heldHeroProof)
         let returned = try XCTUnwrap(returnedResult)
         XCTAssertEqual(returned.window.anchor.cardID, hero.id)
         XCTAssertEqual(returned.window.items.map(\.id), ids)
@@ -125,7 +131,11 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
 
         let secondAwayResult = try await session.submitViewport(lastObservation)
         let secondAway = try XCTUnwrap(secondAwayResult)
-        let retryEvidence = try XCTUnwrap(secondAway.evidence(
+        XCTAssertNil(secondAway.evidence(for: heroObservation, ordinal: 73),
+            "Released pixels cannot mint a new viewport proof")
+        // The last actually rendered hero snapshot may still be held by UI.
+        // It can authorize re-entry only after its local pixels rematerialize.
+        let retryEvidence = try XCTUnwrap(returned.evidence(
             for: heroObservation, ordinal: 73))
         let beforeMissing = await session.currentPresentation()
         try FileManager.default.removeItem(at: png.file)
