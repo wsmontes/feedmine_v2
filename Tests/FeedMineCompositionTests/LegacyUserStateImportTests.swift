@@ -24,7 +24,15 @@ final class LegacyUserStateImportTests: XCTestCase {
         let v2Support = support.appendingPathComponent("FeedMine", isDirectory: true)
         try FileManager.default.createDirectory(at: v2Support, withIntermediateDirectories: true)
         let v1 = support.appendingPathComponent("feedmine", isDirectory: true)
-        try FileManager.default.createDirectory(at: v1, withIntermediateDirectories: true)
+        // APFS may already resolve this spelling to V2's "FeedMine". Attempting
+        // to create the case-folded alias again can fail with POSIX EIO on the
+        // iOS simulator even though the existing directory is perfectly usable.
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: v1.path, isDirectory: &isDirectory) {
+            XCTAssertTrue(isDirectory.boolValue, "A case-folded V1 alias must resolve to a directory")
+        } else {
+            try FileManager.default.createDirectory(at: v1, withIntermediateDirectories: true)
+        }
         try Data("v1".utf8).write(to: v1.appendingPathComponent("user.sqlite"))
 
         let candidates = LegacyV1Upgrade.candidateUserStateURLs(applicationSupport: v2Support)
