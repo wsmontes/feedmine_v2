@@ -54,7 +54,8 @@ struct FeedInteractionPresentation {
     /// mantém a posição fora do corpo da lista (princípio do dono, 2026-10-14).
     func heldItems(matching store: FeedScreenStore) -> [PresentationCard]? {
         guard let held, owner == ObjectIdentifier(store),
-            held.contextKey == store.renderedContextKey, held.editionID == store.renderedEditionID else { return nil }
+            held.contextKey == store.renderedContextKey, held.editionID == store.renderedEditionID,
+            held.provenance.sequenceID == store.displayedPresentation?.provenance.sequenceID else { return nil }
         return heldPhysicalItems
     }
     mutating func noteIncoming(_ store: FeedScreenStore) {
