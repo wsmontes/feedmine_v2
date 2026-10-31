@@ -111,6 +111,65 @@ final class FeedVisualWindowPlanTests: XCTestCase {
         XCTAssertEqual(value.offsetAdjustment,0,accuracy:0.001)
     }
 
+    func testHistoricalReentryNeedsAReadyContinuousRunBeforeAnyMeasuredHandoff() throws {
+        let hero = card(.init(), .hero), middle = card(), reader = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let old = try snapshot([hero, middle, reader], anchor: reader.id,
+            edition: edition, sequence: sequence)
+        let oldPlan = try XCTUnwrap(FeedVisualWindowPlan(snapshot: old,
+            center: 2, backward: 0, forward: 0))
+        let stillMissing = try XCTUnwrap(FeedVisualWindowPlan(snapshot: old,
+            center: 1, backward: 1, forward: 1))
+        XCTAssertNil(stillMissing.contiguousReadyCards,
+            "Do not bridge a released historical hero with ready text")
+
+        // The re-entry operation must return a NEW snapshot whose hero has
+        // real pixels, retaining the same ID and historical ordinal. The actual
+        // SHA-256 materialization transition is tested in RenderReadyHistoryReturnTests.
+        // Here the old snapshot cannot authorize a handoff to a gap-filled plan.
+        let seen = FeedVisualWindowWitness(cardID: reader.id, viewportTop: 100,
+            contentOffset: 500, cardHeight: 160, viewportHeight: 650)
+        XCTAssertNil(FeedVisualWindowHandoff(from: oldPlan, to: stillMissing,
+            before: seen, after: seen, gestureActive: false))
+        XCTAssertEqual(oldPlan.contiguousReadyCards?.map(\.id), [reader.id],
+            "A blocked re-entry must keep the reader's existing visible run")
+        XCTAssertEqual(old.window.items.map(\.id), [hero.id, middle.id, reader.id])
+    }
+
+    func testHandoffRejectsOffscreenWitnessBeforeLayoutMutation() throws {
+        let first = card(), reader = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let prior = try snapshot([first, reader], anchor: reader.id,
+            edition: edition, sequence: sequence)
+        let later = try snapshot([first, reader], anchor: reader.id,
+            edition: edition, sequence: sequence, position: 2)
+        let from = try XCTUnwrap(FeedVisualWindowPlan(snapshot: prior,
+            center: 1, backward: 0, forward: 0))
+        let to = try XCTUnwrap(FeedVisualWindowPlan(snapshot: later,
+            center: 1, backward: 0, forward: 0))
+        let offscreen = FeedVisualWindowWitness(cardID: reader.id,
+            viewportTop: 900, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        let measuredAfter = FeedVisualWindowWitness(cardID: reader.id,
+            viewportTop: 180, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        XCTAssertNil(FeedVisualWindowHandoff(from: from, to: to,
+            before: offscreen, after: measuredAfter, gestureActive: false),
+            "An offscreen historical card cannot witness the reader's scroll position")
+
+        let above = FeedVisualWindowWitness(cardID: reader.id,
+            viewportTop: -160, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        XCTAssertNil(FeedVisualWindowHandoff(from: from, to: to,
+            before: above, after: measuredAfter, gestureActive: false))
+        let visible = FeedVisualWindowWitness(cardID: reader.id,
+            viewportTop: -60, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        XCTAssertNotNil(FeedVisualWindowHandoff(from: from, to: to,
+            before: visible, after: measuredAfter, gestureActive: false),
+            "A partly visible measured reader is a valid shared witness")
+    }
+
     func testForeignScopeUnreadyWitnessAndUnmeasuredLayoutAreRejected() throws {
         let a = card(), blocked = card(.init(),.hero), b = card()
         let ed=FeedEditionID(), sequence=UUID()
