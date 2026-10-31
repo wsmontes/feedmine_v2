@@ -211,6 +211,70 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         XCTAssertEqual(try SessionStore(database: database).checkpoint(), checkpointBefore)
     }
 
+    /// Issue #27 acceptance A/B/C. A restored logical C is not a visual
+    /// acknowledgment of B or C, even though all three exist in publication.
+    func testRestoredLogicalCDoesNotPromoteUnseenBOrC() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: .init(directory: root))
+        let v = PolicyVersion(rawValue: 1)
+        let context = FeedContext(request: .main)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v,
+            sequencingPolicyVersion: v, exposurePolicyVersion: v,
+            selectionSchemaVersion: .init(rawValue: 1))
+        let edition = PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: revision,
+            publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date())
+        let origins = (0..<3).map { _ in OriginRecordID() }
+        let cards = origins.enumerated().map { index, origin in
+            PublicationStore.CardRecord(id: PublicationCardID(), originRecordID: origin,
+                originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+                sourceDisplayName: nil, providerDisplayName: nil, contentEntityID: nil,
+                contentClusterID: nil, title: "Card \(index)", primaryText: "Local text",
+                timestampValue: nil, timestampKind: nil, mediaKey: nil,
+                mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
+                renderLayout: "textOnly", renderMediaAspectRatio: nil,
+                primaryActionKind: nil, primaryActionReference: nil)
+        }
+        let store = PublicationStore(database: database)
+        try store.createInitialEdition(edition,
+            firstSegment: .init(id: FeedSegmentID(), editionID: edition.id, ordinal: 0,
+                segmentSeed: 1, publicationSchemaVersion: 1, createdAt: Date(),
+                cardIDs: cards.map(\.id)),
+            cards: cards,
+            initialCheckpoint: .init(editionID: edition.id, cardID: cards[0].id,
+                anchorPlacement: "top", updatedAt: Date()))
+        let history = PublicationHistory(database: database)
+        func unseen() throws -> Set<OriginRecordID> {
+            try history.exposure(editionID: edition.id, originIDs: origins).unseenOriginIDs
+        }
+
+        XCTAssertEqual(try unseen(), Set(origins),
+            "Without viewport evidence, A, B and C must all be unseen")
+        try store.markSeen(editionID: edition.id, cardID: cards[0].id)
+        XCTAssertEqual(try unseen(), Set(origins.dropFirst()),
+            "A seen alone never advances the high-water to B or C")
+
+        try history.saveCursor(.init(editionID: edition.id,
+            anchor: .init(cardID: cards[2].id, placement: .top)), updatedAt: Date())
+        let reopened = try RuntimeDatabase(location: .init(directory: root))
+        let restored = try XCTUnwrap(PublicationHistory(database: reopened)
+            .restore(backwardCapacity: 2, forwardCapacity: 2))
+        XCTAssertEqual(restored.cursor.anchor.cardID, cards[2].id,
+            "The durable logical position really was restored at C")
+        XCTAssertEqual(try PublicationHistory(database: reopened).exposure(
+            editionID: edition.id, originIDs: origins).unseenOriginIDs,
+            Set(origins.dropFirst()),
+            "Restoring C cannot claim that B or C were visually read")
+
+        try store.markSeen(editionID: edition.id, cardID: cards[1].id)
+        XCTAssertEqual(try unseen(), [origins[2]], "Only C remains unseen after B")
+        try store.markSeen(editionID: edition.id, cardID: cards[2].id)
+        XCTAssertTrue(try unseen().isEmpty,
+            "Accepted visual C finally advances high-water past all three cards")
+    }
+
     func testRecurrenceForbiddenPolicyKeepsPhase3R5Uniqueness() throws {
         let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [OriginRecordID()], publishedOriginIDs: []))
         XCTAssertTrue(snapshot.publishedMaterialKeys.isEmpty)
