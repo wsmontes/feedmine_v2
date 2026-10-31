@@ -49,6 +49,105 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
             contentOffset: offset, cardHeight: 160, viewportHeight: 650)
     }
 
+    /// P0 / issue #7: prepend a ready card ABOVE the user's visible card.
+    /// A real native correction must retain exactly the same on-screen Y,
+    /// without treating the new logical sequence as fresh reading.
+    func testOverlappingReadyPrependNeedsMeasuredSingleNativeCorrection() throws {
+        let prepended = card(), a = card(), reader = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let prior = try projection([a, reader], anchor: reader.id,
+            edition: edition, sequence: sequence, ordinal: 1)
+        let candidate = try projection([prepended, a, reader], anchor: reader.id,
+            edition: edition, sequence: sequence, ordinal: 2)
+        let old = try XCTUnwrap(FeedReadyVisualWindow.initial(snapshot: prior))
+        let next = try XCTUnwrap(FeedReadyVisualWindow.initial(snapshot: candidate))
+        XCTAssertEqual(old.cards.map(\.id), [a.id, reader.id])
+        XCTAssertEqual(next.cards.map(\.id), [prepended.id, a.id, reader.id])
+
+        let (native, scroll) = offset()
+        native.updateWindow(old.cards.map(\.id))
+        _ = native.observe(physical(reader.id, top: 180, offset: 500))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        var handshake = FeedNativeReadyWindowHandshake(owner: ObjectIdentifier(store),
+            native: native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(next))
+        let before = witness(reader.id, top: 180, offset: 500)
+        let token = try XCTUnwrap(handshake.begin(before: before)?.token)
+        // Merely staging a different LazyVStack is not a visual commit.
+        XCTAssertFalse(handshake.commit(transaction: token, after: before))
+
+        native.updateWindow(next.cards.map(\.id))
+        XCTAssertTrue(native.observe(physical(reader.id, top: 420, offset: 500)))
+        XCTAssertEqual(scroll.contentOffset.y, 740, accuracy: 0.01)
+        XCTAssertEqual(native.appliedCount, 1, "Only the existing native writer may adjust the scroll")
+        let after = witness(reader.id, top: 180, offset: 740)
+        XCTAssertFalse(handshake.commit(transaction: token, after: after),
+            "A write without a post-correction card callback is not a measured handoff")
+        _ = native.observe(physical(reader.id, top: 180, offset: 740))
+        XCTAssertTrue(handshake.commit(transaction: token, after: after))
+        XCTAssertEqual(handshake.displayed?.cards.map(\.id),
+            [prepended.id, a.id, reader.id])
+        XCTAssertNil(handshake.rollbackRequired)
+        XCTAssertEqual(native.appliedCount, 1, "Commit cannot perform a second native scroll write")
+        XCTAssertEqual(after.viewportTop, before.viewportTop,
+            "The same physical card must remain in the same screen position")
+    }
+
+    /// Cancelling after a prepend correction is not a rollback. The host owes
+    /// both the old cell order and old physical offset, independently verified.
+    func testOverlappingReadyPrependCancellationRetainsPhysicalRollbackDebt() throws {
+        let prepended = card(), a = card(), reader = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let prior = try projection([a, reader], anchor: reader.id,
+            edition: edition, sequence: sequence, ordinal: 1)
+        let candidate = try projection([prepended, a, reader], anchor: reader.id,
+            edition: edition, sequence: sequence, ordinal: 2)
+        let old = try XCTUnwrap(FeedReadyVisualWindow.initial(snapshot: prior))
+        let next = try XCTUnwrap(FeedReadyVisualWindow.initial(snapshot: candidate))
+        let (native, scroll) = offset()
+        native.updateWindow(old.cards.map(\.id))
+        _ = native.observe(physical(reader.id, top: 180, offset: 500))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        var handshake = FeedNativeReadyWindowHandshake(owner: ObjectIdentifier(store),
+            native: native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(next))
+        let token = try XCTUnwrap(handshake.begin(
+            before: witness(reader.id, top: 180, offset: 500))?.token)
+        native.updateWindow(next.cards.map(\.id))
+        XCTAssertTrue(native.observe(physical(reader.id, top: 420, offset: 500)))
+        XCTAssertEqual(scroll.contentOffset.y, 740, accuracy: 0.01)
+        XCTAssertTrue(handshake.cancel(transaction: token))
+        XCTAssertEqual(handshake.displayed?.cards.map(\.id), [a.id, reader.id])
+        let debt = try XCTUnwrap(handshake.rollbackRequired)
+        XCTAssertEqual(debt.originalIDs, [a.id, reader.id])
+        XCTAssertEqual(debt.originalOffset, 500, accuracy: 0.01)
+        XCTAssertNil(handshake.begin(before: witness(reader.id, top: 180, offset: 740)),
+            "A canceled transaction cannot retry with the candidate's offset")
+
+        // The host has restored only the old CELL IDs, not the offset.
+        native.updateWindow(old.cards.map(\.id))
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs: [a.id, reader.id],
+            measured: witness(reader.id, top: 180, offset: 740)),
+            "Returning the old cells with a new native offset is not rollback")
+        // The mock host now restores its original physical offset. The
+        // handshake performs no restoration; it only checks the receipt.
+        scroll.contentOffset = CGPoint(x: 0, y: 500)
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs: [reader.id, a.id],
+            measured: witness(reader.id, top: 180, offset: 500)),
+            "Rollback must preserve the exact physical order")
+        XCTAssertTrue(handshake.acknowledgePhysicalRollback(
+            restoredIDs: [a.id, reader.id],
+            measured: witness(reader.id, top: 180, offset: 500)))
+        XCTAssertNil(handshake.rollbackRequired)
+        XCTAssertNotNil(handshake.begin(before:
+            witness(reader.id, top: 180, offset: 500)),
+            "Only a measured return to the original reader authorizes retry")
+    }
+
     func testNoJointCommitUntilNativeWriterAndGeometryAgree() throws {
         let a = card(), b = card(), added = card()
         let edition = FeedEditionID(), sequence = UUID()
