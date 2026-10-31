@@ -127,6 +127,9 @@ final class FeedNativeScrollOffset {
     private(set) var maximumActiveLayoutStep: CGFloat = 0
     private var gestureProofs: [PublicationCardID: (proof: FeedVisualCardGeometry, nativeOffset: CGFloat)] = [:]
     #endif
+    /// Only the IDs most recently reported by the physical SwiftUI probe.
+    /// Never use the full historical publication window as rollback evidence.
+    var currentWindowIDs: [PublicationCardID] { correction.currentWindowIDs }
     private(set) var appliedCount = 0
     private(set) var maximumResidual: CGFloat = 0
     private var visualWitness: (id: PublicationCardID, expectedY: CGFloat, offset: CGFloat)?
