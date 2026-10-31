@@ -134,45 +134,71 @@ public actor FeedSession {
     /// publish or acquire content. Ordinary admission remains an explicit operation.
     public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil) throws -> FeedPresentationSnapshot? {
         guard let original = state else { return nil }
+        var items = original.presentation.window.items
+        var reconciledReleaseIDs: [PublicationCardID] = []
         if let evidence {
             guard evidence.observation == observation, evidence.belongs(to: original.presentation),
                 evidence.ordinal > lastRenderedViewportOrdinal else { return nil }
-            lastRenderedViewportOrdinal = evidence.ordinal
-            if !original.presentation.window.items.contains(where: { $0.id == observation.anchor.cardID }) {
-                // The reader is still looking at a previous presentation from this same association.
-                // Re-read only locally published IDs already admitted by one of these two values.
-                let allowed = Set(original.presentation.window.items.map(\.id) + evidence.admittedIDs)
-                // Com a cabeça mantida, a releitura tem de alcançar **toda** carta já admitida; com a regra do
-                // arquiteto basta a capacidade congelada. O filtro abaixo continua mantendo exatamente as
-                // identidades admitidas, então alargar a leitura não admite nada de novo.
+            if !items.contains(where: { $0.id == observation.anchor.cardID }) {
+                // Reconcile only already-admitted IDs from the same association.
+                let allowed = Set(items.map(\.id) + evidence.admittedIDs)
                 let kept = original.bounds.keepsAdmittedHead ? allowed.count : original.bounds.backwardCapacity
                 let history = try publicationHistory.window(editionID: original.presentation.editionID,
                     around: FeedWindowAnchor(cardID: observation.anchor.cardID, placement: .center),
-                    backwardCapacity: kept,
-                    forwardCapacity: original.bounds.forwardCapacity)
-                let cards = history.cards.filter { allowed.contains($0.id) }
-                    .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
-                guard let window = FeedWindowSnapshot(items: cards, anchor: observation.anchor) else { return nil }
-                let restored = try projectWindow(contextKey: original.presentation.contextKey,
-                    editionID: original.presentation.editionID, window: window)
-                state = FeedSessionState(editorialRevisionID: original.editorialRevisionID,
-                    presentation: restored, bounds: original.bounds)
+                    backwardCapacity: kept, forwardCapacity: original.bounds.forwardCapacity)
+                let published = history.cards.filter { allowed.contains($0.id) }
+                guard let anchorIndex = published.firstIndex(where: { $0.id == observation.anchor.cardID }) else {
+                    return nil
+                }
+                let first = max(0, anchorIndex - original.bounds.backwardCapacity)
+                let last = min(published.count - 1, anchorIndex + original.bounds.forwardCapacity)
+                items = []
+                items.reserveCapacity(published.count)
+                for (index, card) in published.enumerated() {
+                    // Never eagerly decode the entire deep-history head (B05).
+                    let inBand = (first...last).contains(index)
+                    let value = PresentationCard(publishedCard: card, decoder: inBand ? imageDecoder : nil)
+                    items.append(value)
+                    if !inBand && value.isImageBearing { reconciledReleaseIDs.append(value.id) }
+                }
+                guard FeedWindowSnapshot(items: items, anchor: observation.anchor) != nil else { return nil }
             }
         }
-        guard let current = state else { return nil }
-        let items = current.presentation.window.items
-        guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
-        try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
-        let (bounded, residencyChanged) = try boundedResidency(items: items,
-            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
-        let anchorChanged = observation.anchor != current.presentation.window.anchor
-        guard anchorChanged || residencyChanged else { return current.presentation }
-        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else { return current.presentation }
-        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
-            editionID: current.presentation.editionID, window: window)
-        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
-            bounds: current.bounds)
-        return snapshot
+        guard items.contains(where: { $0.id == observation.anchor.cardID }) else {
+            return original.presentation
+        }
+        // Pure staging: do not consume markers, evidence or projection position yet.
+        let staged = try proposeBoundedResidency(items: items,
+            editionID: original.presentation.editionID, around: observation.anchor.cardID, bounds: original.bounds)
+        guard let target = staged.items.first(where: { $0.id == observation.anchor.cardID }),
+            !target.isImageBearing || target.image != nil else {
+            return original.presentation
+        }
+        guard let window = FeedWindowSnapshot(items: staged.items, anchor: observation.anchor) else {
+            return original.presentation
+        }
+        let changed = window != original.presentation.window
+        let nextPosition = changed
+            ? try FeedProjectionProvenance.nextPosition(after: projectionPosition) : projectionPosition
+        let proposed = changed
+            ? FeedPresentationSnapshot(contextKey: original.presentation.contextKey,
+                editionID: original.presentation.editionID, window: window,
+                provenance: .init(sequenceID: projectionSequenceID, position: nextPosition))
+            : original.presentation
+
+        // Last throwing operation: failure leaves in-memory state, marker journal and
+        // evidence ordinal untouched, while rejected pixels never mark a card seen.
+        try publicationHistory.markSeen(editionID: proposed.editionID, cardID: observation.anchor.cardID)
+        for id in reconciledReleaseIDs { releasedImageCards.insert(id) }
+        for id in staged.releasedIDs { releasedImageCards.insert(id) }
+        for id in staged.restoredIDs { releasedImageCards.remove(id) }
+        if let evidence { lastRenderedViewportOrdinal = evidence.ordinal }
+        if changed {
+            projectionPosition = nextPosition
+            state = FeedSessionState(editorialRevisionID: original.editorialRevisionID,
+                presentation: proposed, bounds: original.bounds)
+        }
+        return proposed
     }
 
     /// Bounds decoded-image residency around the reader: only cards inside the frozen bounds keep their
@@ -184,37 +210,60 @@ public actor FeedSession {
     /// every admitted card on every step — and with the head kept that list grows with how far the reader has read,
     /// so the cost grew with the session (reported on the device as stutter that gets worse the longer one reads).
     /// The unchanged cards keep their identity, which also keeps the feed's own diff small.
-    private func boundedResidency(items: [PresentationCard], editionID: FeedEditionID,
-        around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds) throws -> ([PresentationCard], Bool) {
-        guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return (items, false) }
+    private struct ResidencyProposal {
+        let items: [PresentationCard]
+        let changed: Bool
+        let releasedIDs: [PublicationCardID]
+        let restoredIDs: [PublicationCardID]
+    }
+
+    /// Prepare residency and a small marker journal, without changing actor state.
+    private func proposeBoundedResidency(items: [PresentationCard], editionID: FeedEditionID,
+        around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds) throws -> ResidencyProposal {
+        guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else {
+            return ResidencyProposal(items: items, changed: false, releasedIDs: [], restoredIDs: [])
+        }
         let first = max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
         let inside = first...last
-        // Cards that must hand their pixels back: outside the band, still holding an image.
         let leaving = items.indices.filter { !inside.contains($0) && items[$0].image != nil }
-        // Cards that come back into the band having released theirs.
-        let returning = inside.filter { releasedImageCards.contains(items[$0].id) }
-        guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
-        var next = items
-        for index in leaving {
-            next[index] = next[index].releasingDecodedImage()
-            releasedImageCards.insert(next[index].id)
+        // Clear stale text-only markers without waiting for an image that cannot exist.
+        let alreadyReady = inside.filter {
+            releasedImageCards.contains(items[$0].id) &&
+                (!items[$0].isImageBearing || items[$0].image != nil)
         }
-        if !returning.isEmpty, let imageDecoder {
-            // One read for the band, and only the returning cards are rebuilt from it.
+        // Retry every missing image within the resident band, including a failed
+        // prior return that never acquired a release marker.
+        let requiringPixels = inside.filter { items[$0].isImageBearing && items[$0].image == nil }
+        var next = items
+        for index in leaving { next[index] = next[index].releasingDecodedImage() }
+        var restored = alreadyReady.map { items[$0].id }
+        var decodedAny = false
+        if !requiringPixels.isEmpty, let imageDecoder {
             let published = try publicationHistory.window(editionID: editionID,
                 around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
                 backwardCapacity: 0, forwardCapacity: last - first)
             let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
                 ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
             })
-            for index in returning {
-                guard let fresh = decoded[items[index].id] else { continue }
+            for index in requiringPixels {
+                guard let fresh = decoded[items[index].id], fresh.image != nil else { continue }
                 next[index] = fresh
-                releasedImageCards.remove(items[index].id)
+                restored.append(fresh.id)
+                decodedAny = true
             }
         }
-        return (next, true)
+        return ResidencyProposal(items: next, changed: !leaving.isEmpty || decodedAny,
+            releasedIDs: leaving.map { items[$0].id }, restoredIDs: restored)
+    }
+
+    private func boundedResidency(items: [PresentationCard], editionID: FeedEditionID,
+        around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds) throws -> ([PresentationCard], Bool) {
+        let staged = try proposeBoundedResidency(items: items, editionID: editionID,
+            around: anchorCardID, bounds: bounds)
+        for id in staged.releasedIDs { releasedImageCards.insert(id) }
+        for id in staged.restoredIDs { releasedImageCards.remove(id) }
+        return (staged.items, staged.changed)
     }
 
     /// Extends the admitted prefix with already-published cards that follow the admitted tail.
