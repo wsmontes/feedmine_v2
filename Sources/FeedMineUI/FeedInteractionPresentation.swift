@@ -36,10 +36,14 @@ struct FeedInteractionPresentation {
     }
 
     func presentation(for store: FeedScreenStore) -> FeedPresentationSnapshot? {
+        // The physical reader can remain on an older ready run while the
+        // logical session advances. Scope checks must follow the snapshot
+        // actually drawn, not borrow the new history as false pixel evidence.
+        let drawn = store.displayedPresentation
         guard let current = store.state.presentation, let held,
             owner == ObjectIdentifier(store), current.contextKey == held.contextKey,
             current.editionID == held.editionID,
-            current.provenance.sequenceID == held.provenance.sequenceID else { return store.state.presentation }
+            current.provenance.sequenceID == held.provenance.sequenceID else { return drawn }
         return held
     }
 
