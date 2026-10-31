@@ -135,6 +135,17 @@ final class RuntimeMigrationRebuildTests: XCTestCase {
                 ContextKey(request: .main).canonicalIdentity)
             XCTAssertEqual(try String.fetchOne(db, sql: "SELECT context_identity FROM context_checkpoints WHERE context_key = ?",
                 arguments: ["source:" + source]), ContextKey(request: .source(SourceID(rawValue: sourceUUID))).canonicalIdentity)
+            // The additive cursor fence migration must retain both legacy
+            // contexts' published positions, without rewriting older seen rows.
+            XCTAssertEqual(try String.fetchOne(db, sql:
+                "SELECT protected_card_id FROM edition_position_protection WHERE edition_id = ?",
+                arguments: [mainEdition]), mainCards[1])
+            XCTAssertEqual(try String.fetchOne(db, sql:
+                "SELECT protected_card_id FROM edition_position_protection WHERE edition_id = ?",
+                arguments: [sourceEdition]), sourceCards[0])
+            XCTAssertEqual(try String.fetchOne(db, sql:
+                "SELECT high_water_card_id FROM edition_reading_state WHERE edition_id = ?",
+                arguments: [mainEdition]), mainCards[1])
             // Rebuilt tables keep their constraints, references and the new playback index.
             let indexes = Set(try String.fetchAll(db, sql: "SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'media_candidates'"))
             XCTAssertTrue(indexes.contains("media_candidates_one_playback"))
