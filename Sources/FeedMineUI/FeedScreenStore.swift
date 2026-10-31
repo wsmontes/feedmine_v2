@@ -141,13 +141,35 @@ public final class FeedScreenStore {
         } else {
             presentationState = state
         }
+        let priorPresentation = state.presentation
         state = presentationState.reporting(received.work)
-        // **Só o que a lista desenha é republicado.** A posição do leitor e a proveniência continuam em `state`,
-        // que muda a cada avanço; a lista observa os itens, que mudam quando a janela muda. Sem isso, cada avanço
-        // re-renderizava a lista inteira — 12–14 vezes por segundo numa rajada (medido no aparelho, 2026-10-14).
-        // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
-        let rendered = presentationState.presentation?.window.items
-        if rendered != renderedItems { renderedItems = rendered ?? [] }
+        // The presentation is the full causal/durable history, not the physical
+        // LazyVStack. Only a continuous decoded run containing its *own* anchor
+        // may be installed as the first visual window. Never turn a deferred
+        // image into a placeholder, join ready siblings across a gap or move a
+        // missing saved anchor to another card.
+        if presentationState.presentation != priorPresentation {
+            let next = presentationState.presentation.flatMap {
+                FeedReadyVisualWindow.initial(snapshot: $0)?.cards
+            }
+            let sameScope = renderedEditionID == presentationState.presentation?.editionID &&
+                renderedContextKey == presentationState.presentation?.contextKey
+            if !sameScope || renderedItems.isEmpty {
+                // An explicit context/edition replacement may replace its old
+                // physical surface; there is no shared cursor to preserve.
+                renderedItems = next ?? []
+            } else if let next {
+                let previousIDs = renderedItems.map(\.id)
+                let nextIDs = next.map(\.id)
+                // First vertical slice: identical IDs or append-only ready
+                // growth below the existing cells needs no physical rebase.
+                // Prepend/trim/gap crossings require the measured native
+                // handoff/rollback and must keep the old pixels until then.
+                if nextIDs.starts(with: previousIDs), next != renderedItems {
+                    renderedItems = next
+                }
+            }
+        }
         if received.work != work { work = received.work }
         if presentationState.presentation?.editionID != renderedEditionID {
             renderedEditionID = presentationState.presentation?.editionID
