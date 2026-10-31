@@ -132,8 +132,9 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
 
         // A newer logical projection cannot swap the old physical window
         // while this gesture owns its rendered hero and offset.
-        let later = try XCTUnwrap(try await session.submitViewport(.init(
-            anchor: .init(cardID: textSibling.id, placement: .top))))
+        let laterResult = try await session.submitViewport(.init(
+            anchor: .init(cardID: textSibling.id, placement: .top)))
+        let later = try XCTUnwrap(laterResult)
         XCTAssertEqual(later.window.anchor.cardID, textSibling.id)
         try screen.install(FeedPresentationState(presentation: later))
         interaction.noteIncoming(screen)
