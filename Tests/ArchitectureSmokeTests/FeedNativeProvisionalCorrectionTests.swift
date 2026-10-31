@@ -85,6 +85,71 @@ final class FeedNativeProvisionalCorrectionTests: XCTestCase {
         XCTAssertTrue(native.takeProvisionalConfirmation(transaction: token))
     }
 
+    func testForeignWitnessCannotTriggerAutomaticWriteDuringTokenedHandoff() {
+        let reader = PublicationCardID(), nearer = PublicationCardID(),
+            appended = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader, nearer])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        _ = native.observe(geometry(nearer, top: 305, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([appended, reader, nearer])
+        // The automatic correction may prefer the card nearest viewport
+        // center, but it must not write for a different transaction witness.
+        XCTAssertFalse(native.observe(geometry(nearer, top: 425, offset: 500)))
+        XCTAssertEqual(view.contentOffset.y, 500, accuracy: 0.01)
+        XCTAssertEqual(native.appliedCount, 0)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+    }
+
+    func testSecondWindowMutationCannotProduceASecondTokenedOffsetWrite() {
+        let reader = PublicationCardID(), added = PublicationCardID(),
+            more = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([added, reader])
+        _ = native.observe(geometry(reader, top: 420, offset: 500))
+        XCTAssertEqual(native.appliedCount, 1)
+        XCTAssertEqual(view.contentOffset.y, 740, accuracy: 0.01)
+        // A second publication update before verification must never use
+        // the same receipt to apply a second native adjustment.
+        native.updateWindow([more, added, reader])
+        XCTAssertFalse(native.observe(geometry(reader, top: 510, offset: 740)))
+        XCTAssertEqual(native.appliedCount, 1)
+        XCTAssertEqual(view.contentOffset.y, 740, accuracy: 0.01)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+    }
+
+    func testGestureAfterOffsetWriteInvalidatesUnverifiedReceipt() {
+        let reader = PublicationCardID(), added = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([added, reader])
+        _ = native.observe(geometry(reader, top: 420, offset: 500))
+        XCTAssertEqual(native.appliedCount, 1)
+        native.setInteractionActive(true)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+        _ = native.observe(geometry(reader, top: 180, offset: 740))
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+        native.setInteractionActive(false)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token),
+            "The host must roll back the physical provisional layout, not commit on gesture")
+        XCTAssertEqual(native.appliedCount, 1)
+    }
+
     func testCancellationRejectsStaleTokenAndMissingNativeScroll() {
         let native = FeedNativeScrollOffset()
         let reader = PublicationCardID()
