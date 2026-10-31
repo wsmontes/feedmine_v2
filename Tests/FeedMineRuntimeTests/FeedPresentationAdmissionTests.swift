@@ -92,7 +92,8 @@ final class FeedPresentationAdmissionTests: XCTestCase {
                 try f.publishTail()
                 action = .publishedGrowth
             }
-            let before = try XCTUnwrap(await f.session.currentPresentation())
+            let beforeValue = await f.session.currentPresentation()
+            let before = try XCTUnwrap(beforeValue)
             try f.database.write { db in
                 try db.execute(sql: "ALTER TABLE published_cards RENAME TO unavailable_cards")
             }
