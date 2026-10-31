@@ -213,6 +213,47 @@ final class FeedNativeProvisionalCorrectionTests: XCTestCase {
         XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
     }
 
+    func testZeroDisplacementHandoffUsesMeasuredReceiptWithoutOffsetWrite() {
+        let reader = PublicationCardID(), appended = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([reader, appended])
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token),
+            "Changing IDs alone is not a measured physical handoff")
+        XCTAssertFalse(native.observe(geometry(reader, top: 180, offset: 500)),
+            "No native offset write is needed for a zero-delta window")
+        XCTAssertTrue(native.takeProvisionalConfirmation(transaction: token),
+            "A new matching post-layout proof must authorize an idle no-op handoff")
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+        XCTAssertEqual(view.contentOffset.y, 500, accuracy: 0.01)
+        XCTAssertEqual(native.appliedCount, 0)
+    }
+
+    func testZeroDisplacementReceiptRejectsDifferentCardAndStaleActualOffset() {
+        let reader = PublicationCardID(), appended = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([reader, appended])
+        _ = native.observe(geometry(appended, top: 240, offset: 500))
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+        // A stale callback describes the old geometry, but the physical scroll
+        // view already moved: only the actual UIKit offset can authorize a proof.
+        view.contentOffset = CGPoint(x: 0, y: 540)
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+        XCTAssertEqual(native.appliedCount, 0)
+    }
+
     func testCancellationRejectsStaleTokenAndMissingNativeScroll() {
         let native = FeedNativeScrollOffset()
         let reader = PublicationCardID()
