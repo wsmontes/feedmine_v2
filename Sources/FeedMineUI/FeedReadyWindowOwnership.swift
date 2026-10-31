@@ -62,7 +62,9 @@ struct FeedReadyWindowOwnership {
             candidate.snapshot.contextKey == installed.snapshot.contextKey,
             candidate.snapshot.editionID == installed.snapshot.editionID,
             candidate.snapshot.provenance.sequenceID == installed.snapshot.provenance.sequenceID,
-            candidate.snapshot.provenance.position >= installed.snapshot.provenance.position
+            candidate.snapshot.provenance.position > installed.snapshot.provenance.position,
+            pending.map({ candidate.snapshot.provenance.position >
+                $0.snapshot.provenance.position }) ?? true
         else { return false }
         pending = candidate
         return true
