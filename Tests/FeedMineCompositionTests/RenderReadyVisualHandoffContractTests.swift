@@ -266,11 +266,16 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         }, "An image-bearing placeholder must not be treated as a rendered card")
         XCTAssertEqual(screen.renderedItems.map(\.title), ["Ready text"],
             "The other ready sibling stays in logical history until measured cross-gap re-entry")
+        screen.submitViewport(.init(anchor: .init(cardID: readyBefore.id, placement: .top)),
+            activity: .stationary, rendered: snapshot)
+        XCTAssertEqual(observedReadyIDs, [ready.id],
+            "Logical readiness alone cannot invent viewport evidence outside the installed physical run")
 
         // The held interaction is a second drawing route: it must not bypass
         // the same visual readiness gate while a finger owns the old snapshot.
         var interaction = FeedInteractionPresentation()
-        interaction.begin(snapshot, owner: ObjectIdentifier(screen))
+        interaction.begin(snapshot, owner: ObjectIdentifier(screen),
+            renderedItems: screen.renderedItems)
         XCTAssertEqual(interaction.heldItems(matching: screen)?.map(\.id),
             [ready.id],
             "A held viewport borrows exactly the installed ready cells")
