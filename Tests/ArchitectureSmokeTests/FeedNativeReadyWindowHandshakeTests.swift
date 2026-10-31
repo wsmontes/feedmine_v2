@@ -118,6 +118,49 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
             "The host still owes a physical offset rollback; model cancellation is not one")
     }
 
+    func testNativeBeginFailureRevertsProvisionalButKeepsCandidate() throws {
+        let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
+        let old=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let next=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let first=try XCTUnwrap(FeedReadyVisualWindow(snapshot:old,center:1,backward:1,forward:0))
+        let candidate=try XCTUnwrap(FeedReadyVisualWindow(snapshot:next,center:1,backward:1,forward:1))
+        let native=FeedNativeScrollOffset() // No UIScrollView is attached.
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(first))
+        XCTAssertTrue(handshake.stage(candidate))
+        XCTAssertNil(handshake.begin(before:witness(b.id,top:180,offset:500)),
+            "Native denial cannot leave UI ownership in a provisional state")
+        XCTAssertNil(handshake.provisionalID)
+        XCTAssertEqual(handshake.displayed?.snapshot,old)
+        XCTAssertEqual(handshake.pending?.snapshot,next)
+    }
+
+    func testScopeResetInvalidatesBothTokensAndTheOldPhysicalReader() throws {
+        let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
+        let old=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let next=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let first=try XCTUnwrap(FeedReadyVisualWindow(snapshot:old,center:1,backward:1,forward:0))
+        let candidate=try XCTUnwrap(FeedReadyVisualWindow(snapshot:next,center:1,backward:1,forward:1))
+        let (native,_) = offset()
+        native.updateWindow([a.id,b.id])
+        _=native.observe(physical(b.id,top:180,offset:500))
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(first))
+        XCTAssertTrue(handshake.stage(candidate))
+        let token=try XCTUnwrap(handshake.begin(before:witness(b.id,top:180,offset:500))?.token)
+        handshake.reset()
+        XCTAssertNil(handshake.provisionalID)
+        XCTAssertNil(handshake.displayed)
+        XCTAssertNil(handshake.pending)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction:token))
+        XCTAssertFalse(handshake.commit(transaction:token,
+            after:witness(b.id,top:180,offset:500)))
+        XCTAssertTrue(handshake.installInitial(first),
+            "A later edition may start with new ownership after revocation")
+    }
+
     func testGesturePreemptsBothOwnersAndFencesOldToken() throws {
         let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
         let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
