@@ -137,6 +137,23 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         XCTAssertEqual(try history.exposure(editionID: edition,
             originIDs: [anchorOrigin, editedOrigin]).unseenOriginIDs, [editedOrigin],
             "Only the actually seen high-water may release editorial recurrence")
+        // Restore a logical position at B without ever observing B. The checkpoint must
+        // move, but the visual high-water must remain at A. This is the regression
+        // described by issue #27; the existing fixture uses two ordered cards.
+        try history.saveCursor(.init(editionID: edition,
+            anchor: .init(cardID: published[1].id, placement: .top)),
+            updatedAt: Date(timeIntervalSince1970: 2600))
+        let logicalReturn = try XCTUnwrap(history.restore(backwardCapacity: 1, forwardCapacity: 1))
+        XCTAssertEqual(logicalReturn.cursor.anchor.cardID, published[1].id,
+            "Premise: the saved logical cursor moved to B")
+        XCTAssertEqual(try history.exposure(editionID: edition,
+            originIDs: [anchorOrigin, editedOrigin]).unseenOriginIDs, [editedOrigin],
+            "A logical restore at B cannot count B as observed")
+        // Put the original checkpoint back so the rest of this integration scenario
+        // retains its existing expectations about immutable publication and position.
+        try history.saveCursor(.init(editionID: edition,
+            anchor: .init(cardID: anchor, placement: .center)),
+            updatedAt: Date(timeIntervalSince1970: 2700))
         let segmentsBefore = try store.segments(editionID: edition)
         let checkpointBefore = try SessionStore(database: database).checkpoint()
         XCTAssertEqual(checkpointBefore?.cardID, anchor)
