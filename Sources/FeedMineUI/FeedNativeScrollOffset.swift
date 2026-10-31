@@ -84,6 +84,11 @@ final class FeedNativeScrollOffset {
     /// sinal nativo de que nada do que o desenho mostrar agora é uma posição em repouso: um gesto não aparece aqui
     /// (`isDragging`/`isDecelerating` o dizem), e por isso ele fecha o caso de uma tela que se move **sem** o leitor.
     var isAnimatingScroll: Bool { scrollView?.isScrollAnimating ?? false }
+    /// Read-only guard for a host's measured physical rollback receipt.
+    /// This never applies, schedules or retries a native offset write.
+    var canVerifyPhysicalRollback: Bool {
+        scrollView != nil && !nativeGestureActive && !isAnimatingScroll && !isCorrecting
+    }
     #if DEBUG
     private(set) var activeWrites = 0
     private(set) var activeWindowChanges = 0
