@@ -42,8 +42,12 @@ struct NativeFeedViewport: ViewModifier {
     private func synchronizeNativeReadyOwnership() {
         #if canImport(UIKit)
         guard let installed = store.installedNativeReadyWindow else {
-            capture.readyWindowHandshake?.reset()
-            capture.readyWindowHandshake = nil
+            // Dropping an unbegun staged proposal must never cancel samples
+            // owned by the existing native offset correction path.
+            if capture.readyWindowHandshake?.provisionalID == nil &&
+                capture.readyWindowHandshake?.rollbackRequired == nil {
+                capture.readyWindowHandshake = nil
+            }
             return
         }
         // A newer semantic projection can revoke an earlier candidate.
@@ -53,9 +57,13 @@ struct NativeFeedViewport: ViewModifier {
         let staleStaged = capture.readyWindowHandshake?.pending != nil &&
             capture.readyWindowHandshake?.pending?.snapshot != pending?.snapshot
         if capture.readyWindowHandshake?.displayed?.snapshot != installed.snapshot ||
-            (staleStaged && capture.readyWindowHandshake?.provisionalID == nil &&
-                capture.readyWindowHandshake?.rollbackRequired == nil) {
-            capture.readyWindowHandshake?.reset()
+            staleStaged {
+            // The staging-only bridge never revokes a live provisional write
+            // or an outstanding physical rollback. Most importantly, do NOT
+            // call handshake.reset() here: it would cancel the native writer's
+            // samples during ordinary append-only scrolling.
+            guard capture.readyWindowHandshake?.provisionalID == nil,
+                capture.readyWindowHandshake?.rollbackRequired == nil else { return }
             var handshake = FeedNativeReadyWindowHandshake(
                 owner: ObjectIdentifier(store), native: capture.nativeScrollOffset)
             guard handshake.installInitial(installed) else { return }
