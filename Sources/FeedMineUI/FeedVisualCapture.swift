@@ -394,8 +394,11 @@ struct FeedVisualCapture {
             .max(by: { $0.value.top < $1.value.top }) {
             chosen = (boundary.key, boundary.value)
         } else {
+            // Lazy cells may report geometry before they enter the visible rectangle. A card
+            // starting below the lower edge is not the presented top, even if it is the
+            // nearest known content position. Never persist a cursor for an unseen card.
             chosen = motion.cardContentTops
-                .filter { $0.value.top >= offset - tolerance }
+                .filter { $0.value.top >= offset - tolerance && $0.value.top < offset + reach }
                 .min { $0.value.top < $1.value.top }
                 .map { ($0.key, $0.value) }
         }
@@ -403,6 +406,7 @@ struct FeedVisualCapture {
         motion.presentedTopOffset = chosen.flatMap { choice in
             CardTopOffset(topDelta: Double(choice.entry.top - offset), height: Double(choice.entry.height))
         }
+
     }
 
     func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
