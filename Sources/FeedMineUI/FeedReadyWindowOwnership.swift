@@ -60,6 +60,21 @@ struct FeedReadyWindowOwnership {
         return true
     }
 
+    /// UIKit can begin tracking independently of SwiftUI's gesture callback.
+    /// Native interaction always wins: discard any provisional geometry and
+    /// its token, keep the last installed reader borrowed, and retain pending
+    /// for a later idle retry. The host must restore the old physical run
+    /// before exposing a new frame; this method never writes native offset.
+    @discardableResult
+    mutating func nativeInteractionBegan(owner requester: ObjectIdentifier) -> Bool {
+        guard owner == requester, let installed else { return false }
+        provisional = nil
+        provisionalID = nil
+        beforeProvisional = nil
+        if held == nil { held = installed }
+        return true
+    }
+
     /// Recording a new logical projection never changes the physical list.
     /// The borrowed run continues to own its pixels and original provenance.
     @discardableResult
