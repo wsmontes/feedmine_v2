@@ -84,6 +84,11 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// A layout that was published with an image slot, whatever its residency state is right now.
     public var isImageBearing: Bool { layout != .textOnly }
 
+    /// A historical card can retain identity after its bitmap was released.
+    /// Only fully prepared values may attest that a visual cell was drawn.
+    /// This predicate has no I/O and never changes frozen publication layout.
+    public var isRenderReady: Bool { !isImageBearing || image != nil }
+
     init(publishedCard: PublishedCard, decoder: PresentationImageDecoder? = nil) {
         id = publishedCard.id
         title = publishedCard.text.title
