@@ -140,6 +140,87 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertEqual(ownership.installed?.snapshot, original)
     }
 
+    func testProvisionalSwapUsesMeasuredPhysicalProofOrRollsBack() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let old = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let next = try snapshot([a, b, c], anchor: b.id,
+            edition: edition, sequence: sequence, position: 2)
+        let first = try XCTUnwrap(FeedReadyVisualWindow(snapshot: old,
+            center: 1, backward: 1, forward: 0))
+        let candidate = try XCTUnwrap(FeedReadyVisualWindow(snapshot: next,
+            center: 1, backward: 1, forward: 1))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(store)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(first, owner: owner))
+        XCTAssertTrue(ownership.stage(candidate, owner: owner))
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner, after: witness(b.id)),
+            "No post-layout witness is valid without a recorded provisional phase")
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id, top: 900)), "Offscreen pre-layout witness is not valid")
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old)
+        XCTAssertEqual(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id))?.snapshot, next)
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, next,
+            "A physical adapter may measure only the explicitly provisional candidate")
+        XCTAssertFalse(ownership.beginGesture(owner: owner),
+            "Never start a new gesture while a candidate layout is provisional")
+        XCTAssertFalse(ownership.stage(candidate, owner: owner),
+            "A pending candidate cannot change underneath its physical measurement")
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
+            after: witness(a.id)), "A mismatched physical witness must fail")
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old,
+            "Failure must roll the provisional display back to the old reader")
+        XCTAssertEqual(ownership.installed?.snapshot, old)
+        XCTAssertEqual(ownership.pending?.snapshot, next,
+            "Rejected physical measurement must remain retryable")
+        XCTAssertEqual(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id))?.snapshot, next)
+        let proof = try XCTUnwrap(ownership.commitProvisionalHandoff(owner: owner,
+            after: witness(b.id, top: 420)))
+        XCTAssertEqual(proof.witnessID, b.id)
+        XCTAssertEqual(proof.offsetAdjustment, 240, accuracy: 0.001)
+        XCTAssertEqual(ownership.installed?.snapshot, next)
+        XCTAssertNil(ownership.pending)
+        XCTAssertNil(ownership.provisional)
+    }
+
+    func testProvisionalCancelAndForeignOwnerDoNotCommitReader() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let old = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let next = try snapshot([a, b, c], anchor: b.id,
+            edition: edition, sequence: sequence, position: 2)
+        let first = try XCTUnwrap(FeedReadyVisualWindow(snapshot: old,
+            center: 1, backward: 1, forward: 0))
+        let candidate = try XCTUnwrap(FeedReadyVisualWindow(snapshot: next,
+            center: 1, backward: 1, forward: 1))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let foreign = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(store), stranger = ObjectIdentifier(foreign)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(first, owner: owner))
+        XCTAssertTrue(ownership.stage(candidate, owner: owner))
+        XCTAssertEqual(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id))?.snapshot, next)
+        XCTAssertFalse(ownership.cancelProvisionalHandoff(owner: stranger))
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: stranger,
+            after: witness(b.id)))
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, next)
+        XCTAssertTrue(ownership.cancelProvisionalHandoff(owner: owner))
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old)
+        XCTAssertEqual(ownership.pending?.snapshot, next)
+        XCTAssertTrue(ownership.beginGesture(owner: owner))
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)), "Borrowed presentation wins during a gesture")
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old)
+        ownership.endGesture(owner: owner)
+        XCTAssertTrue(ownership.cancelProvisionalHandoff(owner: owner) == false)
+    }
+
     func testUnmeasuredOrUnreadyHandoffNeverDisplacesInstalledReader() throws {
         let a = card(), b = card(), c = card()
         let edition = FeedEditionID(), sequence = UUID()
