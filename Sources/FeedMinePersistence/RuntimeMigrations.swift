@@ -559,6 +559,32 @@ public enum RuntimeMigrations {
                 CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key);
                 """)
         }
+        // The checkpoint protects published history but does not certify visual
+        // exposure. Backfill only its non-replaceable ordinal on legacy stores;
+        // keep historical seen/high-water rows unchanged (their provenance is
+        // not recoverable after the earlier checkpoint-to-seen migrations).
+        migrator.registerMigration("publication-position-fence-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE edition_position_protection (
+                    edition_id TEXT PRIMARY KEY NOT NULL REFERENCES feed_editions(id),
+                    protected_card_id TEXT NOT NULL REFERENCES published_cards(id));
+                INSERT INTO edition_position_protection(edition_id, protected_card_id)
+                SELECT edition_id, card_id FROM (
+                    SELECT saved.edition_id, saved.card_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY saved.edition_id
+                               ORDER BY seg.ordinal DESC, card.ordinal DESC) AS rank
+                    FROM (
+                        SELECT edition_id, card_id FROM context_checkpoints
+                        UNION ALL
+                        SELECT edition_id, card_id FROM session_checkpoint
+                    ) saved
+                    JOIN published_cards card ON card.id = saved.card_id
+                    JOIN feed_segments seg ON seg.id = card.segment_id
+                        AND seg.edition_id = saved.edition_id
+                ) WHERE rank = 1;
+                """)
+        }
         return migrator
     }
 
