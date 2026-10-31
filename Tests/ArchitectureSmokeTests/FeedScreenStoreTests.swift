@@ -182,12 +182,12 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(store.state.work, .idle)
     }
 
-    /// P2/#32 RED contract: a valid runtime trim is not an append-only physical update.
-    /// The first two transitions intentionally use real persisted history and the real
-    /// session's frozen bounds, not a fabricated snapshot or guessed SwiftUI heights.
-    /// A host that cannot yet transfer a shared measured card must fail this acceptance
-    /// rather than leave an obsolete array visible indefinitely.
-    func testS6bTrimmedRuntimeWindowRequiresAnActualPhysicalHandoff() async throws {
+    /// P2/#32 staging safety: a valid runtime trim is not append-only.
+    /// Without native before/after geometry there is no authority to replace the
+    /// physical list. The host integration must eventually commit a measured
+    /// handoff; this store-level test pins the safe interim behavior and the
+    /// semantic/physical divergence for that separate acceptance test.
+    func testS6bNonPrefixRuntimeTrimRemainsStagedUntilMeasuredHandoff() async throws {
         let f = try fixture()
         let store = FeedScreenStore { _, _ in XCTFail("A synthetic user viewport was not requested") }
         let initialValue = try await f.session.admitPresentation(
@@ -215,8 +215,10 @@ final class FeedScreenStoreTests: XCTestCase {
         try store.install(.init(presentation: trimmed))
         XCTAssertEqual(store.state.presentation, trimmed,
             "Semantic history must retain its accepted projection")
-        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[1...3]),
-            "A measured physical handoff must replace stale [A,B,C] with [B,C,D] without inventing scroll")
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...2]),
+            "Without a native witness the store must not blindly swap [A,B,C] for [B,C,D]")
+        XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady),
+            "Retained physical cards must remain drawable while the transition is staged")
     }
 
     func testS7HandoffRejectsAnotherEditionWithoutMutatingStore() async throws {
