@@ -22,7 +22,7 @@ struct NativeFeedViewport: ViewModifier {
     private var presented: FeedPresentationSnapshot? { capture.interaction.presentation(for: store) }
 
     /// Native scroll targets MUST name cells in the actual LazyVStack, not
-    /// merely IDs retained in the logical presentation or its checkpoint.
+    /// merely IDs retained in the logical presentation or its saved position.
     /// This matches the exact items consumed by FeedScreen during a gesture.
     private var physicalItems: [PresentationCard] {
         capture.interaction.heldItems(matching: store) ?? store.renderedItems

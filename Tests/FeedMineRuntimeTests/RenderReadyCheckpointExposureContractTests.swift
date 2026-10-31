@@ -144,17 +144,14 @@ final class RenderReadyCheckpointExposureContractTests: XCTestCase {
         // fabricating a physical scroll target or shifting the durable cursor.
         let warm = try XCTUnwrap(FeedSession.warmStart(
             publicationHistory: f.history, imageDecoder: decoder, bounds: bounds))
-        let rail = FeedVisualRailIndex(snapshot: warm.snapshot)
-        XCTAssertEqual(rail.logicalAnchorIndex, 1)
-        XCTAssertNil(rail.visualAnchorID)
-        let plan = try XCTUnwrap(FeedVisualWindowPlan(snapshot: warm.snapshot,
-            center: 1, backward: 1, forward: 0))
-        XCTAssertNil(plan.visualAnchorID)
-        XCTAssertEqual(plan.segments, [
-            .ready(range: 0..<1, cards: [warm.snapshot.window.items[0]]),
-            .deferred(range: 1..<2, ids: [f.heroID])
-        ], "A valid ready sibling and an unreadable saved hero are different physical runs")
-        XCTAssertEqual(warm.snapshot.window.anchor.cardID, f.heroID)
+        // Shipped admission rule: an image card whose local asset cannot be reconstructed does not
+        // cross the presentation boundary. The saved card is stated as unavailable instead of being
+        // renumbered, and the window opens on the closest ready card.
+        XCTAssertEqual(warm.snapshot.window.items.map(\.id), [f.readyID],
+            "A hero without pixels is never presented")
+        XCTAssertEqual(warm.snapshot.window.anchor.cardID, f.readyID)
+        XCTAssertEqual(warm.snapshot.unavailablePositionCardID, f.heroID,
+            "The durable card is stated as unavailable, not silently replaced")
         XCTAssertEqual(try seenOrigins(f, [f.readyOrigin, f.heroOrigin]), [f.readyOrigin],
             "A durable cursor at a missing hero does not prove it was rendered")
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint,

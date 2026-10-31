@@ -419,7 +419,6 @@ public final class FeedScreenStore {
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         rendered: FeedPresentationSnapshot? = nil, reconciliation: Bool = false,
         establishesPosition: Bool = false) {
-        guard renderedItems.contains(where: { $0.id == observation.anchor.cardID }) else { return }
         if let onRenderedViewport, let rendered {
             viewportOrdinal += 1
             guard let evidence = rendered.evidence(for: observation, ordinal: viewportOrdinal,

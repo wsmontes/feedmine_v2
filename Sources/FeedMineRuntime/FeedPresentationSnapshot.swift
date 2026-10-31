@@ -178,17 +178,11 @@ public struct RenderedViewportEvidence: Sendable {
 extension FeedPresentationSnapshot {
     public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false,
         establishesPosition: Bool = false) -> RenderedViewportEvidence? {
-        // A retained historical descriptor is not proof that its pixels were
-        // drawn. Only the observed card needs to be ready: an older borrowed
-        // snapshot may still authoritatively prove a card that the *current*
-        // window has since released or trimmed during a gesture.
-        guard ordinal > 0,
-            window.admittedIDs.contains(observation.anchor.cardID),
-            let rendered = window.items.first(where: { $0.id == observation.anchor.cardID }),
-            rendered.isRenderReady else { return nil }
-        // Keep all historically admitted IDs in this frozen provenance envelope.
-        // Reconciliation uses their membership to restrict rehydration, not to
-        // claim every retained historical image was simultaneously visible.
+        // Reconciliation is preparation, not exposure: it may name an admitted descriptor whose
+        // pixels are still being prepared. What cannot be fabricated is the *established position*
+        // and the seen high-water — the store gates the former on the physical window and the
+        // session gates the latter on a render-ready anchor.
+        guard ordinal > 0, window.admittedIDs.contains(observation.anchor.cardID) else { return nil }
         return RenderedViewportEvidence(observation: observation, isPositionReconciliation: reconciliation,
             establishesPosition: establishesPosition, ordinal: ordinal, contextKey: contextKey,
             editionID: editionID, provenance: provenance, admittedIDs: window.admittedIDs)

@@ -57,7 +57,10 @@ final class EditedArticleRecurrenceTests: XCTestCase {
             editionCreatedAt: Date(timeIntervalSince1970: clock), segmentID: FeedSegmentID(), segmentSeed: 1,
             segmentCreatedAt: Date(timeIntervalSince1970: clock), anchorPlacement: .top,
             checkpointedAt: Date(timeIntervalSince1970: clock)), prepare: Self.prepare)
-        guard case .published = initial else { return XCTFail("Expected first publication") }
+        guard case .published(_, let firstEdition) = initial else { return XCTFail("Expected first publication") }
+        // Exposure is the viewport's statement. An unseen published occurrence blocks its own recurrence
+        // (PD-1 rule 2), so the scenario states that the reader saw this one.
+        try PublicationStore(database: database).markSeen(editionID: edition, cardID: firstEdition.cardIDs[0])
 
         // Whitespace-only change: a new canonical revision, but not a material edit.
         try admit("Original   text ")

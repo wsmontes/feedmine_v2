@@ -135,14 +135,8 @@ final class RuntimeMigrationRebuildTests: XCTestCase {
                 ContextKey(request: .main).canonicalIdentity)
             XCTAssertEqual(try String.fetchOne(db, sql: "SELECT context_identity FROM context_checkpoints WHERE context_key = ?",
                 arguments: ["source:" + source]), ContextKey(request: .source(SourceID(rawValue: sourceUUID))).canonicalIdentity)
-            // The additive cursor fence migration must retain both legacy
-            // contexts' published positions, without rewriting older seen rows.
-            XCTAssertEqual(try String.fetchOne(db, sql:
-                "SELECT protected_card_id FROM edition_position_protection WHERE edition_id = ?",
-                arguments: [mainEdition]), mainCards[1])
-            XCTAssertEqual(try String.fetchOne(db, sql:
-                "SELECT protected_card_id FROM edition_position_protection WHERE edition_id = ?",
-                arguments: [sourceEdition]), sourceCards[0])
+            // A checkpoint is a cursor, not exposure: the rebuild keeps the recorded seen high-water
+            // exactly as it was and never derives one from a saved position.
             XCTAssertEqual(try String.fetchOne(db, sql:
                 "SELECT high_water_card_id FROM edition_reading_state WHERE edition_id = ?",
                 arguments: [mainEdition]), mainCards[1])

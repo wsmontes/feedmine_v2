@@ -155,7 +155,7 @@ public struct FeedScreen: View {
         // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
         // Physical cells only: store.renderedItems is a contiguous ready run,
         // and a gesture borrows the exact same drawn cells. The full causal
-        // snapshot stays in store.state for identity, checkpoint and actions.
+        // snapshot stays in store.state for identity, saved position and actions.
         // Never substitute window.items here: that includes deferred pixels.
         let items = capture.interaction.heldItems(matching: store) ?? store.renderedItems
         if !items.isEmpty {

@@ -566,6 +566,8 @@ final class CandidateProviderTests: XCTestCase {
             editionID: edition.id, ordinal: 0, segmentSeed: 10,
             publicationSchemaVersion: 1, createdAt: self.time, cardIDs: [first.id])
         try publisher.createEdition(edition, firstSegment: initialSegment, cards: [first])
+        // Recurrence requires confirmed exposure: the published occurrence was observed in the viewport.
+        try publisher.markSeen(editionID: edition.id, cardID: first.id)
         let oldKeys = try publisher.exposure(editionID: edition.id, originIDs: [originID])
         XCTAssertEqual(oldKeys.publishedMaterialKeys[originID]?.count, 1)
 
@@ -653,6 +655,8 @@ final class CandidateProviderTests: XCTestCase {
         }
         let published = card(legacy.id)
         try publisher.createEdition(edition, firstSegment: segment(published, ordinal: 0), cards: [published])
+        // A published occurrence only stops blocking its origin after confirmed exposure.
+        try publisher.markSeen(editionID: edition.id, cardID: published.id)
         let historicalKey = try XCTUnwrap(publisher.exposure(
             editionID: edition.id, originIDs: [originID]).publishedMaterialKeys[originID]?.first)
         XCTAssertEqual(historicalKey, SelectionExposureSnapshot.materialKey(headline: "Unchanged", summary: "S"))
