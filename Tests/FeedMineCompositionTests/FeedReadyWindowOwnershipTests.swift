@@ -225,6 +225,45 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertTrue(ownership.cancelProvisionalHandoff(owner: owner) == false)
     }
 
+    func testScopeResetRevokesProvisionalGeometryBeforeAnotherEditionStarts() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let original = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let next = try snapshot([a, b, c], anchor: b.id,
+            edition: edition, sequence: sequence, position: 2)
+        let first = try XCTUnwrap(FeedReadyVisualWindow(snapshot: original,
+            center: 1, backward: 1, forward: 0))
+        let candidate = try XCTUnwrap(FeedReadyVisualWindow(snapshot: next,
+            center: 1, backward: 1, forward: 1))
+        let ownerStore = FeedScreenStore(onViewport: { _, _ in })
+        let foreignStore = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(ownerStore)
+        let foreign = ObjectIdentifier(foreignStore)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(first, owner: owner))
+        XCTAssertTrue(ownership.stage(candidate, owner: owner))
+        XCTAssertNotNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)))
+        ownership.reset(owner: foreign)
+        XCTAssertNotNil(ownership.provisional,
+            "Foreign UI cannot revoke the active physical transaction")
+        ownership.reset(owner: owner)
+        XCTAssertNil(ownership.provisional)
+        XCTAssertNil(ownership.installed)
+        XCTAssertNil(ownership.pending)
+        XCTAssertNil(ownership.displayed(owner: owner))
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
+            after: witness(b.id, top: 420)),
+            "Old edition geometry must not commit after reset")
+        let freshEdition = try snapshot([a, b], anchor: b.id,
+            edition: FeedEditionID(), sequence: UUID(), position: 1)
+        let fresh = try XCTUnwrap(FeedReadyVisualWindow(snapshot: freshEdition,
+            center: 1, backward: 1, forward: 0))
+        XCTAssertTrue(ownership.installInitial(fresh, owner: owner))
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, freshEdition)
+    }
+
     func testUnmeasuredOrUnreadyHandoffNeverDisplacesInstalledReader() throws {
         let a = card(), b = card(), c = card()
         let edition = FeedEditionID(), sequence = UUID()
