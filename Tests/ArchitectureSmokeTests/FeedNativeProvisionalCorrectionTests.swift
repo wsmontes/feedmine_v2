@@ -254,6 +254,60 @@ final class FeedNativeProvisionalCorrectionTests: XCTestCase {
         XCTAssertEqual(native.appliedCount, 0)
     }
 
+    func testReplacedUIScrollViewCannotUseOldProvisionalGeometryOrWrite() {
+        let reader = PublicationCardID(), extra = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let old = scroll()
+        native.scrollView = old
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        let replacement = scroll()
+        native.scrollView = replacement
+        native.updateWindow([extra, reader])
+        XCTAssertFalse(native.observe(geometry(reader, top: 420, offset: 500)),
+            "Old view geometry must not adjust a replacement UIScrollView")
+        XCTAssertEqual(replacement.contentOffset.y, 500, accuracy: 0.01)
+        XCTAssertEqual(native.appliedCount, 0)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+    }
+
+    func testInsetChangedDuringProvisionalCannotConfirmReceipt() {
+        let reader = PublicationCardID(), extra = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        view.contentInset.top = 24
+        native.updateWindow([extra, reader])
+        XCTAssertFalse(native.observe(geometry(reader, top: 420, offset: 500)))
+        XCTAssertEqual(native.appliedCount, 0,
+            "An adjusted-content-inset change must invalidate old viewport geometry")
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+    }
+
+    func testInsetChangeAfterNativeWriteRevokesPostCorrectionReceipt() {
+        let reader = PublicationCardID(), extra = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([extra, reader])
+        XCTAssertTrue(native.observe(geometry(reader, top: 420, offset: 500)))
+        XCTAssertEqual(native.appliedCount, 1)
+        view.contentInset.bottom = 30
+        _ = native.observe(geometry(reader, top: 180, offset: 740))
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token),
+            "Even matching card numbers cannot validate a different inset geometry")
+    }
+
     func testCancellationRejectsStaleTokenAndMissingNativeScroll() {
         let native = FeedNativeScrollOffset()
         let reader = PublicationCardID()
