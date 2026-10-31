@@ -4,6 +4,28 @@ import UIKit
 import FeedMineDomain
 import FeedMineRuntime
 
+/// Pin the actual native viewport geometry for the life of a provisional
+/// transaction; identical pixel numbers in a different inset context are not
+/// proof of restoring the original physical reader.
+struct FeedNativeInsetSnapshot: Sendable {
+    let top: Double
+    let left: Double
+    let bottom: Double
+    let right: Double
+
+    init(_ value: UIEdgeInsets) {
+        top = Double(value.top)
+        left = Double(value.left)
+        bottom = Double(value.bottom)
+        right = Double(value.right)
+    }
+
+    func matches(_ value: UIEdgeInsets) -> Bool {
+        top == Double(value.top) && left == Double(value.left) &&
+            bottom == Double(value.bottom) && right == Double(value.right)
+    }
+}
+
 /// A canceled handoff may leave a native offset that belonged to a provisional
 /// layout. This is a debt for the future *physical host*, not a write request:
 /// the old cells and offset must be restored and measured before another swap.
@@ -12,6 +34,8 @@ struct FeedNativePhysicalRollbackRequirement: Sendable {
     let originalOffset: Double
     let originalIDs: [PublicationCardID]
     let originalWitness: FeedVisualWindowWitness
+    let originalScrollViewID: ObjectIdentifier
+    let originalInsets: FeedNativeInsetSnapshot
 }
 
 /// A single token binds the future physical ready-only rail to the existing
@@ -23,6 +47,8 @@ struct FeedNativeReadyWindowHandshake {
     private let native: FeedNativeScrollOffset
     private var ownership = FeedReadyWindowOwnership()
     private var before: FeedVisualWindowWitness?
+    private var provisionalScrollViewID: ObjectIdentifier?
+    private var provisionalInsets: FeedNativeInsetSnapshot?
     private(set) var rollbackRequired: FeedNativePhysicalRollbackRequirement?
 
     init(owner: ObjectIdentifier, native: FeedNativeScrollOffset) {
@@ -58,7 +84,14 @@ struct FeedNativeReadyWindowHandshake {
             _ = ownership.cancelProvisionalHandoff(owner: owner)
             return nil
         }
+        guard let scroll = native.scrollView else {
+            _ = native.cancelProvisionalCorrection(transaction: token)
+            _ = ownership.cancelProvisionalHandoff(owner: owner)
+            return nil
+        }
         before = witness
+        provisionalScrollViewID = ObjectIdentifier(scroll)
+        provisionalInsets = FeedNativeInsetSnapshot(scroll.adjustedContentInset)
         return (token, window)
     }
 
@@ -74,6 +107,10 @@ struct FeedNativeReadyWindowHandshake {
             let provisional = ownership.provisional,
             let before,
             let scroll = native.scrollView,
+            let sourceID = provisionalScrollViewID,
+            let originalInsets = provisionalInsets,
+            ObjectIdentifier(scroll) == sourceID,
+            originalInsets.matches(scroll.adjustedContentInset),
             !native.isAnimatingScroll,
             abs(Double(scroll.contentOffset.y) - witness.contentOffset) < 0.5,
             FeedVisualWindowHandoff(
@@ -87,9 +124,13 @@ struct FeedNativeReadyWindowHandshake {
         else {
             _ = ownership.cancelProvisionalHandoff(owner: owner)
             self.before = nil
+            provisionalScrollViewID = nil
+            provisionalInsets = nil
             return false
         }
         self.before = nil
+        provisionalScrollViewID = nil
+        provisionalInsets = nil
         return true
     }
 
@@ -99,12 +140,16 @@ struct FeedNativeReadyWindowHandshake {
     /// another swap. This does not perform a native write.
     private mutating func recordRollbackObligation(transaction: UUID) {
         guard rollbackRequired == nil, let before,
-            let installed = ownership.installed else { return }
+            let installed = ownership.installed,
+            let sourceID = provisionalScrollViewID,
+            let insets = provisionalInsets else { return }
         rollbackRequired = FeedNativePhysicalRollbackRequirement(
             transaction: transaction,
             originalOffset: before.contentOffset,
             originalIDs: installed.cards.map(\.id),
-            originalWitness: before)
+            originalWitness: before,
+            originalScrollViewID: sourceID,
+            originalInsets: insets)
     }
 
     /// Invalid geometry or abandonment restores logical display ownership.
@@ -116,6 +161,8 @@ struct FeedNativeReadyWindowHandshake {
         recordRollbackObligation(transaction: transaction)
         _ = native.cancelProvisionalCorrection(transaction: transaction)
         before = nil
+        provisionalScrollViewID = nil
+        provisionalInsets = nil
         return ownership.cancelProvisionalHandoff(owner: owner)
     }
 
@@ -132,6 +179,8 @@ struct FeedNativeReadyWindowHandshake {
             ownership.provisionalID == nil,
             native.canVerifyPhysicalRollback,
             let scroll = native.scrollView,
+            ObjectIdentifier(scroll) == debt.originalScrollViewID,
+            debt.originalInsets.matches(scroll.adjustedContentInset),
             restoredIDs == debt.originalIDs,
             installed.cards.map(\.id) == debt.originalIDs,
             measured.cardID == debt.originalWitness.cardID,
@@ -159,6 +208,8 @@ struct FeedNativeReadyWindowHandshake {
         ownership.reset(owner: owner)
         rollbackRequired = nil
         before = nil
+        provisionalScrollViewID = nil
+        provisionalInsets = nil
     }
 
     /// Native gestures always win. They revoke both receipts and borrow the
@@ -170,6 +221,8 @@ struct FeedNativeReadyWindowHandshake {
         }
         native.setInteractionActive(true)
         before = nil
+        provisionalScrollViewID = nil
+        provisionalInsets = nil
         return ownership.nativeInteractionBegan(owner: owner)
     }
 
