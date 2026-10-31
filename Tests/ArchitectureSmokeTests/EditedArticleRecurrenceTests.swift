@@ -112,7 +112,11 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         let e2 = try admit(editedOrigin, text: "E2", previous: e1)
         let e3 = try admit(editedOrigin, text: "E3", previous: e2)
         for _ in 0..<12 { _ = try admit(OriginRecordID(), text: "New head item", previous: nil, authored: 3000) }
-        let store = PublicationStore(database: database), lease = try XCTUnwrap(store.hiddenTail(editionID: edition))
+        let store = PublicationStore(database: database)
+        // First publication persists a cursor, not a visual impression. This
+        // scenario explicitly requires a seen prefix before hidden-tail edits.
+        try store.markSeen(editionID: edition, cardID: prepared.cardIDs[0])
+        let lease = try XCTUnwrap(store.hiddenTail(editionID: edition))
         let result = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: lease,
             examinedCapacity: 10, prefetch: { _ in }, prepare: Self.prepare)
         XCTAssertEqual(result, .applied)
