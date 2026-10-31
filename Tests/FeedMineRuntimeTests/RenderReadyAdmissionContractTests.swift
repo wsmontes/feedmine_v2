@@ -6,11 +6,11 @@ import FeedMinePublication
 import FeedMineMedia
 import FeedMineRuntime
 
-/// Product contract, 2026-10-17: no image-bearing presentation can be
-/// admitted while its local pixels are missing or undecodable.
-/// This file deliberately does not change the existing B05/T7 measurements.
+/// Product contract: historical image IDs survive restore, but cannot be
+/// installed as physical cells until their local pixels have decoded.
+/// The logical window is not the drawn LazyVStack (B05/T7).
 final class RenderReadyAdmissionContractTests: XCTestCase {
-    func testMissingLocalHeroPixelsNeverEnterRestoreOrWarmStart() async throws {
+    func testMissingLocalHeroPixelsRemainLogicalButAreDeferredOnRestoreAndWarmStart() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try RuntimeDatabase(location: .init(directory: directory))
@@ -75,25 +75,29 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
 
         let session = FeedSession(publicationHistory: history, imageDecoder: decoder)
         let restored = try await session.admitPresentation(.restore(bounds))
-        let missingOnRestore = restored?.window.items.contains {
-            $0.isImageBearing && $0.image == nil
-        } ?? false
-        XCTAssertFalse(missingOnRestore,
-            "Restore admitted a hero card without locally decoded pixels")
-        XCTAssertEqual(restored?.window.items.map(\.id), [ready.id],
-            "Restore must keep the ready text card while withholding the invalid hero")
+        let restoredSnapshot = try XCTUnwrap(restored)
+        XCTAssertEqual(restoredSnapshot.window.items.map(\.id), [ready.id, card.id],
+            "The durable historical ordinal must survive; filtering it would collapse a gap")
+        let restoredRail = FeedVisualRailIndex(snapshot: restoredSnapshot)
+        XCTAssertEqual(restoredRail.visualAnchorID, ready.id)
+        XCTAssertEqual(restoredRail.slot(at: 1), .deferred(index: 1, id: card.id),
+            "A hero with missing local pixels is historical, not a drawable cell")
 
-        // The synchronous warm-launch path must enforce the identical gate
-        // before the first feed frame, not rely on later UI repair.
+        // The synchronous warm-launch path must make the same distinction,
+        // rather than introducing an invisible physical placeholder.
         let warm = try FeedSession.warmStart(
             publicationHistory: history, imageDecoder: decoder, bounds: bounds)
-        let missingOnWarmStart = warm?.snapshot.window.items.contains {
-            $0.isImageBearing && $0.image == nil
-        } ?? false
-        XCTAssertFalse(missingOnWarmStart,
-            "Warm start admitted a hero card without locally decoded pixels")
-        XCTAssertEqual(warm?.snapshot.window.items.map(\.id), [ready.id],
-            "Warm start must keep the ready text card while withholding the invalid hero")
+        let warmSnapshot = try XCTUnwrap(warm?.snapshot)
+        XCTAssertEqual(warmSnapshot.window.items.map(\.id), [ready.id, card.id])
+        let warmRail = FeedVisualRailIndex(snapshot: warmSnapshot)
+        XCTAssertEqual(warmRail.visualAnchorID, ready.id)
+        XCTAssertEqual(warmRail.slot(at: 1), .deferred(index: 1, id: card.id))
+        let plan = try XCTUnwrap(FeedVisualWindowPlan(snapshot: warmSnapshot,
+            center: 0, backward: 0, forward: 1))
+        XCTAssertEqual(plan.segments, [
+            .ready(range: 0..<1, cards: [warmSnapshot.window.items[0]]),
+            .deferred(range: 1..<2, ids: [card.id])
+        ], "Never join ready runs across an undecodable historical hero")
 
         // An invalid forward target must not change the admitted reader position
         // or mark an image-less card as seen in durable publication history.

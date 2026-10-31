@@ -67,7 +67,11 @@ public struct SessionStore: Sendable {
             """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
                 PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
         try persistContext(checkpoint, in: db)
-        try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
+        // A first-publication checkpoint is a durable place to resume, not
+        // evidence that the reader ever saw its pixels. In particular, a
+        // missing hero image must not be marked seen before first paint.
+        // The visible-viewport path owns visual exposure; initial publication
+        // without it leaves hidden-tail succession unavailable (fail closed).
     }
 
     public func checkpoint() throws -> CheckpointRecord? {
