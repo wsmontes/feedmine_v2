@@ -234,20 +234,22 @@ extension PublicationStore {
         public let unseenOriginIDs: Set<OriginRecordID>
     }
 
-    public func exposure(editionID: FeedEditionID, originIDs: [OriginRecordID],
-        readerAnchorCardID: PublicationCardID? = nil) throws -> ExposureRecord {
+    public func exposure(editionID: FeedEditionID, originIDs: [OriginRecordID]) throws -> ExposureRecord {
         try database.read { db in
             let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
             let schema = try Self.historySchema(editionKey, in: db)
             let tail = try Self.historyTail(editionKey: editionKey, schema: schema, in: db)
             let material = try Self.publishedMaterial(originIDs, editionID: editionID, in: db)
-            var unseen = Set<OriginRecordID>()
-            if let readerAnchorCardID, !material.isEmpty {
-                var anchor = try Self.historyPosition(readerAnchorCardID, editionKey: editionKey, schema: schema, in: db)
-                if let water = try String.fetchOne(db, sql: "SELECT high_water_card_id FROM edition_reading_state WHERE edition_id = ?", arguments: [editionKey]) {
-                    let high = try Self.historyPosition(PublicationCardID(rawValue: PublicationValueCoding.uuid(water, field: "high_water_card_id")), editionKey: editionKey, schema: schema, in: db)
-                    if anchor.isBefore(high) { anchor = high }
-                }
+            // Absence of a visual high-water is not proof that a projected or
+            // restored reader anchor was seen. Until viewport evidence advances
+            // the high-water, every published occurrence remains ahead.
+            var unseen = Set(material.keys)
+            if !material.isEmpty,
+                let water = try String.fetchOne(db, sql: "SELECT high_water_card_id FROM edition_reading_state WHERE edition_id = ?", arguments: [editionKey]) {
+                let anchor = try Self.historyPosition(
+                    PublicationCardID(rawValue: PublicationValueCoding.uuid(water, field: "high_water_card_id")),
+                    editionKey: editionKey, schema: schema, in: db)
+                unseen.removeAll()
                 let keys = material.keys.map { PersistenceValueCoding.uuid($0.rawValue) }
                 let capacity = db.maximumStatementArgumentCount - 3
                 guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
