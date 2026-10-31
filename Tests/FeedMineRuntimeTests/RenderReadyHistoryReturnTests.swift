@@ -98,6 +98,10 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         XCTAssertEqual(initial.window.items.map(\.id), ids)
         XCTAssertEqual(initial.window.anchor.cardID, hero.id)
         XCTAssertNotNil(initial.window.items.first?.image, "Control: local hero must decode on first admission")
+        let initialRail = FeedVisualRailIndex(snapshot: initial)
+        XCTAssertEqual(initialRail.slot(at: 0)?.id, hero.id)
+        XCTAssertTrue(initialRail.slot(at: 0)?.isReady == true,
+            "A real local hero must enter the virtual rail as ready")
 
         let lastObservation = ViewportObservation(
             anchor: .init(cardID: last.id, placement: .center))
@@ -111,6 +115,11 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
             "Keeping the head must preserve historical identity and ordering")
         XCTAssertNil(away.window.items.first?.image,
             "The historical bitmap must be released outside the residency band")
+        let awayRail = FeedVisualRailIndex(snapshot: away)
+        XCTAssertEqual(awayRail.slot(at: 0), .deferred(index: 0, id: hero.id),
+            "Releasing pixels must keep the original historical slot without rendering it")
+        XCTAssertEqual(awayRail.logicalCount, ids.count)
+        XCTAssertEqual(awayRail.visualAnchorID, last.id)
 
         // B05: the current kept-head window retains the old hero identity
         // without pixels; it cannot claim to have rendered the hero.
@@ -126,6 +135,11 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         XCTAssertEqual(returned.window.items.map(\.id), ids)
         XCTAssertNotNil(returned.window.items.first?.image,
             "Returning to a released historical hero requires decoded pixels")
+        let returnedRail = FeedVisualRailIndex(snapshot: returned)
+        XCTAssertTrue(returnedRail.slot(at: 0)?.isReady == true,
+            "The identical historical hero slot becomes ready after local rematerialization")
+        XCTAssertEqual(returnedRail.slot(at: 0)?.id, hero.id)
+        XCTAssertEqual(returnedRail.logicalAnchorIndex, 0)
         XCTAssertEqual(returned.window.items.last?.id, last.id,
             "The already-ready text sibling must remain reachable")
 
