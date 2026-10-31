@@ -72,7 +72,8 @@ final class FeedScreenStoreTests: XCTestCase {
     /// esse fato como qualquer outra entrada explícita — ele não guarda a posição (o dono do cursor, a sessão, é
     /// quem lembra dela e decide o que ela custa). Publicar não submete observação nenhuma: é uma posição, não uma
     /// oportunidade de produção.
-    func testS1aPresentedPositionIsForwardedAndNeverStored() {
+    func testS1aPresentedPositionIsForwardedAndNeverStored() async throws {
+        let f = try fixture(), published = try await snapshot(f)
         var forwarded: [PresentationAnchor] = []
         var rests: [Bool] = []
         let store = FeedScreenStore(onViewport: { _, _ in XCTFail("Unrequested viewport") },
@@ -80,15 +81,19 @@ final class FeedScreenStoreTests: XCTestCase {
                 forwarded.append(anchor)
                 rests.append(atRest)
             })
-        let first = PublicationCardID()
+        try store.install(FeedPresentationState(presentation: published))
+        let first = try XCTUnwrap(store.renderedItems.first?.id)
         store.publishPresentedPosition(PresentationAnchor(cardID: first, placement: .top), atRest: false)
         store.publishPresentedPosition(PresentationAnchor(cardID: first, placement: .top), atRest: true)
         XCTAssertEqual(rests, [false, true], "o repouso do desenho é o fato que o host recebe")
         XCTAssertEqual(forwarded, [PresentationAnchor(cardID: first, placement: .top),
             PresentationAnchor(cardID: first, placement: .top)])
-        // E nada disso vira estado do store: nenhuma apresentação, nenhum conteúdo desenhado.
-        XCTAssertNil(store.state.presentation)
-        XCTAssertTrue(store.renderedItems.isEmpty)
+        // The physical ID is forwarded without rewriting the logical snapshot.
+        XCTAssertEqual(store.state.presentation, published)
+        XCTAssertEqual(store.renderedItems.first?.id, first)
+        let foreign = PublicationCardID()
+        store.publishPresentedPosition(.init(cardID: foreign, placement: .top), atRest: true)
+        XCTAssertEqual(rests, [false, true], "offscreen historical IDs cannot become reader positions")
     }
 
     func testS2InstallFirstRealRestoredPresentationExactly() async throws {
