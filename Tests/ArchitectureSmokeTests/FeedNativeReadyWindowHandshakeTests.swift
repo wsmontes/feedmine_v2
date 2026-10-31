@@ -241,7 +241,10 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
         let next=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
         let first=try XCTUnwrap(FeedReadyVisualWindow(snapshot:old,center:1,backward:1,forward:0))
         let candidate=try XCTUnwrap(FeedReadyVisualWindow(snapshot:next,center:1,backward:1,forward:1))
-        let (native,_) = offset()
+        let (native, scroll) = offset()
+        // The adapter deliberately owns UIScrollView weakly. Keep the actual
+        // UIKit fixture alive through the token/reset assertions.
+        defer { withExtendedLifetime(scroll) {} }
         native.updateWindow([a.id,b.id])
         _=native.observe(physical(b.id,top:180,offset:500))
         let store=FeedScreenStore(onViewport:{ _,_ in })
