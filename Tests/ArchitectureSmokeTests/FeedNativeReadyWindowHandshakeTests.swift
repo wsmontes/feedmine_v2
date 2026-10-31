@@ -161,6 +161,87 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
             "A later edition may start with new ownership after revocation")
     }
 
+    func testCancelAfterPhysicalCorrectionRequiresMeasuredOldWindowRollback() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let s1 = try projection([a,b], anchor:b.id, edition:edition,
+            sequence:sequence, ordinal:1)
+        let s2 = try projection([a,b,c], anchor:b.id, edition:edition,
+            sequence:sequence, ordinal:2)
+        let old = try XCTUnwrap(FeedReadyVisualWindow(snapshot:s1,
+            center:1, backward:1, forward:0))
+        let newer = try XCTUnwrap(FeedReadyVisualWindow(snapshot:s2,
+            center:1, backward:1, forward:1))
+        let (native, scroll) = offset()
+        native.updateWindow([a.id,b.id])
+        _ = native.observe(physical(b.id,top:180,offset:500))
+        let store = FeedScreenStore(onViewport:{ _,_ in })
+        var handshake = FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),
+            native:native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(newer))
+        let token = try XCTUnwrap(handshake.begin(
+            before:witness(b.id,top:180,offset:500))?.token)
+        native.updateWindow([a.id,b.id,c.id])
+        XCTAssertTrue(native.observe(physical(b.id,top:420,offset:500)))
+        XCTAssertEqual(scroll.contentOffset.y,740,accuracy:0.01)
+        XCTAssertTrue(handshake.cancel(transaction:token))
+        XCTAssertEqual(handshake.displayed?.snapshot,s1)
+        XCTAssertEqual(handshake.pending?.snapshot,s2)
+        let debt = try XCTUnwrap(handshake.rollbackRequired)
+        XCTAssertEqual(debt.originalOffset,500,accuracy:0.01)
+        XCTAssertEqual(debt.originalIDs,[a.id,b.id])
+        XCTAssertEqual(debt.transaction,token)
+        XCTAssertNil(handshake.begin(before:witness(b.id,top:180,offset:740)),
+            "The native offset is still wrong for the installed old layout")
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id], measured:witness(b.id,top:180,offset:740)))
+        // Emulate the future UIKit host restoring the OLD physical list/offset.
+        // The handshake never issues this write itself.
+        native.updateWindow([a.id,b.id])
+        scroll.contentOffset = CGPoint(x:0,y:500)
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[b.id,a.id], measured:witness(b.id,top:180,offset:500)),
+            "The same members in different order are not the same physical rail")
+        XCTAssertTrue(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id], measured:witness(b.id,top:180,offset:500)))
+        XCTAssertNil(handshake.rollbackRequired)
+        XCTAssertNotNil(handshake.begin(before:witness(b.id,top:180,offset:500)),
+            "Only a verified old physical layout may restart a new transaction")
+    }
+
+    func testGestureAfterWriteRetainsPhysicalRollbackDebtUntilIdle() throws {
+        let a=card(), b=card(), c=card(), edition=FeedEditionID(), sequence=UUID()
+        let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let s2=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let old=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s1,center:1,backward:1,forward:0))
+        let next=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s2,center:1,backward:1,forward:1))
+        let (native,scroll)=offset()
+        native.updateWindow([a.id,b.id])
+        _=native.observe(physical(b.id,top:180,offset:500))
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(next))
+        let token=try XCTUnwrap(handshake.begin(
+            before:witness(b.id,top:180,offset:500))?.token)
+        native.updateWindow([a.id,b.id,c.id])
+        XCTAssertTrue(native.observe(physical(b.id,top:420,offset:500)))
+        XCTAssertTrue(handshake.nativeGestureBegan())
+        XCTAssertEqual(handshake.displayed?.snapshot,s1)
+        XCTAssertEqual(handshake.rollbackRequired?.transaction,token)
+        scroll.contentOffset = CGPoint(x:0,y:500)
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id],measured:witness(b.id,top:180,offset:500)),
+            "No rollback acknowledgment while the native gesture still owns the scroll")
+        handshake.nativeGestureEnded()
+        native.updateWindow([a.id,b.id])
+        XCTAssertTrue(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id],measured:witness(b.id,top:180,offset:500)))
+        XCTAssertNil(handshake.rollbackRequired)
+        XCTAssertEqual(handshake.pending?.snapshot,s2)
+    }
+
     func testGesturePreemptsBothOwnersAndFencesOldToken() throws {
         let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
         let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
