@@ -16,6 +16,18 @@ final class FeedNativeProvisionalCorrectionTests: XCTestCase {
         return view
     }
 
+    // Simulates an OS-constrained physical move without assuming that
+    // UIScrollView's normal setter clamps programmatic offsets.
+    private final class LimitedScrollView: UIScrollView {
+        var maxAcceptedY: CGFloat = 600
+        private(set) var writeCount = 0
+        override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
+            writeCount += 1
+            super.setContentOffset(CGPoint(x: contentOffset.x,
+                y: min(contentOffset.y, maxAcceptedY)), animated: animated)
+        }
+    }
+
     private func geometry(_ id: PublicationCardID, top: CGFloat,
         offset: CGFloat) -> FeedVisualCardGeometry {
         FeedVisualCardGeometry(cardID: id,
@@ -148,6 +160,57 @@ final class FeedNativeProvisionalCorrectionTests: XCTestCase {
         XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token),
             "The host must roll back the physical provisional layout, not commit on gesture")
         XCTAssertEqual(native.appliedCount, 1)
+    }
+
+    func testLimitedNativeOffsetCannotMintSuccessfulVisualReceipt() {
+        let reader = PublicationCardID(), extra = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = LimitedScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 650))
+        view.contentSize = CGSize(width: 320, height: 2_000)
+        view.contentOffset = CGPoint(x: 0, y: 500)
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([extra, reader])
+        _ = native.observe(geometry(reader, top: 420, offset: 500))
+        XCTAssertEqual(view.contentOffset.y, 600, accuracy: 0.01)
+        XCTAssertEqual(native.appliedCount, 1,
+            "A single attempted native write is not proof that the target offset was reached")
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
+        _ = native.observe(geometry(reader, top: 320, offset: 600))
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token),
+            "An OS-limited write must never be accepted as a complete correction")
+    }
+
+    func testStaleProofWithMatchingNumbersCannotConfirmDifferentPhysicalOffset() {
+        let reader = PublicationCardID(), extra = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        native.updateWindow([reader])
+        _ = native.observe(geometry(reader, top: 180, offset: 500))
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.updateWindow([extra, reader])
+        _ = native.observe(geometry(reader, top: 420, offset: 500))
+        XCTAssertEqual(view.contentOffset.y, 740, accuracy: 0.01)
+        view.contentOffset = CGPoint(x: 0, y: 800)
+        _ = native.observe(geometry(reader, top: 180, offset: 740))
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token),
+            "An outdated geometry payload cannot override the actual UIScrollView position")
+    }
+
+    func testAnimatedNativeMovementCannotBeAcknowledgedAsIdle() {
+        let reader = PublicationCardID()
+        let native = FeedNativeScrollOffset()
+        let view = scroll()
+        native.scrollView = view
+        let token = UUID()
+        XCTAssertTrue(native.beginProvisionalCorrection(transaction: token, witness: reader))
+        native.cancelProvisionalCorrection(transaction: token)
+        XCTAssertFalse(native.takeProvisionalConfirmation(transaction: token))
     }
 
     func testCancellationRejectsStaleTokenAndMissingNativeScroll() {
