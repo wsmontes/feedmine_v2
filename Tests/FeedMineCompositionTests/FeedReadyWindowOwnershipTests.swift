@@ -80,12 +80,36 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
             gestureActive: false),
             "Different cards cannot establish one physical position")
 
-        let store = FeedScreenStore(onViewport: { _, _ in })
+        var viewportIDs: [PublicationCardID] = []
+        var actionIDs: [PublicationCardID] = []
+        let store = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { event, _ in
+                viewportIDs.append(event.observation.anchor.cardID)
+            },
+            onAction: { event in actionIDs.append(event.cardID) })
         let owner = ObjectIdentifier(store)
         var handoff = FeedReadyWindowOwnership()
         try store.install(FeedPresentationState(presentation: first))
         XCTAssertTrue(handoff.installInitial(oldRail, owner: owner))
         try store.install(FeedPresentationState(presentation: next))
+        // The logical candidate is not a physical cell: neither a tap nor
+        // viewport geometry can come from B before native handoff.
+        let beforeObservation = ViewportObservation(anchor:
+            .init(cardID: before.id, placement: .top))
+        let afterObservation = ViewportObservation(anchor:
+            .init(cardID: after.id, placement: .top))
+        store.submitViewport(afterObservation, activity: .stationary, rendered: next)
+        store.perform(.init(action: .open, cardID: after.id), rendered: next)
+        XCTAssertTrue(viewportIDs.isEmpty)
+        XCTAssertTrue(actionIDs.isEmpty)
+        // A remains a real user-facing card after the logical projection
+        // advances. Keeping its provenance is necessary for both operations.
+        store.submitViewport(beforeObservation, activity: .stationary,
+            rendered: store.displayedPresentation)
+        store.perform(.init(action: .open, cardID: before.id),
+            rendered: store.displayedPresentation)
+        XCTAssertEqual(viewportIDs, [before.id])
+        XCTAssertEqual(actionIDs, [before.id])
         XCTAssertEqual(store.state.presentation?.window.anchor.cardID, after.id,
             "A new logical reader anchor must not be rewritten")
         XCTAssertEqual(store.renderedItems.map(\.id), [before.id],
