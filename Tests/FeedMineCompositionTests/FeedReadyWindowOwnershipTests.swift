@@ -50,6 +50,81 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertEqual(valid.logicalAnchorID, b.id)
     }
 
+    /// Issue #7: two individually drawable runs separated by a missing hero
+    /// are NOT a valid native swap. No card can witness both physical layouts.
+    /// The first ready rail stays mounted even if Runtime advances its logical
+    /// anchor; without an actual rematerialization there is no measured bridge.
+    func testDisjointReadyRunsCannotCommitOrStealTheReaderPosition() throws {
+        let before = card(), missingHero = card(.hero), after = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let historical = [before, missingHero, after]
+        let first = try snapshot(historical, anchor: before.id,
+            edition: edition, sequence: sequence, position: 1)
+        let next = try snapshot(historical, anchor: after.id,
+            edition: edition, sequence: sequence, position: 2)
+        let oldRail = try XCTUnwrap(FeedReadyVisualWindow.initial(snapshot: first))
+        let newRail = try XCTUnwrap(FeedReadyVisualWindow.initial(snapshot: next))
+
+        XCTAssertEqual(oldRail.cards.map(\.id), [before.id])
+        XCTAssertEqual(newRail.cards.map(\.id), [after.id])
+        XCTAssertEqual(oldRail.snapshot.window.items.map(\.id),
+            [before.id, missingHero.id, after.id])
+        XCTAssertEqual(newRail.snapshot.window.items.map(\.id),
+            [before.id, missingHero.id, after.id])
+        XCTAssertNil(FeedVisualWindowHandoff(from: oldRail.plan, to: newRail.plan,
+            before: witness(before.id), after: witness(before.id),
+            gestureActive: false),
+            "An old visible card absent from the candidate is not a common witness")
+        XCTAssertNil(FeedVisualWindowHandoff(from: oldRail.plan, to: newRail.plan,
+            before: witness(before.id), after: witness(after.id),
+            gestureActive: false),
+            "Different cards cannot establish one physical position")
+
+        var viewportIDs: [PublicationCardID] = []
+        var actionIDs: [PublicationCardID] = []
+        let store = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { event, _ in
+                viewportIDs.append(event.observation.anchor.cardID)
+            },
+            onAction: { event in actionIDs.append(event.cardID) })
+        let owner = ObjectIdentifier(store)
+        var handoff = FeedReadyWindowOwnership()
+        try store.install(FeedPresentationState(presentation: first))
+        XCTAssertTrue(handoff.installInitial(oldRail, owner: owner))
+        try store.install(FeedPresentationState(presentation: next))
+        // The logical candidate is not a physical cell: neither a tap nor
+        // viewport geometry can come from B before native handoff.
+        let beforeObservation = ViewportObservation(anchor:
+            .init(cardID: before.id, placement: .top))
+        let afterObservation = ViewportObservation(anchor:
+            .init(cardID: after.id, placement: .top))
+        store.submitViewport(afterObservation, activity: .stationary, rendered: next)
+        store.perform(.init(action: .open, cardID: after.id), rendered: next)
+        XCTAssertTrue(viewportIDs.isEmpty)
+        XCTAssertTrue(actionIDs.isEmpty)
+        // A remains a real user-facing card after the logical projection
+        // advances. Keeping its provenance is necessary for both operations.
+        store.submitViewport(beforeObservation, activity: .stationary,
+            rendered: store.displayedPresentation)
+        store.perform(.init(action: .open, cardID: before.id),
+            rendered: store.displayedPresentation)
+        XCTAssertEqual(viewportIDs, [before.id])
+        XCTAssertEqual(actionIDs, [before.id])
+        XCTAssertEqual(store.state.presentation?.window.anchor.cardID, after.id,
+            "A new logical reader anchor must not be rewritten")
+        XCTAssertEqual(store.renderedItems.map(\.id), [before.id],
+            "A deferred gap cannot replace the physical cells during an unmeasured swap")
+        XCTAssertEqual(store.displayedPresentation?.window.anchor.cardID, before.id,
+            "The mounted cells must retain the original physical provenance")
+        XCTAssertTrue(handoff.stage(newRail, owner: owner))
+        XCTAssertNil(handoff.beginProvisionalHandoff(owner: owner,
+            before: witness(before.id)),
+            "Do not start a tokened handoff without a shared actually visible cell")
+        XCTAssertEqual(handoff.displayed(owner: owner)?.cards.map(\.id), [before.id])
+        XCTAssertEqual(handoff.pending?.cards.map(\.id), [after.id],
+            "Pending may be remembered, but it cannot be drawn without physical proof")
+    }
+
     func testGestureKeepsOriginalReadyCellsUntilReleasedAndMeasured() throws {
         let a = card(), b = card(), c = card()
         let edition = FeedEditionID(), sequence = UUID()
