@@ -124,13 +124,18 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
             "The already-ready text sibling must remain reachable")
 
         let secondAwayResult = try await session.submitViewport(lastObservation)
-        _ = try XCTUnwrap(secondAwayResult)
+        let secondAway = try XCTUnwrap(secondAwayResult)
+        let retryEvidence = try XCTUnwrap(secondAway.evidence(
+            for: heroObservation, ordinal: 73))
+        let beforeMissing = await session.currentPresentation()
         try FileManager.default.removeItem(at: png.file)
 
         // Failure control: when local bytes disappear, a return must not make
         // the undecodable hero the reader's active anchor or consume its retry.
-        let missingReturn = try await session.submitViewport(heroObservation)
+        let missingReturn = try await session.submitViewport(heroObservation, from: retryEvidence)
         let afterMissing = await session.currentPresentation()
+        XCTAssertEqual(afterMissing, beforeMissing,
+            "Failed media return must not consume projection position, anchor or residency")
         XCTAssertNotEqual(missingReturn?.window.anchor.cardID, hero.id,
             "An undecodable historical hero cannot be readmitted as the active card")
         XCTAssertEqual(afterMissing?.window.anchor.cardID, last.id,
@@ -140,7 +145,8 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         // Make the same frozen published asset local again; no new publication,
         // identity or editorial layout is created to repair the previous failure.
         try png.bytes.write(to: png.file)
-        let retriedResult = try await session.submitViewport(heroObservation)
+        // Replay the SAME evidence ordinal. A rejected return cannot consume it.
+        let retriedResult = try await session.submitViewport(heroObservation, from: retryEvidence)
         let retried = try XCTUnwrap(retriedResult)
         XCTAssertEqual(retried.window.anchor.cardID, hero.id)
         XCTAssertEqual(retried.window.items.map(\.id), ids)
