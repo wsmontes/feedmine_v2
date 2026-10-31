@@ -52,7 +52,11 @@ struct NativeFeedViewport: ViewModifier {
             .scrollPosition(id: Binding(get: {
                 capture.positionID ?? presented?.window.anchor.cardID
             }, set: { id in
-                guard matchesScope, let id, presented?.window.items.contains(where: { $0.id == id }) == true else { return }
+                // Native scroll IDs must correspond to a drawable cell, not
+                // merely a retained image descriptor in the historical rail.
+                // The held snapshot remains the proof owner during gestures.
+                guard matchesScope, let id,
+                    presented?.window.items.first(where: { $0.id == id })?.isRenderReady == true else { return }
                 capture.positionID = id
                 capture.motion.readerCardID = id
             }))

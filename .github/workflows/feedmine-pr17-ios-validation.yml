@@ -1,0 +1,96 @@
+name: FeedMine PR17 iOS validation
+
+# Deliberately confined to the isolated, draft PR branch. No benchmark scripts,
+# release signing, deployments, or changes to the default branch.
+on:
+  push:
+    branches:
+      - fix/atomic-viewport-readiness-20261030
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feedmine-pr17-ios-validation
+  cancel-in-progress: true
+
+jobs:
+  apple-tests:
+    name: Package XCTest on iOS Simulator + app build
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact PR branch commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Inspect Xcode, Swift and available simulators
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+          xcrun simctl list devices available
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          data = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devices", "available", "--json"], text=True))
+          candidates = [
+              (runtime, d)
+              for runtime, devices in data["devices"].items()
+              if "SimRuntime.iOS" in runtime
+              for d in devices
+              if d.get("isAvailable") and "iPhone" in d.get("name", "")
+          ]
+          if not candidates:
+              raise SystemExit("No available iOS iPhone simulator on this macOS runner")
+          runtime, device = sorted(
+              candidates, key=lambda x: (x[0], x[1].get("name", "")), reverse=True
+          )[0]
+          print(f"Selected {device['name']} / {runtime} / {device['udid']}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as out:
+              out.write(f"FEEDMINE_SIMULATOR_ID={device['udid']}\n")
+          PY
+
+      - name: Inspect Swift package schemes and dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift package describe
+          xcodebuild -list -json
+
+      - name: Package tests on iOS (includes UIKit ArchitectureSmokeTests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme FeedMine-Package \
+            -destination "platform=iOS Simulator,id=${FEEDMINE_SIMULATOR_ID}" \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "${RUNNER_TEMP}/FeedMinePackage.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build app for iOS Simulator without signing or release
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project FeedMineApp/FeedMineApp.xcodeproj \
+            -scheme FeedMine \
+            -destination "platform=iOS Simulator,id=${FEEDMINE_SIMULATOR_ID}" \
+            -derivedDataPath "${RUNNER_TEMP}/FeedMineDerivedData" \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Upload XCTest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedmine-pr17-package-xcresult
+          path: ${{ runner.temp }}/FeedMinePackage.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

@@ -98,6 +98,10 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         XCTAssertEqual(initial.window.items.map(\.id), ids)
         XCTAssertEqual(initial.window.anchor.cardID, hero.id)
         XCTAssertNotNil(initial.window.items.first?.image, "Control: local hero must decode on first admission")
+        let initialRail = FeedVisualRailIndex(snapshot: initial)
+        XCTAssertEqual(initialRail.slot(at: 0)?.id, hero.id)
+        XCTAssertTrue(initialRail.slot(at: 0)?.isReady == true,
+            "A real local hero must enter the virtual rail as ready")
 
         let lastObservation = ViewportObservation(
             anchor: .init(cardID: last.id, placement: .center))
@@ -111,26 +115,82 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
             "Keeping the head must preserve historical identity and ordering")
         XCTAssertNil(away.window.items.first?.image,
             "The historical bitmap must be released outside the residency band")
+        let awayRail = FeedVisualRailIndex(snapshot: away)
+        XCTAssertEqual(awayRail.slot(at: 0), .deferred(index: 0, id: hero.id),
+            "Releasing pixels must keep the original historical slot without rendering it")
+        XCTAssertEqual(awayRail.logicalCount, ids.count)
+        XCTAssertEqual(awayRail.visualAnchorID, last.id)
 
-        // Positive control: an existing local asset can rematerialize the hero
-        // before it becomes the current anchored card again.
-        let returnedResult = try await session.submitViewport(heroObservation)
+        // B05: the current kept-head window retains the old hero identity
+        // without pixels; it cannot claim to have rendered the hero.
+        XCTAssertNil(away.evidence(for: heroObservation, ordinal: 19),
+            "A released historical descriptor is not a viewport witness")
+        // The genuinely rendered earlier window may still be borrowed during
+        // an active gesture. That older proof remains valid for reconciliation.
+        let heldHeroProof = try XCTUnwrap(initial.evidence(
+            for: heroObservation, ordinal: 19))
+        let returnedResult = try await session.submitViewport(heroObservation, from: heldHeroProof)
         let returned = try XCTUnwrap(returnedResult)
         XCTAssertEqual(returned.window.anchor.cardID, hero.id)
         XCTAssertEqual(returned.window.items.map(\.id), ids)
         XCTAssertNotNil(returned.window.items.first?.image,
             "Returning to a released historical hero requires decoded pixels")
+        let returnedRail = FeedVisualRailIndex(snapshot: returned)
+        XCTAssertTrue(returnedRail.slot(at: 0)?.isReady == true,
+            "The identical historical hero slot becomes ready after local rematerialization")
+        XCTAssertEqual(returnedRail.slot(at: 0)?.id, hero.id)
+        XCTAssertEqual(returnedRail.logicalAnchorIndex, 0)
         XCTAssertEqual(returned.window.items.last?.id, last.id,
             "The already-ready text sibling must remain reachable")
 
+        // Real SHA-256 re-entry creates a continuous drawable run again,
+        // without replacing its frozen hero ID or erasing the reader's text.
+        let beforeReentry = try XCTUnwrap(FeedVisualWindowPlan(snapshot: away,
+            center: 2, backward: 1, forward: 0))
+        let afterReentry = try XCTUnwrap(FeedVisualWindowPlan(snapshot: returned,
+            center: 1, backward: 1, forward: 1))
+        XCTAssertEqual(beforeReentry.contiguousReadyCards?.map(\.id),
+            [middle.id, last.id])
+        XCTAssertEqual(afterReentry.contiguousReadyCards?.map(\.id), ids)
+        XCTAssertEqual(beforeReentry.visualAnchorID, last.id)
+        XCTAssertEqual(afterReentry.visualAnchorID, hero.id)
+        XCTAssertEqual(beforeReentry.logicalCount, afterReentry.logicalCount)
+        // Synthetic geometry tests handoff eligibility; actual pixel-offset
+        // correction remains the responsibility of Apple native UI tests.
+        let readerBefore = FeedVisualWindowWitness(cardID: last.id,
+            viewportTop: 180, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        let readerAfter = FeedVisualWindowWitness(cardID: last.id,
+            viewportTop: 420, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        XCTAssertNil(FeedVisualWindowHandoff(from: beforeReentry,
+            to: afterReentry, before: readerBefore, after: readerAfter,
+            gestureActive: true), "Do not replace the physical rail during a gesture")
+        let idle = try XCTUnwrap(FeedVisualWindowHandoff(from: beforeReentry,
+            to: afterReentry, before: readerBefore, after: readerAfter,
+            gestureActive: false))
+        XCTAssertEqual(idle.witnessID, last.id,
+            "The reader's already-visible sibling is the transfer witness")
+        XCTAssertEqual(idle.offsetAdjustment, 240, accuracy: 0.001)
+        XCTAssertEqual(idle.provenance, returned.provenance)
+
         let secondAwayResult = try await session.submitViewport(lastObservation)
-        _ = try XCTUnwrap(secondAwayResult)
+        let secondAway = try XCTUnwrap(secondAwayResult)
+        XCTAssertNil(secondAway.evidence(for: heroObservation, ordinal: 73),
+            "Released pixels cannot mint a new viewport proof")
+        // The last actually rendered hero snapshot may still be held by UI.
+        // It can authorize re-entry only after its local pixels rematerialize.
+        let retryEvidence = try XCTUnwrap(returned.evidence(
+            for: heroObservation, ordinal: 73))
+        let beforeMissing = await session.currentPresentation()
         try FileManager.default.removeItem(at: png.file)
 
         // Failure control: when local bytes disappear, a return must not make
         // the undecodable hero the reader's active anchor or consume its retry.
-        let missingReturn = try await session.submitViewport(heroObservation)
+        let missingReturn = try await session.submitViewport(heroObservation, from: retryEvidence)
         let afterMissing = await session.currentPresentation()
+        XCTAssertEqual(afterMissing, beforeMissing,
+            "Failed media return must not consume projection position, anchor or residency")
         XCTAssertNotEqual(missingReturn?.window.anchor.cardID, hero.id,
             "An undecodable historical hero cannot be readmitted as the active card")
         XCTAssertEqual(afterMissing?.window.anchor.cardID, last.id,
@@ -140,7 +200,8 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         // Make the same frozen published asset local again; no new publication,
         // identity or editorial layout is created to repair the previous failure.
         try png.bytes.write(to: png.file)
-        let retriedResult = try await session.submitViewport(heroObservation)
+        // Replay the SAME evidence ordinal. A rejected return cannot consume it.
+        let retriedResult = try await session.submitViewport(heroObservation, from: retryEvidence)
         let retried = try XCTUnwrap(retriedResult)
         XCTAssertEqual(retried.window.anchor.cardID, hero.id)
         XCTAssertEqual(retried.window.items.map(\.id), ids)
