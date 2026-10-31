@@ -47,7 +47,10 @@ public struct SessionStore: Sendable {
                 """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
                     PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
             try Self.persistContext(checkpoint, in: db)
-            try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
+            // Cursor durability protects published history; it never proves
+            // that a physical cell was seen. The viewport path owns markSeen.
+            try PublicationStore.protectPosition(editionID: checkpoint.editionID,
+                cardID: checkpoint.cardID, in: db)
         }
     }
 
@@ -67,11 +70,11 @@ public struct SessionStore: Sendable {
             """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
                 PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
         try persistContext(checkpoint, in: db)
-        // A first-publication checkpoint is a durable place to resume, not
-        // evidence that the reader ever saw its pixels. In particular, a
-        // missing hero image must not be marked seen before first paint.
-        // The visible-viewport path owns visual exposure; initial publication
-        // without it leaves hidden-tail succession unavailable (fail closed).
+        // The first cursor is protected against replacement in this same
+        // publication transaction, but it has no visual seen high-water yet.
+        // Hidden-tail succession therefore stays fail-closed before exposure.
+        try PublicationStore.protectPosition(editionID: checkpoint.editionID,
+            cardID: checkpoint.cardID, in: db)
     }
 
     public func checkpoint() throws -> CheckpointRecord? {
