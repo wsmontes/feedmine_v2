@@ -4,7 +4,7 @@ import FeedMineDomain
 import FeedMinePersistence
 import FeedMinePublication
 import FeedMineRuntime
-import FeedMineUI
+@testable import FeedMineUI
 
 /// P0 / Issue #7: historical membership and render-ready UI membership are
 /// different contracts. No post-admission image completion is allowed in a cell.
@@ -94,6 +94,15 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         }, "An image-bearing placeholder must not be treated as a rendered card")
         XCTAssertEqual(screen.renderedItems.map(\.title), ["Ready before", "Ready text"],
             "Neither a ready predecessor nor a ready successor may be blocked by missing media")
+
+        // The held interaction is a second drawing route: it must not bypass
+        // the same visual readiness gate while a finger owns the old snapshot.
+        var interaction = FeedInteractionPresentation()
+        interaction.begin(snapshot, owner: ObjectIdentifier(screen))
+        XCTAssertEqual(interaction.heldItems(matching: screen)?.map(\.id),
+            [readyBefore.id, ready.id],
+            "A held viewport must not resurrect undecodable images after store admission")
+        interaction.end()
 
         // A rejected historical observation must not erase the visible text
         // siblings, change the anchor or advance the projection.
