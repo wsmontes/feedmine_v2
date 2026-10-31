@@ -166,6 +166,20 @@ final class FeedNativeScrollOffset {
         }
         let prior = correction.pendingProof
         guard let delta = correction.observe(proof) else { return isCorrecting }
+        if let entry = provisionalCorrection {
+            // Only one automatic native offset write, for this exact ready
+            // witness, is permitted while a provisional handoff is active.
+            // Another witness or mutation revokes its receipt instead of
+            // applying a competing correction to the reader's scroll view.
+            guard entry.witness == proof.cardID,
+                case .armed = entry.phase else {
+                provisionalCorrection = nil
+                correction.cancel(discardingSamples: true)
+                suppressCorrectionEvents = false
+                visualWitness = nil
+                return false
+            }
+        }
         guard let scrollView else {
             #if DEBUG
             if FeedVisualCapture.tracesCapture {
