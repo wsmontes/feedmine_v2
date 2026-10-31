@@ -14,10 +14,12 @@ public struct FeedItemRowView: View, Equatable {
     /// The row's explicit play action, when the host can execute it. Nil for a card that is not audio, or whose
     /// playable payload is unavailable: the row then promises nothing (D2 never offers play for video).
     public let onPlay: (() -> Void)?
+    /// A Sendable, nonisolated comparison value; the action closure itself stays MainActor-owned.
+    private let hasPlayAction: Bool
 
     nonisolated public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.card == rhs.card && lhs.appearance == rhs.appearance && lhs.isRead == rhs.isRead
-            && (lhs.onPlay == nil) == (rhs.onPlay == nil)
+            && lhs.hasPlayAction == rhs.hasPlayAction
     }
 
     public init(card: PresentationCard, appearance: ReaderAppearance, isRead: Bool = false,
@@ -26,6 +28,7 @@ public struct FeedItemRowView: View, Equatable {
         self.appearance = appearance
         self.isRead = isRead
         self.onPlay = onPlay
+        self.hasPlayAction = onPlay != nil
     }
 
     private var isAudio: Bool { card.playsAudio }
