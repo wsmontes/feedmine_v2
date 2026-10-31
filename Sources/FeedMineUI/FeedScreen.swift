@@ -84,6 +84,10 @@ public struct FeedScreen: View {
         // gesto, a janela segurada. A posição do leitor **não** é lida aqui — era ela que fazia a lista inteira ser
         // reavaliada a cada avanço (medido no aparelho, 2026-10-14: 12–14 instalações por segundo numa rajada).
         // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
+        // Physical cells only: store.renderedItems is a contiguous ready run,
+        // and a gesture borrows the exact same drawn cells. The full causal
+        // snapshot stays in store.state for identity, checkpoint and actions.
+        // Never substitute window.items here: that includes deferred pixels.
         let items = capture.interaction.heldItems(matching: store) ?? store.renderedItems
         if !items.isEmpty {
             if #available(iOS 18, macOS 15, *) {
@@ -96,7 +100,7 @@ public struct FeedScreen: View {
                               FeedItemView(card: card, appearance: appearance,
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
-                                onAction: { store.perform($0, rendered: store.state.presentation) })
+                                onAction: { store.perform($0, rendered: store.displayedPresentation) })
                                 .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
                                     guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
                                     let frame = proxy.frame(in: .scrollView(axis: .vertical))
@@ -133,10 +137,10 @@ public struct FeedScreen: View {
                                         #if DEBUG
                                         FeedVisualCapture.submissions += 1
                                         #endif
-                                        store.submitViewport(event.observation, activity: event.activity, rendered: store.state.presentation)
+                                        store.submitViewport(event.observation, activity: event.activity, rendered: store.displayedPresentation)
                                     }
                                     if let event = capture.settle() {
-                                        store.submitViewport(event.observation, activity: event.activity, rendered: store.state.presentation)
+                                        store.submitViewport(event.observation, activity: event.activity, rendered: store.displayedPresentation)
                                     }
                                     // Onde o viewport **começa** vai para o host: é a posição que a durabilidade
                                     // grava, porque é a única que uma restauração reproduz exatamente. O store a
@@ -176,7 +180,7 @@ public struct FeedScreen: View {
                                 FeedItemView(card: card, appearance: appearance,
                                     isBookmarked: store.bookmarkedIDs.contains(card.id),
                                     availableActions: store.availableActions,
-                                    onAction: { store.perform($0, rendered: store.state.presentation) })
+                                    onAction: { store.perform($0, rendered: store.displayedPresentation) })
                                 EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                             }
                         }
@@ -201,7 +205,11 @@ public struct FeedScreen: View {
     /// this surface already owns: the host's interests and sources hooks, and, for "Voltar ao início", the
     /// reading position itself (the first drawn card), so no session is rebuilt and the order never changes.
     @ViewBuilder private func endOfContentBlock(items: [PresentationCard]) -> some View {
-        if store.work == .endOfContent {
+        // A logical history can extend beyond the currently mounted ready
+        // rail. A deferred gap is not an end-of-content invitation.
+        if store.work == .endOfContent,
+            let lastPhysical = items.last?.id,
+            lastPhysical == store.state.presentation?.window.items.last?.id {
             FeedEndOfContentView(appearance: appearance,
                 onExploreSubjects: { onAdjustInterests() },
                 onWidenSources: { onChooseSources() },

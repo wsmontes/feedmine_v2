@@ -5,19 +5,26 @@ import FeedMineRuntime
 @MainActor
 struct FeedInteractionPresentation {
     private var held: FeedPresentationSnapshot?
+    /// Exact physical cells borrowed when the gesture began; never the logical
+    /// snapshot's deferred, non-drawable historical descriptors.
+    private var heldPhysicalItems: [PresentationCard]?
     private var owner: ObjectIdentifier?
     private var releaseAnchor: PublicationCardID?
     private(set) var deferredWindows = 0
     var isHolding: Bool { held != nil }
 
-    mutating func begin(_ presentation: FeedPresentationSnapshot?, owner: ObjectIdentifier) {
+    mutating func begin(_ presentation: FeedPresentationSnapshot?, owner: ObjectIdentifier,
+        renderedItems: [PresentationCard]? = nil) {
         // A new gesture supersedes an idle acknowledgement still in flight.
         releaseAnchor = nil
         guard held == nil else { return }
         held = presentation
+        heldPhysicalItems = renderedItems ?? presentation.flatMap {
+            FeedReadyVisualWindow.initial(snapshot: $0)?.cards
+        }
         self.owner = owner
     }
-    mutating func end() { held = nil; owner = nil; releaseAnchor = nil }
+    mutating func end() { held = nil; heldPhysicalItems = nil; owner = nil; releaseAnchor = nil }
     mutating func end(afterReading card: PublicationCardID?, store: FeedScreenStore) {
         guard let held, presentation(for: store) == held else { end(); return }
         if let card, let current = store.state.presentation,
@@ -29,10 +36,14 @@ struct FeedInteractionPresentation {
     }
 
     func presentation(for store: FeedScreenStore) -> FeedPresentationSnapshot? {
+        // The physical reader can remain on an older ready run while the
+        // logical session advances. Scope checks must follow the snapshot
+        // actually drawn, not borrow the new history as false pixel evidence.
+        let drawn = store.displayedPresentation
         guard let current = store.state.presentation, let held,
             owner == ObjectIdentifier(store), current.contextKey == held.contextKey,
             current.editionID == held.editionID,
-            current.provenance.sequenceID == held.provenance.sequenceID else { return store.state.presentation }
+            current.provenance.sequenceID == held.provenance.sequenceID else { return drawn }
         return held
     }
 
@@ -43,8 +54,9 @@ struct FeedInteractionPresentation {
     /// mantém a posição fora do corpo da lista (princípio do dono, 2026-10-14).
     func heldItems(matching store: FeedScreenStore) -> [PresentationCard]? {
         guard let held, owner == ObjectIdentifier(store),
-            held.contextKey == store.renderedContextKey, held.editionID == store.renderedEditionID else { return nil }
-        return held.window.items
+            held.contextKey == store.renderedContextKey, held.editionID == store.renderedEditionID,
+            held.provenance.sequenceID == store.displayedPresentation?.provenance.sequenceID else { return nil }
+        return heldPhysicalItems
     }
     mutating func noteIncoming(_ store: FeedScreenStore) {
         guard let held else { return }

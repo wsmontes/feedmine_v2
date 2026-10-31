@@ -23,6 +23,24 @@ struct FeedReadyVisualWindow: Sendable {
         self.visualAnchorID = visualAnchorID
     }
 
+    /// Initial/restore *physical* window: exactly the contiguous decoded run
+    /// containing the original durable anchor. A deferred anchor cannot
+    /// become a fabricated scroll target, and ready siblings separated by a
+    /// deferred image cannot be collapsed into adjacent SwiftUI cells.
+    /// This does not alter the retained snapshot or acquire any pixels.
+    static func initial(snapshot: FeedPresentationSnapshot) -> Self? {
+        let cards = snapshot.window.items
+        guard let center = cards.firstIndex(where: {
+            $0.id == snapshot.window.anchor.cardID
+        }), cards[center].isRenderReady else { return nil }
+        var first = center
+        while first > 0 && cards[first - 1].isRenderReady { first -= 1 }
+        var last = center
+        while last + 1 < cards.count && cards[last + 1].isRenderReady { last += 1 }
+        return Self(snapshot: snapshot, center: center,
+            backward: center - first, forward: last - center)
+    }
+
     var logicalCount: Int { plan.logicalCount }
     var logicalAnchorID: PublicationCardID { snapshot.window.anchor.cardID }
 }
