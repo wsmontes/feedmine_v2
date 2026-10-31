@@ -264,6 +264,41 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, freshEdition)
     }
 
+    func testStaleLayoutCallbackCannotCommitANewerProvisionalTransaction() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let old = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let next = try snapshot([a, b, c], anchor: b.id,
+            edition: edition, sequence: sequence, position: 2)
+        let first = try XCTUnwrap(FeedReadyVisualWindow(snapshot: old,
+            center: 1, backward: 1, forward: 0))
+        let candidate = try XCTUnwrap(FeedReadyVisualWindow(snapshot: next,
+            center: 1, backward: 1, forward: 1))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(store)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(first, owner: owner))
+        XCTAssertTrue(ownership.stage(candidate, owner: owner))
+        XCTAssertNotNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)))
+        let abandoned = try XCTUnwrap(ownership.provisionalID)
+        XCTAssertTrue(ownership.cancelProvisionalHandoff(owner: owner))
+        XCTAssertNotNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)))
+        let active = try XCTUnwrap(ownership.provisionalID)
+        XCTAssertNotEqual(abandoned, active)
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
+            transaction: abandoned, after: witness(b.id, top: 420)),
+            "An old geometry callback cannot acknowledge a newer physical layout")
+        XCTAssertEqual(ownership.provisionalID, active)
+        XCTAssertEqual(ownership.installed?.snapshot, old)
+        let proof = try XCTUnwrap(ownership.commitProvisionalHandoff(owner: owner,
+            transaction: active, after: witness(b.id, top: 420)))
+        XCTAssertEqual(proof.offsetAdjustment, 240, accuracy: 0.001)
+        XCTAssertEqual(ownership.installed?.snapshot, next)
+    }
+
     func testUnmeasuredOrUnreadyHandoffNeverDisplacesInstalledReader() throws {
         let a = card(), b = card(), c = card()
         let edition = FeedEditionID(), sequence = UUID()
