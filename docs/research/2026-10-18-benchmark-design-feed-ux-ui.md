@@ -7,9 +7,9 @@ lang: pt-BR
 
 # FeedMine — Benchmark competitivo e direção de design do feed
 
-**Pesquisa de mercado, diagnóstico da V2 e proposta de experiência · 18 de outubro de 2026**  
-**Escopo:** feed de descoberta, layout editorial, conteúdo, hierarquia de informação, navegação, filtros, retorno, estados, acessibilidade e validação em iOS.  
-**Status:** estudo de produto e proposta de design; **não** constitui aprovação de UX, alteração de código, nem comprovação dos gates B01–B06.  
+**Pesquisa de mercado, diagnóstico da V2 e proposta de experiência · 18 de outubro de 2026**
+**Escopo:** feed de descoberta, layout editorial, conteúdo, hierarquia de informação, navegação, filtros, retorno, estados, acessibilidade e validação em iOS.
+**Status:** estudo de produto e proposta de design; **não** constitui aprovação de UX, alteração de código, nem comprovação dos gates B01–B06.
 **Público:** dono do produto, UX/UI, arquitetura, implementação SwiftUI e validação de produto.
 
 > **Tese:** o FeedMine não deve parecer apenas um leitor RSS com cards, nem replicar um feed social opaco. Sua melhor posição é **uma revista viva da internet aberta**: descoberta sem configuração especializada, seleção plural e compreensível, composição editorial apropriada a cada história e continuidade local que respeita a leitura em andamento.
@@ -815,4 +815,3 @@ O mercado oferece peças valiosas: o feeeed demonstra que uma timeline heterogê
 A V2 já possui os contratos técnicos capazes de preservar a leitura publicada. A recomendação é explorar **quatro composições editoriais claras**, reorganizar as ações conforme a intenção do usuário, manter a biblioteca distinta da descoberta e provar o ganho com o aplicativo real. O critério de sucesso não é a quantidade de estilos nem uma nota cosmética: é a pessoa abrir o FeedMine, encontrar algo verdadeiramente interessante, consumir sem fricção e voltar para descobrir mais.
 
 **Próximo passo concreto:** captura comparativa da V2 atual com o corpus editorial descrito na seção 17; só então escolher qual variante de card/header merece implementação. O estudo deve funcionar como documento orientador de UX, subordinado ao North Star, ao Blueprint v0.4, às decisões de produto e aos invariantes de publicação já estabelecidos.
-

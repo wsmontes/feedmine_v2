@@ -7,10 +7,10 @@ lang: pt-BR
 
 # FeedMine — Estudo completo de experiências multimídia e arquitetura de playback
 
-**Benchmark técnico e de produto:** Inoreader, Pocket Casts, Readwise Reader e Snipd  
-**Data de corte da investigação:** 18 de outubro de 2026  
-**Aplicação-alvo:** FeedMine iOS, local-first/offline-first, sem servidor próprio de conteúdo  
-**Natureza:** estudo externo e proposta de engenharia, **não** especificação aprovada nem auditoria do HEAD do repositório  
+**Benchmark técnico e de produto:** Inoreader, Pocket Casts, Readwise Reader e Snipd
+**Data de corte da investigação:** 18 de outubro de 2026
+**Aplicação-alvo:** FeedMine iOS, local-first/offline-first, sem servidor próprio de conteúdo
+**Natureza:** estudo externo e proposta de engenharia, **não** especificação aprovada nem auditoria do HEAD do repositório
 **Bases internas:** *Unified Architecture Blueprint v0.4* [F01], *Feed Runtime V2 — Technical Architecture Specification v0.1* [F02] e princípios de produto [F03].
 
 > **Resumo da tese.** O FeedMine deve apresentar mídia heterogênea sem fazer da reprodução uma dependência da interface do feed. Um card preparado é um artefato local e estável; uma sessão de playback é uma atividade distinta, iniciada pelo usuário, que pode acessar a rede segundo a política aplicável. A maior contribuição dos produtos estudados não está em seus players isolados, mas na preservação de contexto, identidade, progresso, escolha de representação e navegação sobre conteúdo temporal.

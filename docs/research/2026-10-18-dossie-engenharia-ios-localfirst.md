@@ -2,9 +2,9 @@
 
 ## Benchmark de arquiteturas reais, coordenação UI–runtime–banco–background e roteiro de evidências
 
-**Relatório técnico e de produto | 18 de outubro de 2026 | Revisão 1.0**  
-**Objeto:** FeedMine V2, leitor local-first/offline-first que descobre conteúdo de milhares de fontes externas sem servidor próprio de agregação.  
-**Status:** pesquisa externa + leitura de documentação/código + hipóteses e plano de investigação. **Não** é laudo de performance medido no Mac nem aprovação de release.  
+**Relatório técnico e de produto | 18 de outubro de 2026 | Revisão 1.0**
+**Objeto:** FeedMine V2, leitor local-first/offline-first que descobre conteúdo de milhares de fontes externas sem servidor próprio de agregação.
+**Status:** pesquisa externa + leitura de documentação/código + hipóteses e plano de investigação. **Não** é laudo de performance medido no Mac nem aprovação de release.
 **Decisões de projeto:** preservar a arquitetura vigente, não multiplicar caches, filas, schedulers ou gerações; testar comportamento observável antes de otimizar uma operação isolada.
 
 > **Tese:** o desafio raro do FeedMine não é apenas fazer HTTP paralelo ou renderizar uma lista rápida. É transformar latências heterogêneas de milhares de fontes em uma **reserva local de histórias apresentáveis**, preservando um histórico editorial estável e uma interface independente da execução. Produtos próximos resolvem pedaços desse problema; nenhum benchmark público inspecionado demonstrou a combinação exata e na mesma escala operacional.
