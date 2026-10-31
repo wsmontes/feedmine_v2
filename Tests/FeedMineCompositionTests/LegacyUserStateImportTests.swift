@@ -12,30 +12,23 @@ import FeedMineComposition
 /// fixture: `bookmark_list(list_id, title, position)`, `source_collection(collection_id, name, source_keys)`) is
 /// exercised separately: it must be reported, not crash.
 final class LegacyUserStateImportTests: XCTestCase {
-    /// **Mechanical**, not a proof of the volume's case behaviour: on this host's case-insensitive filesystem a
-    /// directory created as `feedmine` when `FeedMine` exists is the same directory, so the two spellings cannot be
-    /// distinguished here. What this holds is the property the product needs from the list itself: at least one
-    /// candidate resolves to a file that exists, whether V1's directory ended up as a sibling or collapsed into
-    /// V2's own. Whether V1's real container is found is proven by the rehearsal, not by this test.
+    /// Mechanical candidate coverage for V1's *case-collapsed* shape: on an
+    /// insensitive volume Feedmine/user.sqlite lives in V2's own FeedMine folder.
+    /// Build that exact file path, not a second case-variant directory: APFS/iOS
+    /// simulators may refuse mkdir("feedmine") after mkdir("FeedMine") with EIO.
+    /// The separate migration rehearsal exercises the true V1 folder discovery.
     func testCandidateUserStateURLsAlwaysIncludeAResolvableLocation() throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: base) }
         let support = base.appendingPathComponent("Application Support", isDirectory: true)
         let v2Support = support.appendingPathComponent("FeedMine", isDirectory: true)
         try FileManager.default.createDirectory(at: v2Support, withIntermediateDirectories: true)
-        let v1 = support.appendingPathComponent("feedmine", isDirectory: true)
-        // APFS may already resolve this spelling to V2's "FeedMine". Attempting
-        // to create the case-folded alias again can fail with POSIX EIO on the
-        // iOS simulator even though the existing directory is perfectly usable.
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: v1.path, isDirectory: &isDirectory) {
-            XCTAssertTrue(isDirectory.boolValue, "A case-folded V1 alias must resolve to a directory")
-        } else {
-            try FileManager.default.createDirectory(at: v1, withIntermediateDirectories: true)
-        }
-        try Data("v1".utf8).write(to: v1.appendingPathComponent("user.sqlite"))
+        let collapsedV1 = v2Support.appendingPathComponent("user.sqlite")
+        try Data("v1".utf8).write(to: collapsedV1)
 
         let candidates = LegacyV1Upgrade.candidateUserStateURLs(applicationSupport: v2Support)
+        XCTAssertTrue(candidates.contains(collapsedV1),
+            "the collapsed V1 location must be returned explicitly")
         XCTAssertTrue(candidates.contains { FileManager.default.fileExists(atPath: $0.path) },
             "the candidate list always states a location that resolves: \(candidates.map(\.path))")
         XCTAssertTrue(candidates.allSatisfy { $0.lastPathComponent == "user.sqlite" })
