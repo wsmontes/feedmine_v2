@@ -93,14 +93,13 @@ struct FeedNativeReadyWindowHandshake {
         return true
     }
 
-    /// Record a physical rollback obligation *before* discarding the original
-    /// witness. This does not write offset or mutate the saved reading cursor.
-    private mutating func recordRollbackIfMoved(transaction: UUID) {
+    /// Every provisional phase may have replaced the physical list, even if
+    /// the offset delta was zero or UIScrollView has since been detached.
+    /// Conservatively require proof of the original *list and position* before
+    /// another swap. This does not perform a native write.
+    private mutating func recordRollbackObligation(transaction: UUID) {
         guard rollbackRequired == nil, let before,
-            let installed = ownership.installed,
-            let scroll = native.scrollView,
-            abs(Double(scroll.contentOffset.y) - before.contentOffset) > 0.5
-        else { return }
+            let installed = ownership.installed else { return }
         rollbackRequired = FeedNativePhysicalRollbackRequirement(
             transaction: transaction,
             originalOffset: before.contentOffset,
@@ -114,7 +113,7 @@ struct FeedNativeReadyWindowHandshake {
     @discardableResult
     mutating func cancel(transaction: UUID) -> Bool {
         guard ownership.provisionalID == transaction else { return false }
-        recordRollbackIfMoved(transaction: transaction)
+        recordRollbackObligation(transaction: transaction)
         _ = native.cancelProvisionalCorrection(transaction: transaction)
         before = nil
         return ownership.cancelProvisionalHandoff(owner: owner)
@@ -167,7 +166,7 @@ struct FeedNativeReadyWindowHandshake {
     @discardableResult
     mutating func nativeGestureBegan() -> Bool {
         if let token = ownership.provisionalID {
-            recordRollbackIfMoved(transaction: token)
+            recordRollbackObligation(transaction: token)
         }
         native.setInteractionActive(true)
         before = nil
