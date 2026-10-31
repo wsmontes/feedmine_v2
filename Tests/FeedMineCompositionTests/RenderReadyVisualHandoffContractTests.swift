@@ -92,6 +92,9 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertEqual(snapshot.window.items.map(\.id), [readyHero.id, textSibling.id],
             "Ready hero must retain its original slot and neighbouring text")
         XCTAssertEqual(snapshot.window.anchor.cardID, readyHero.id)
+        XCTAssertNotNil(snapshot.evidence(for: .init(anchor: .init(
+            cardID: readyHero.id, placement: .center)), ordinal: 1),
+            "A genuinely decoded hero must remain eligible to generate visual evidence")
         let decoded = try XCTUnwrap(snapshot.window.items.first?.image,
             "The test's valid local asset must decode before admission")
         XCTAssertEqual(decoded.key, "sha256:" + digest)
@@ -193,6 +196,14 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
             .restore(.init(backwardCapacity: 2, forwardCapacity: 0)))
         let snapshot = try XCTUnwrap(result)
         XCTAssertEqual(snapshot.window.anchor.cardID, ready.id)
+        let missingObservation = ViewportObservation(
+            anchor: .init(cardID: missing.id, placement: .center))
+        let readyObservation = ViewportObservation(
+            anchor: .init(cardID: ready.id, placement: .top))
+        XCTAssertNil(snapshot.evidence(for: missingObservation, ordinal: 1),
+            "A retained historical image without pixels is not visual evidence")
+        XCTAssertNotNil(snapshot.evidence(for: readyObservation, ordinal: 2),
+            "The neighbouring ready text card must still generate viewport evidence")
 
         let screen = FeedScreenStore(onViewport: { _, _ in })
         try screen.install(FeedPresentationState(presentation: snapshot))
