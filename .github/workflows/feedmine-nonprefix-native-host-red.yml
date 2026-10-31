@@ -40,7 +40,7 @@ jobs:
             -destination "platform=macOS" \
             -parallel-testing-enabled NO \
             -resultBundlePath "$RUNNER_TEMP/FeedMineHostNonPrefix.xcresult" \
-            -only-testing:ArchitectureSmokeTests/FeedViewportCaptureTests/testNativeHostedNonPrefixTrimReplacesTheTallDiscardedCard \
+            -only-testing:ArchitectureSmokeTests/FeedViewportCaptureTests/testNativeHostedNonPrefixTrimReplacesActualPhysicalIDs \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Summarize actual XCTest execution even on failure
