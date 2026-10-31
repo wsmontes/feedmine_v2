@@ -20,6 +20,13 @@ struct NativeFeedViewport: ViewModifier {
     /// rápidos produziram 1 avanço e nenhuma mudança da lista desenhada.
     private var presented: FeedPresentationSnapshot? { capture.interaction.presentation(for: store) }
 
+    /// Native scroll targets MUST name cells in the actual LazyVStack, not
+    /// merely IDs retained in the logical presentation or its checkpoint.
+    /// This matches the exact items consumed by FeedScreen during a gesture.
+    private var physicalItems: [PresentationCard] {
+        capture.interaction.heldItems(matching: store) ?? store.renderedItems
+    }
+
     private var matchesScope: Bool {
         guard let current = store.state.presentation, let presented else { return false }
         return capture.renderOwner == ObjectIdentifier(store) &&
@@ -50,13 +57,18 @@ struct NativeFeedViewport: ViewModifier {
             // `Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.testNativeHostedLayoutPreservesPositionWithoutInventingReading`
             // (440 -> 369) quando a âncora explícita foi tentada.
             .scrollPosition(id: Binding(get: {
-                capture.positionID ?? presented?.window.anchor.cardID
+                if let chosen = capture.positionID,
+                    physicalItems.contains(where: { $0.id == chosen }) {
+                    return chosen
+                }
+                guard let historicalAnchor = presented?.window.anchor.cardID,
+                    physicalItems.contains(where: { $0.id == historicalAnchor }) else { return nil }
+                return historicalAnchor
             }, set: { id in
-                // Native scroll IDs must correspond to a drawable cell, not
-                // merely a retained image descriptor in the historical rail.
-                // The held snapshot remains the proof owner during gestures.
+                // A visually ready historical descriptor is insufficient if
+                // the current physical run does not actually contain its cell.
                 guard matchesScope, let id,
-                    presented?.window.items.first(where: { $0.id == id })?.isRenderReady == true else { return }
+                    physicalItems.contains(where: { $0.id == id }) else { return }
                 capture.positionID = id
                 capture.motion.readerCardID = id
             }))
@@ -74,7 +86,8 @@ struct NativeFeedViewport: ViewModifier {
                 }
                 #endif
                 if phase != .idle {
-                    capture.interaction.begin(presented, owner: ObjectIdentifier(store))
+                    capture.interaction.begin(presented, owner: ObjectIdentifier(store),
+                        renderedItems: store.renderedItems)
                 } else {
                     let reader = capture.position?.cardID ?? capture.motion.readerCardID
                     if capture.interaction.isHolding, let reader, let presented, let current = store.state.presentation,
