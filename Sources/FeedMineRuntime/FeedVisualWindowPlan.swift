@@ -110,6 +110,13 @@ public struct FeedVisualWindowWitness: Sendable {
             viewportHeight.isFinite && cardHeight > 0 && viewportHeight > 0
     }
 
+    // The BEFORE sample must belong to a cell the reader could actually
+    // see. After layout that same cell may move entirely offscreen, which is
+    // precisely when a corrective offset may still be necessary.
+    fileprivate var intersectsViewport: Bool {
+        viewportTop < viewportHeight && viewportTop > -cardHeight
+    }
+
     fileprivate var contentTop: Double { viewportTop + contentOffset }
 }
 
@@ -132,6 +139,7 @@ public struct FeedVisualWindowHandoff: Sendable {
             let before, let after,
             before.cardID == after.cardID,
             before.isValid, after.isValid,
+            before.intersectsViewport,
             before.cardHeight == after.cardHeight,
             before.viewportHeight == after.viewportHeight,
             // The UI adapter may physically install only a single ready run.
