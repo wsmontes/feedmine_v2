@@ -267,6 +267,39 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
             "The zero-shift path must never write the native scroll offset")
     }
 
+    func testCancelAfterZeroDeltaStillRequiresOldPhysicalListConfirmation() throws {
+        let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
+        let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let s2=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let old=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s1,center:1,backward:1,forward:0))
+        let next=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s2,center:1,backward:1,forward:1))
+        let (native,scroll)=offset()
+        native.updateWindow([a.id,b.id])
+        _=native.observe(physical(b.id,top:180,offset:500))
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(next))
+        let before=witness(b.id,top:180,offset:500)
+        let token=try XCTUnwrap(handshake.begin(before:before)?.token)
+        native.updateWindow([a.id,b.id,c.id])
+        XCTAssertFalse(native.observe(physical(b.id,top:180,offset:500)))
+        XCTAssertEqual(native.appliedCount,0)
+        XCTAssertTrue(handshake.cancel(transaction:token))
+        XCTAssertNotNil(handshake.rollbackRequired,
+            "The provisional physical list changed although the offset did not")
+        XCTAssertNil(handshake.begin(before:before))
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id,c.id],measured:before))
+        native.updateWindow([a.id,b.id])
+        XCTAssertEqual(scroll.contentOffset.y,500,accuracy:0.01)
+        XCTAssertTrue(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id],measured:before))
+        XCTAssertNil(handshake.rollbackRequired)
+        XCTAssertEqual(handshake.displayed?.snapshot,s1)
+        XCTAssertEqual(handshake.pending?.snapshot,s2)
+    }
+
     func testGesturePreemptsBothOwnersAndFencesOldToken() throws {
         let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
         let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
