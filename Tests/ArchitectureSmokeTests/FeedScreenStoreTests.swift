@@ -254,10 +254,10 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(store.state.work, .pending)
     }
 
-    /// The one admitted copy of presentation data: the projection the list draws (2026-10-14). It exists
-    /// because `state` changes on every advance (the anchor lives in it) and the list must not re-evaluate
-    /// for a position it does not draw. It is derived, never authored — `testS11ThePublishedProjectionCannotDrift`
-    /// proves it always equals what `install` accepted.
+    /// The one observable physical projection exists because logical state
+    /// changes on every advance. It is derived from the accepted history but
+    /// contains only a contiguous ready run, never deferred media descriptors.
+    /// No second semantic presentation or durable cursor is introduced.
     private static let publishedProjection: Set<String> = ["_renderedItems", "_renderedEditionID",
         "_renderedContextKey", "_work"]
 
@@ -286,18 +286,25 @@ final class FeedScreenStoreTests: XCTestCase {
             "onPresentedPosition"])
     }
 
-    /// No drift is possible: every accepted install republishes the projection straight from the state the
-    /// handoff accepted, and an accepted absence (report-only) republishes it unchanged.
+    /// The logical snapshot is the full retained history; the physical list is
+    /// its anchor-containing contiguous ready run. Work-only updates keep the
+    /// installed physical IDs and never rewrite the logical position.
     func testS11ThePublishedProjectionCannotDrift() async throws {
         let f = try fixture(), published = try await snapshot(f)
         let store = FeedScreenStore { _, _ in }
         try store.install(try FeedPresentationHandoff.receive(snapshot: published, into: store.state))
-        XCTAssertEqual(store.renderedItems, store.state.presentation?.window.items ?? [])
+        XCTAssertEqual(store.renderedItems.map(\.id),
+            FeedReadyVisualWindow.initial(snapshot: published)?.cards.map(\.id) ?? [])
+        XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady))
+        XCTAssertEqual(store.state.presentation?.window.items.map(\.id), published.window.items.map(\.id))
         XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
         XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
         XCTAssertEqual(store.work, store.state.work)
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
-        XCTAssertEqual(store.renderedItems, store.state.presentation?.window.items ?? [])
+        XCTAssertEqual(store.renderedItems.map(\.id),
+            FeedReadyVisualWindow.initial(snapshot: published)?.cards.map(\.id) ?? [])
+        XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady))
+        XCTAssertEqual(store.state.presentation?.window.items.map(\.id), published.window.items.map(\.id))
         XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
         XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
         XCTAssertEqual(store.work, store.state.work)
