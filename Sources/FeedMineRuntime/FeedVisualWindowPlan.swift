@@ -33,22 +33,34 @@ public struct FeedVisualWindowPlan: Sendable, Equatable {
         let slots = rail.slice(around: center, backward: backward, forward: forward)
         guard let first = slots.first, let last = slots.last else { return nil }
 
+        // Build each contiguous run with append, not O(n²) repeated
+        // concatenation of every previously accumulated card/ID.
         var built: [Segment] = []
+        var runStart = first.index
+        var runIsReady = first.isReady
+        var readyCards: [PresentationCard] = []
+        var deferredIDs: [PublicationCardID] = []
         for slot in slots {
-            switch (built.last, slot) {
-            case (.some(.ready(let previous, let cards)), .ready(let index, let card))
-                where previous.upperBound == index:
-                built[built.count - 1] = .ready(
-                    range: previous.lowerBound..<(index + 1), cards: cards + [card])
-            case (.some(.deferred(let previous, let ids)), .deferred(let index, let id))
-                where previous.upperBound == index:
-                built[built.count - 1] = .deferred(
-                    range: previous.lowerBound..<(index + 1), ids: ids + [id])
-            case (_, .ready(let index, let card)):
-                built.append(.ready(range: index..<(index + 1), cards: [card]))
-            case (_, .deferred(let index, let id)):
-                built.append(.deferred(range: index..<(index + 1), ids: [id]))
+            if slot.isReady != runIsReady {
+                if runIsReady {
+                    built.append(.ready(range: runStart..<slot.index, cards: readyCards))
+                } else {
+                    built.append(.deferred(range: runStart..<slot.index, ids: deferredIDs))
+                }
+                readyCards = []
+                deferredIDs = []
+                runStart = slot.index
+                runIsReady = slot.isReady
             }
+            switch slot {
+            case .ready(_, let card): readyCards.append(card)
+            case .deferred(_, let id): deferredIDs.append(id)
+            }
+        }
+        if runIsReady {
+            built.append(.ready(range: runStart..<(last.index + 1), cards: readyCards))
+        } else {
+            built.append(.deferred(range: runStart..<(last.index + 1), ids: deferredIDs))
         }
 
         contextKey = snapshot.contextKey
