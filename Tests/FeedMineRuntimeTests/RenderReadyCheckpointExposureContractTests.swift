@@ -64,7 +64,7 @@ final class RenderReadyCheckpointExposureContractTests: XCTestCase {
             editionID: edition.id, readyID: ready.id, heroID: hero.id)
     }
 
-    func testProjectionOverflowCannotMarkCheckpointAsSeen() throws {
+    func testProjectionOverflowCannotMarkCheckpointAsSeen() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let f = try fixture(directory: directory, cursorAtMissingHero: false)
@@ -87,9 +87,35 @@ final class RenderReadyCheckpointExposureContractTests: XCTestCase {
             publicationHistory: f.history, imageDecoder: nil, bounds: bounds,
             sequenceID: UUID(), after: 0))
         XCTAssertEqual(accepted.snapshot.window.anchor.cardID, f.readyID)
+        XCTAssertNil(try PublicationStore(database: f.database).hiddenTail(editionID: f.editionID),
+            "A decoded/text checkpoint is still only a prepared cursor, not a viewport")
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint,
+            "Successful projection cannot rewrite durable position")
+
+        // Warm launch uses the same projection function, so neither launch
+        // path is allowed to synthesize visual exposure before first paint.
+        let warm = try XCTUnwrap(FeedSession.warmStart(
+            publicationHistory: f.history, imageDecoder: nil, bounds: bounds))
+        XCTAssertEqual(warm.snapshot.window.anchor.cardID, f.readyID)
+        XCTAssertNil(try PublicationStore(database: f.database).hiddenTail(editionID: f.editionID),
+            "A warm-start snapshot alone is not evidence of a drawn cell")
+
+        let session = FeedSession(publicationHistory: f.history)
+        let restored = try await session.admitPresentation(.restore(bounds))
+        XCTAssertEqual(restored?.window.anchor.cardID, f.readyID)
+        XCTAssertNil(try PublicationStore(database: f.database).hiddenTail(editionID: f.editionID))
+
+        // Runtime accepts a synthetic observation as a stand-in for the host's
+        // geometry callback. This verifies the exposure transition, NOT that
+        // the SwiftUI cell was physically measured on a device.
+        let observed = try await session.submitViewport(
+            .init(anchor: .init(cardID: f.readyID, placement: .top)))
+        XCTAssertEqual(observed?.window.anchor.cardID, f.readyID)
         let lease = try XCTUnwrap(PublicationStore(database: f.database).hiddenTail(editionID: f.editionID))
         XCTAssertEqual(lease.highWaterCardID, f.readyID,
-            "A successful ready-text checkpoint can record exposure normally")
+            "Only an admitted viewport observation may record this card as seen")
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint,
+            "Exposure and durable reading cursor are separate operations")
     }
 
     func testWarmStartCannotMarkUndecodableSavedHeroAsSeen() throws {
