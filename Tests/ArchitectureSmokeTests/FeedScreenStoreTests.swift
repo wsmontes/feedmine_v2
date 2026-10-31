@@ -257,7 +257,8 @@ final class FeedScreenStoreTests: XCTestCase {
     /// The one observable physical projection exists because logical state
     /// changes on every advance. It is derived from the accepted history but
     /// contains only a contiguous ready run, never deferred media descriptors.
-    /// No second semantic presentation or durable cursor is introduced.
+    /// The physical rail retains the snapshot that *its cells* came from;
+    /// this is visual evidence, not a second semantic cursor or session.
     private static let publishedProjection: Set<String> = ["_renderedItems", "_renderedEditionID",
         "_renderedContextKey", "_work"]
 
@@ -280,7 +281,7 @@ final class FeedScreenStoreTests: XCTestCase {
             "_availableDestinations", "onSubmitSearch", "onNavigate", "_bookmarkedIDs", "_isSearching",
             "_searchQuery", "_toast", "_filterCount", "_bookmarkBoxActive", "_hasCommittedSearch",
             "_$observationRegistrar", "onRenderedViewport", "viewportOrdinal", "_isReadingInteractionActive",
-            "_renderedItems", "_renderedEditionID", "_renderedContextKey", "_work",
+            "_renderedItems", "physicalWindow", "_renderedEditionID", "_renderedContextKey", "_work",
             // PO 2026-10-14: a posição do **viewport desenhado** é repassada, não guardada — o dono do cursor
             // (a sessão) é quem a lembra e quem decide de quanto em quanto tempo ela vira escrita.
             "onPresentedPosition"])
