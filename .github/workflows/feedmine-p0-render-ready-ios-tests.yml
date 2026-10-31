@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: feedmine-p0-ready-window-apple
-  cancel-in-progress: true
+  group: feedmine-p0-ready-window-apple-baseline
+  cancel-in-progress: false
 
 jobs:
   p0-xctest:
