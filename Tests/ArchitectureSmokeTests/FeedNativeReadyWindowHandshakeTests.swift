@@ -1,0 +1,148 @@
+#if canImport(UIKit)
+import UIKit
+import XCTest
+import FeedMineDomain
+@testable import FeedMineRuntime
+@testable import FeedMineUI
+
+/// One token for the borrowed UI rail and the sole UIKit offset writer.
+/// The host still has to hide/protect the provisional physical frame.
+@MainActor
+final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
+    private func card() -> PresentationCard {
+        PresentationCard(id: PublicationCardID(), title: "Ready",
+            primaryText: "Local", timestamp: nil, sourceID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            layout: .textOnly, mediaAspectRatio: nil,
+            primaryActionKind: nil, image: nil)
+    }
+
+    private func projection(_ cards: [PresentationCard], anchor: PublicationCardID,
+        edition: FeedEditionID, sequence: UUID, ordinal: UInt64)
+        throws -> FeedPresentationSnapshot {
+        let window = try XCTUnwrap(FeedWindowSnapshot(items: cards,
+            anchor: .init(cardID: anchor, placement: .top)))
+        return FeedPresentationSnapshot(contextKey: ContextKey(request: .main),
+            editionID: edition, window: window,
+            provenance: .init(sequenceID: sequence, position: ordinal))
+    }
+
+    private func offset() -> (FeedNativeScrollOffset, UIScrollView) {
+        let scroll = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 650))
+        scroll.contentSize = CGSize(width: 320, height: 2_000)
+        scroll.contentOffset = CGPoint(x: 0, y: 500)
+        let native = FeedNativeScrollOffset()
+        native.scrollView = scroll
+        return (native, scroll)
+    }
+
+    private func physical(_ id: PublicationCardID, top: CGFloat,
+        offset: CGFloat) -> FeedVisualCardGeometry {
+        FeedVisualCardGeometry(cardID: id,
+            frame: CGRect(x: 0, y: top, width: 320, height: 160),
+            offset: offset, height: 650)
+    }
+
+    private func witness(_ id: PublicationCardID, top: Double, offset: Double)
+        -> FeedVisualWindowWitness {
+        FeedVisualWindowWitness(cardID: id, viewportTop: top,
+            contentOffset: offset, cardHeight: 160, viewportHeight: 650)
+    }
+
+    func testNoJointCommitUntilNativeWriterAndGeometryAgree() throws {
+        let a = card(), b = card(), added = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let s1 = try projection([a,b], anchor: b.id, edition: edition,
+            sequence: sequence, ordinal: 1)
+        let s2 = try projection([a,b,added], anchor: b.id, edition: edition,
+            sequence: sequence, ordinal: 2)
+        let old = try XCTUnwrap(FeedReadyVisualWindow(snapshot: s1,
+            center: 1, backward: 1, forward: 0))
+        let next = try XCTUnwrap(FeedReadyVisualWindow(snapshot: s2,
+            center: 1, backward: 1, forward: 1))
+        let (native, scroll) = offset()
+        native.updateWindow([a.id, b.id])
+        _ = native.observe(physical(b.id, top: 180, offset: 500))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        var handshake = FeedNativeReadyWindowHandshake(owner: ObjectIdentifier(store),
+            native: native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(next))
+        let before = witness(b.id, top: 180, offset: 500)
+        let after = witness(b.id, top: 180, offset: 740)
+        let token = try XCTUnwrap(handshake.begin(before: before)?.token)
+        XCTAssertFalse(handshake.commit(transaction: token, after: after))
+        XCTAssertEqual(handshake.displayed?.snapshot, s2)
+        native.updateWindow([a.id, b.id, added.id])
+        XCTAssertTrue(native.observe(physical(b.id, top: 420, offset: 500)))
+        XCTAssertEqual(native.appliedCount, 1)
+        XCTAssertEqual(scroll.contentOffset.y, 740, accuracy: 0.01)
+        XCTAssertFalse(handshake.commit(transaction: token, after: after),
+            "The real writer ran but no corrected layout callback arrived yet")
+        _ = native.observe(physical(b.id, top: 180, offset: 740))
+        XCTAssertFalse(handshake.commit(transaction: UUID(), after: after))
+        XCTAssertTrue(handshake.commit(transaction: token, after: after))
+        XCTAssertEqual(handshake.displayed?.snapshot, s2)
+        XCTAssertNil(handshake.provisionalID)
+        XCTAssertFalse(handshake.commit(transaction: token, after: after))
+        XCTAssertEqual(native.appliedCount, 1,
+            "No second native writer is hidden in the joint confirmation")
+    }
+
+    func testInvalidAfterGeometryKeepsOldReaderAndPendingRetryable() throws {
+        let a=card(), b=card(), c=card(), edition=FeedEditionID(), sequence=UUID()
+        let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let s2=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let old=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s1,center:1,backward:1,forward:0))
+        let newer=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s2,center:1,backward:1,forward:1))
+        let (native,scroll)=offset()
+        native.updateWindow([a.id,b.id])
+        _=native.observe(physical(b.id,top:180,offset:500))
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(newer))
+        let token=try XCTUnwrap(handshake.begin(before:witness(b.id,top:180,offset:500))?.token)
+        native.updateWindow([a.id,b.id,c.id])
+        _=native.observe(physical(b.id,top:420,offset:500))
+        _=native.observe(physical(b.id,top:180,offset:740))
+        XCTAssertFalse(handshake.commit(transaction:token,
+            after:witness(b.id,top:180,offset:800)),
+            "Host must not confirm a post-layout witness different from physical native offset")
+        XCTAssertEqual(handshake.displayed?.snapshot,s2,
+            "A rejected post-layout sample cannot silently commit or replace the pending rail")
+        XCTAssertTrue(handshake.cancel(transaction:token))
+        XCTAssertEqual(handshake.displayed?.snapshot,s1)
+        XCTAssertEqual(handshake.pending?.snapshot,s2)
+        XCTAssertEqual(scroll.contentOffset.y,740,accuracy:0.01,
+            "The host still owes a physical offset rollback; model cancellation is not one")
+    }
+
+    func testGesturePreemptsBothOwnersAndFencesOldToken() throws {
+        let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
+        let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let s2=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let old=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s1,center:1,backward:1,forward:0))
+        let newer=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s2,center:1,backward:1,forward:1))
+        let (native,scroll)=offset()
+        native.updateWindow([a.id,b.id])
+        _=native.observe(physical(b.id,top:180,offset:500))
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(newer))
+        let token=try XCTUnwrap(handshake.begin(before:witness(b.id,top:180,offset:500))?.token)
+        XCTAssertTrue(handshake.nativeGestureBegan())
+        native.updateWindow([a.id,b.id,c.id])
+        _=native.observe(physical(b.id,top:420,offset:500))
+        XCTAssertFalse(handshake.commit(transaction:token,
+            after:witness(b.id,top:420,offset:500)))
+        XCTAssertEqual(handshake.displayed?.snapshot,s1)
+        XCTAssertEqual(handshake.pending?.snapshot,s2)
+        XCTAssertEqual(scroll.contentOffset.y,500,accuracy:0.01)
+        handshake.nativeGestureEnded()
+        XCTAssertNil(handshake.provisionalID)
+        XCTAssertEqual(handshake.displayed?.snapshot,s1)
+    }
+}
+#endif
