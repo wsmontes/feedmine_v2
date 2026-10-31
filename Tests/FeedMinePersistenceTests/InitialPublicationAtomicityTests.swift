@@ -26,6 +26,11 @@ final class InitialPublicationAtomicityTests: XCTestCase {
         XCTAssertEqual(try store.segments(editionID: e.id), [s])
         XCTAssertEqual(try store.card(id: c.id), c)
         XCTAssertEqual(try SessionStore(database: db).checkpoint(), cp)
+        // Persisting the initial cursor cannot manufacture visual exposure.
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM publication_card_usage") }, 0)
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM edition_reading_state") }, 0)
+        XCTAssertNil(try store.hiddenTail(editionID: e.id),
+            "Without a genuine seen card, hidden-tail maintenance must fail closed")
     }
     func testP2CheckpointCardOutsideSegmentWritesNothing() throws {
         let db = try StorageFixture.database(self), e = StorageFixture.edition(), c = StorageFixture.card()
