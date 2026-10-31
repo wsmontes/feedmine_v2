@@ -299,6 +299,73 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertEqual(ownership.installed?.snapshot, next)
     }
 
+    func testNativeGestureInterruptsProvisionalSwapAndFencesLateCallback() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let old = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let next = try snapshot([a, b, c], anchor: b.id,
+            edition: edition, sequence: sequence, position: 2)
+        let first = try XCTUnwrap(FeedReadyVisualWindow(snapshot: old,
+            center: 1, backward: 1, forward: 0))
+        let candidate = try XCTUnwrap(FeedReadyVisualWindow(snapshot: next,
+            center: 1, backward: 1, forward: 1))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(store)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(first, owner: owner))
+        XCTAssertTrue(ownership.stage(candidate, owner: owner))
+        XCTAssertNotNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)))
+        let interruptedToken = try XCTUnwrap(ownership.provisionalID)
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, next)
+        XCTAssertTrue(ownership.nativeInteractionBegan(owner: owner),
+            "A real native gesture must preempt a provisional, unpainted swap")
+        XCTAssertNil(ownership.provisional)
+        XCTAssertNil(ownership.provisionalID)
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old)
+        XCTAssertEqual(ownership.installed?.snapshot, old)
+        XCTAssertEqual(ownership.pending?.snapshot, next,
+            "Interrupted transitions must retain the prepared candidate")
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
+            transaction: interruptedToken, after: witness(b.id, top: 420)))
+        XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)), "No physical swap during native drag")
+        ownership.endGesture(owner: owner)
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old)
+        XCTAssertNotNil(ownership.beginProvisionalHandoff(owner: owner,
+            before: witness(b.id)))
+        let retriedToken = try XCTUnwrap(ownership.provisionalID)
+        XCTAssertNotEqual(interruptedToken, retriedToken)
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
+            transaction: interruptedToken, after: witness(b.id, top: 420)))
+        XCTAssertEqual(ownership.provisionalID, retriedToken,
+            "Late geometry must not cancel the new transaction")
+    }
+
+    func testNativeGestureFromWrongOwnerCannotInterruptExistingReader() throws {
+        let a = card(), b = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let snapshot = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let ready = try XCTUnwrap(FeedReadyVisualWindow(snapshot: snapshot,
+            center: 1, backward: 1, forward: 0))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let other = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(store), stranger = ObjectIdentifier(other)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(ready, owner: owner))
+        XCTAssertFalse(ownership.nativeInteractionBegan(owner: stranger))
+        XCTAssertTrue(ownership.nativeInteractionBegan(owner: owner))
+        XCTAssertTrue(ownership.nativeInteractionBegan(owner: owner),
+            "Repeated UIKit phase notifications must be idempotent")
+        XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, snapshot)
+        XCTAssertFalse(ownership.beginGesture(owner: owner),
+            "Duplicate gestures cannot change the borrowed provenance")
+        ownership.endGesture(owner: owner)
+        XCTAssertEqual(ownership.installed?.snapshot, snapshot)
+    }
+
     func testUnmeasuredOrUnreadyHandoffNeverDisplacesInstalledReader() throws {
         let a = card(), b = card(), c = card()
         let edition = FeedEditionID(), sequence = UUID()
