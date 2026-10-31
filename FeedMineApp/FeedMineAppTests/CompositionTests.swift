@@ -3336,13 +3336,16 @@ final class CompositionTests: XCTestCase {
         }
         let before = try live(publication)
         XCTAssertGreaterThan(before.count, 1, "premissa: a Edition tem ocorrências depois da âncora")
+        // Exposure is the viewport's high-water, never the projected anchor: an origin is unseen until a
+        // confirmed observation passes its occurrence. The target must still be a card after the anchor.
         let unseen = try PublicationHistory(database: association.database).exposure(editionID: editionID,
-            originIDs: before.map(\.originRecordID), readerAnchorCardID: anchor).unseenOriginIDs
+            originIDs: before.map(\.originRecordID)).unseenOriginIDs
         XCTAssertFalse(unseen.isEmpty,
             "premissa: alguma ocorrência publicada está à frente do leitor e não foi vista; "
                 + "publicadas=\(before.count), não vistas=\(unseen.count)")
-        let target = try XCTUnwrap(before.first { unseen.contains($0.originRecordID) },
-            "premissa: a ocorrência não vista é uma linha publicada da Edition")
+        let anchorIndex = try XCTUnwrap(before.firstIndex { $0.id == anchor })
+        let target = try XCTUnwrap(before.dropFirst(anchorIndex + 1).first { unseen.contains($0.originRecordID) },
+            "premissa: a ocorrência não vista é uma linha publicada depois da âncora")
         XCTAssertNotEqual(target.id, anchor, "premissa: a carta alvo está depois da âncora")
         let segmentsBefore = try publication.segments(editionID: editionID)
         let firstSegmentBefore = try XCTUnwrap(segmentsBefore.first)
