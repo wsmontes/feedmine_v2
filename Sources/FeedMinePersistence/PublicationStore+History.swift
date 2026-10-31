@@ -52,6 +52,30 @@ extension PublicationStore {
             try db.execute(sql: "INSERT INTO edition_reading_state VALUES (?, ?, 1, 1)", arguments: [key, PersistenceValueCoding.uuid(cardID.rawValue)])
         }
     }
+    /// Protects a durable cursor (and all earlier published occurrences) without
+    /// claiming that the reader actually viewed any of them. The frontier only
+    /// moves forward; an older saved position must not make history replaceable.
+    /// An advancing fence invalidates a concurrent hidden-tail lease even if
+    /// the separate seen high-water has not moved.
+    static func protectPosition(editionID: FeedEditionID, cardID: PublicationCardID, in db: Database) throws {
+        let key = PersistenceValueCoding.uuid(editionID.rawValue)
+        let schema = try historySchema(key, in: db)
+        let position = try historyPosition(cardID, editionKey: key, schema: schema, in: db)
+        if let oldKey = try String.fetchOne(db, sql:
+            "SELECT protected_card_id FROM edition_position_protection WHERE edition_id = ?", arguments: [key]) {
+            let old = PublicationCardID(rawValue: try PublicationValueCoding.uuid(oldKey, field: "protected_card_id"))
+            let previous = try historyPosition(old, editionKey: key, schema: schema, in: db)
+            guard previous.isBefore(position) else { return }
+            try db.execute(sql: "UPDATE edition_position_protection SET protected_card_id = ? WHERE edition_id = ?",
+                arguments: [PersistenceValueCoding.uuid(cardID.rawValue), key])
+        } else {
+            try db.execute(sql: "INSERT INTO edition_position_protection VALUES (?, ?)",
+                arguments: [key, PersistenceValueCoding.uuid(cardID.rawValue)])
+        }
+        try db.execute(sql: "UPDATE edition_reading_state SET generation = generation + 1 WHERE edition_id = ?",
+            arguments: [key])
+    }
+
     public func setVisibility(editionID: FeedEditionID, visible: Bool) throws {
         try database.write { db in
             try db.execute(sql: "UPDATE edition_reading_state SET visible = ?, generation = generation + 1 WHERE edition_id = ?",
@@ -66,11 +90,21 @@ extension PublicationStore {
             let generation: Int64 = row["generation"]
             let schema = try Self.historySchema(key, in: db)
             let tail = try Self.historyTail(editionKey: key, schema: schema, in: db)
+            let seen = try Self.historyPosition(card, editionKey: key, schema: schema, in: db)
             var protectedCard = card
+            var protectedPosition = seen
+            if let saved = try String.fetchOne(db, sql:
+                "SELECT protected_card_id FROM edition_position_protection WHERE edition_id = ?", arguments: [key]) {
+                let savedID = PublicationCardID(rawValue: try PublicationValueCoding.uuid(saved, field: "protected_card_id"))
+                let persisted = try Self.historyPosition(savedID, editionKey: key, schema: schema, in: db)
+                if protectedPosition.isBefore(persisted) {
+                    protectedCard = savedID
+                    protectedPosition = persisted
+                }
+            }
             if let admittedCardID {
-                let seen = try Self.historyPosition(card, editionKey: key, schema: schema, in: db)
                 let admitted = try Self.historyPosition(admittedCardID, editionKey: key, schema: schema, in: db)
-                if seen.isBefore(admitted) { protectedCard = admittedCardID }
+                if protectedPosition.isBefore(admitted) { protectedCard = admittedCardID }
             }
             try db.execute(sql: "UPDATE edition_reading_state SET visible = 0, generation = generation + 1 WHERE edition_id = ?", arguments: [key])
             return HiddenTailLease(editionID: editionID, generation: generation + 1,
