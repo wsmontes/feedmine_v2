@@ -122,7 +122,6 @@ extension SessionStore {
             try ReaderHistoryBindingStore.retainLegacyCheckpoints(in: db)
             let editionID = try fields.optionalUUID("edition_id").map { FeedEditionID(rawValue: $0) }
             let present = try fields.integer("checkpoint_present") == 1
-            let target = try editionID.flatMap { try Self.ownedCheckpoint(bindingID: handle.bindingID, editionID: $0, in: db) }
             if let current = try Row.fetchOne(db, sql: "SELECT * FROM session_reader_binding WHERE singleton_id = 1") {
                 let active = PublicationRecordFields(current)
                 if try active.integer("checkpoint_present") == 1,
@@ -150,9 +149,8 @@ extension SessionStore {
                     JOIN feed_segments s ON s.id = p.segment_id AND s.edition_id = c.edition_id
                     WHERE c.binding_id = ? AND c.edition_id = ?
                     """, arguments: [id, editionID.map { PersistenceValueCoding.uuid($0.rawValue) }])
-                if let target, try Self.member(db, editionID: target.editionID, cardID: target.cardID) {
-                    try PublicationStore.markSeen(editionID: target.editionID, cardID: target.cardID, in: db)
-                }
+                // Activating a retained reading restores a cursor; it is not a viewport
+                // observation, so it must not claim visual exposure for any card.
             }
             try db.execute(sql: "UPDATE reader_history_preparations SET selected = 0, edition_id = NULL, checkpoint_present = 0 WHERE binding_id = ?",
                 arguments: [id])

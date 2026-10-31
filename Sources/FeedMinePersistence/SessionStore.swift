@@ -61,7 +61,8 @@ public struct SessionStore: Sendable {
                     checkpoint.topDelta, checkpoint.cardHeight])
             try Self.persistContext(checkpoint, in: db)
             if bindingActivation != nil { try db.execute(sql: "UPDATE session_reader_binding SET checkpoint_present = 1 WHERE singleton_id = 1") }
-            try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
+            // Cursor durability protects published history; it never proves that a physical cell was seen.
+            // The viewport observation path owns `markSeen`.
         }
     }
 
@@ -100,7 +101,8 @@ public struct SessionStore: Sendable {
                 checkpoint.topDelta, checkpoint.cardHeight])
         try persistContext(checkpoint, in: db)
         if bindingActivation != nil { try db.execute(sql: "UPDATE session_reader_binding SET checkpoint_present = 1 WHERE singleton_id = 1") }
-        try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
+        // The first cursor is the reader's position, not a visual impression: a hidden occurrence
+        // stays unseen until the viewport path observes the card.
     }
 
     /// The saved position, read as **the reader's own statement**: the card is their position and an Edition is a

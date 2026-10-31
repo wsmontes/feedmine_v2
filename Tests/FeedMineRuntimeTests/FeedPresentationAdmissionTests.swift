@@ -100,6 +100,55 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         return try XCTUnwrap(value)
     }
 
+    /// Runtime storage can fail while any of the three local history admissions
+    /// is reading. No partial projection may replace the existing reader window,
+    /// and the same explicit admission must succeed once storage is available.
+    func testHistoryAdmissionsCanRetryAfterLocalReadFailure() async throws {
+        for phase in ["forward", "backward", "growth"] {
+            let f = try fixture()
+            _ = try await admitted(f.session, .initial(f.bounds))
+            let action: FeedPresentationAdmission
+            switch phase {
+            case "forward":
+                try f.publishTail()
+                let observed = observation(f.cards[3], placement: .top)
+                _ = try await recorded(f.session, observed)
+                action = .forwardScroll(observed)
+            case "backward":
+                let observed = observation(f.cards[1])
+                _ = try await recorded(f.session, observed)
+                action = .backwardScroll(observed)
+            default:
+                try f.publishTail()
+                action = .publishedGrowth
+            }
+            let beforeValue = await f.session.currentPresentation()
+            let before = try XCTUnwrap(beforeValue)
+            try f.database.write { db in
+                try db.execute(sql: "ALTER TABLE published_cards RENAME TO unavailable_cards")
+            }
+            do {
+                _ = try await f.session.admitPresentation(action)
+                XCTFail("Expected local publication read failure for \(phase)")
+            } catch {
+                XCTAssertTrue(String(describing: error).contains("no such table: published_cards"),
+                    "Unexpected \(phase) error: \(error)")
+            }
+            let afterFailure = await f.session.currentPresentation()
+            XCTAssertEqual(afterFailure, before,
+                "\(phase): failed local admission must preserve window, anchor and provenance")
+            try f.database.write { db in
+                try db.execute(sql: "ALTER TABLE unavailable_cards RENAME TO published_cards")
+            }
+            let retried = try await admitted(f.session, action)
+            XCTAssertNotEqual(retried.window.items.map(\.id), before.window.items.map(\.id),
+                "\(phase): the exact admission must remain retryable after storage recovery")
+            XCTAssertEqual(retried.window.anchor, before.window.anchor,
+                "\(phase): admitting stored cards must not change the reader's anchor")
+            XCTAssertGreaterThan(retried.provenance.position, before.provenance.position)
+        }
+    }
+
     /// Committed publication while the reader is stationary: the reserve grows, the list does not.
     func testPreparationWhileStationaryDoesNotExtendPresentation() async throws {
         let f = try fixture()

@@ -71,6 +71,7 @@ public final class FeedScreenStore {
     /// isso custa é o dono do cursor (`FeedSession.notePresentedPosition(_:atRest:)`): uma posição já durável não é
     /// reescrita, e em movimento a janela declarada em `FeedSession.settledPositionDebounceWindow` segue valendo.
     public func publishPresentedPosition(_ anchor: PresentationAnchor, atRest: Bool) {
+        guard renderedItems.contains(where: { $0.id == anchor.cardID }) else { return }
         onPresentedPosition?(anchor, atRest)
     }
 
@@ -284,21 +285,48 @@ public final class FeedScreenStore {
         } else {
             presentationState = state
         }
+        let priorPresentation = state.presentation
         // A restore that could not redraw the reader's own card states it once, through the existing toast: the
         // screen opened on the closest ready card, and claiming an exact resume would be false. The same position
         // reported again (another projection) does not repeat the notice.
         if let substituted = presentationState.presentation?.unavailablePositionCardID,
-            substituted != state.presentation?.unavailablePositionCardID {
+            substituted != priorPresentation?.unavailablePositionCardID {
             showToast(text: String(localized: "O card em que você parou não está disponível; abrimos no card mais próximo."),
                 systemImage: "exclamationmark.triangle")
         }
         state = presentationState.reporting(received.work)
-        // **Só o que a lista desenha é republicado.** A posição do leitor e a proveniência continuam em `state`,
-        // que muda a cada avanço; a lista observa os itens, que mudam quando a janela muda. Sem isso, cada avanço
-        // re-renderizava a lista inteira — 12–14 vezes por segundo numa rajada (medido no aparelho, 2026-10-14).
-        // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
-        let rendered = presentationState.presentation?.window.items
-        if rendered != renderedItems { renderedItems = rendered ?? [] }
+        // The presentation is the full causal/durable history, not the physical
+        // LazyVStack. Only a continuous decoded run containing its *own* anchor
+        // may be installed as the first visual window. Never turn a deferred
+        // image into a placeholder, join ready siblings across a gap or move a
+        // missing saved anchor to another card.
+        if presentationState.presentation != priorPresentation {
+            let next = presentationState.presentation.flatMap {
+                FeedReadyVisualWindow.initial(snapshot: $0)
+            }
+            let sameScope = renderedEditionID == presentationState.presentation?.editionID &&
+                renderedContextKey == presentationState.presentation?.contextKey &&
+                physicalWindow?.snapshot.provenance.sequenceID ==
+                    presentationState.presentation?.provenance.sequenceID
+            if !sameScope || renderedItems.isEmpty {
+                // An explicit context/edition replacement has no old reader
+                // position to preserve. A deferred durable anchor gets no
+                // invented physical target or placeholder cell.
+                physicalWindow = next
+                renderedItems = next?.cards ?? []
+            } else if let next {
+                let previousIDs = renderedItems.map(\.id)
+                let nextIDs = next.cards.map(\.id)
+                // Only append-only or same-ID changes can use the existing
+                // automatic native offset contract without a physical rebase.
+                // Retain the *old* ready snapshot as visual evidence whenever
+                // trim/prepend/re-entry requires a measured handoff.
+                if nextIDs.starts(with: previousIDs) {
+                    physicalWindow = next
+                    if next.cards != renderedItems { renderedItems = next.cards }
+                }
+            }
+        }
         if received.work != work { work = received.work }
         if presentationState.presentation?.editionID != renderedEditionID {
             renderedEditionID = presentationState.presentation?.editionID
@@ -310,6 +338,12 @@ public final class FeedScreenStore {
 
     /// O que a lista desenha, publicado **apenas quando muda**. Nenhuma leitura daqui depende da posição do leitor.
     public private(set) var renderedItems: [PresentationCard] = []
+    /// One physical ownership snapshot, distinct from the authoritative
+    /// current semantic state. If a logical projection changes while its
+    /// corresponding cells cannot be swapped safely, this is the exact
+    /// causal provenance of the cells the user can still see and tap.
+    @ObservationIgnored private var physicalWindow: FeedReadyVisualWindow?
+    var displayedPresentation: FeedPresentationSnapshot? { physicalWindow?.snapshot }
     public private(set) var renderedEditionID: FeedEditionID?
     public private(set) var renderedContextKey: ContextKey?
     public private(set) var work: FeedPresentationState.Work = .idle
@@ -385,6 +419,7 @@ public final class FeedScreenStore {
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         rendered: FeedPresentationSnapshot? = nil, reconciliation: Bool = false,
         establishesPosition: Bool = false) {
+        guard renderedItems.contains(where: { $0.id == observation.anchor.cardID }) else { return }
         if let onRenderedViewport, let rendered {
             viewportOrdinal += 1
             guard let evidence = rendered.evidence(for: observation, ordinal: viewportOrdinal,
@@ -398,6 +433,7 @@ public final class FeedScreenStore {
     /// One semantic request from one admitted card. Only an admitted occurrence may act, and the
     /// external consumer decides how to execute it.
     public func perform(_ event: ReaderCardActionEvent, rendered: FeedPresentationSnapshot? = nil) {
+        guard renderedItems.contains(where: { $0.id == event.cardID }) else { return }
         if let rendered {
             guard let current = state.presentation,
                 rendered.contextKey == current.contextKey, rendered.editionID == current.editionID,

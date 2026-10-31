@@ -7,6 +7,9 @@ struct FeedWindowOffsetCorrection {
     private var samples: [PublicationCardID: FeedVisualCardGeometry] = [:]
     private var pending: FeedVisualCardGeometry?
 
+    /// Read-only identity of the window reported by the native probe.
+    /// Historical membership lives elsewhere; these IDs are physical-rail evidence.
+    var currentWindowIDs: [PublicationCardID] { ids }
     var retainedCount: Int { samples.count }
     var pendingCardID: PublicationCardID? { pending?.cardID }
     var pendingProof: FeedVisualCardGeometry? { pending }

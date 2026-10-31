@@ -21,7 +21,94 @@ final class FeedNativeScrollOffset {
     private var suppressCorrectionEvents = false
     private var correctedOffset: CGFloat = 0
     private var interactionPhaseActive = false
-    func setInteractionActive(_ active: Bool) { interactionPhaseActive = active }
+
+    // The normal native correction below remains the ONLY offset writer.
+    // This receipt observes one tokened native correction; it never applies
+    // a second delta or permits a post-layout proof from a different attempt.
+    private enum ProvisionalPhase {
+        case armed
+        case written(offset: CGFloat)
+        case verified(offset: CGFloat)
+    }
+    private var provisionalCorrection:
+        (transaction: UUID, witness: PublicationCardID, phase: ProvisionalPhase)?
+    private var provisionalWindowChanged = false
+    private weak var provisionalSourceView: UIScrollView?
+    private var provisionalAdjustedInset: UIEdgeInsets?
+
+    private var provisionalPhysicalScopeMatches: Bool {
+        guard provisionalCorrection != nil,
+            let scrollView, let source = provisionalSourceView,
+            scrollView === source, let expected = provisionalAdjustedInset
+        else { return false }
+        let actual = scrollView.adjustedContentInset
+        return actual.top == expected.top && actual.left == expected.left &&
+            actual.bottom == expected.bottom && actual.right == expected.right
+    }
+
+    private func revokeProvisionalScope() {
+        provisionalCorrection = nil
+        provisionalWindowChanged = false
+        provisionalSourceView = nil
+        provisionalAdjustedInset = nil
+    }
+
+    private func discardUntrustedProvisionalGeometry() {
+        revokeProvisionalScope()
+        correction.cancel(discardingSamples: true)
+        suppressCorrectionEvents = false
+        visualWitness = nil
+    }
+
+    func setInteractionActive(_ active: Bool) {
+        interactionPhaseActive = active
+        if active, provisionalCorrection != nil {
+            discardUntrustedProvisionalGeometry()
+        }
+    }
+
+    /// Call before publishing the provisional window's physical IDs. Receipt
+    /// is available only after the existing writer and its geometry callback.
+    @discardableResult
+    func beginProvisionalCorrection(transaction: UUID,
+        witness: PublicationCardID) -> Bool {
+        guard let scrollView, !nativeGestureActive, !isAnimatingScroll,
+            !isCorrecting, correction.pendingCardID == nil,
+            provisionalCorrection == nil else { return false }
+        provisionalCorrection = (transaction, witness, .armed)
+        provisionalWindowChanged = false
+        provisionalSourceView = scrollView
+        provisionalAdjustedInset = scrollView.adjustedContentInset
+        return true
+    }
+
+    /// On interrupted/rolled-back provisional layout, discard stale native
+    /// witnesses. The host alone owns any physical old-layout restoration.
+    @discardableResult
+    func cancelProvisionalCorrection(transaction: UUID) -> Bool {
+        guard provisionalCorrection?.transaction == transaction else { return false }
+        discardUntrustedProvisionalGeometry()
+        return true
+    }
+
+    /// A receipt, NOT a writable delta: the existing adjust(by:) is the only
+    /// native offset writer. Consume at most once, after actual layout proof.
+    func takeProvisionalConfirmation(transaction: UUID) -> Bool {
+        guard !nativeGestureActive, !isAnimatingScroll,
+            provisionalPhysicalScopeMatches,
+            let scrollView, let entry = provisionalCorrection,
+            entry.transaction == transaction,
+            case .verified(let offset) = entry.phase,
+            abs(scrollView.contentOffset.y - offset) < 0.5 else {
+            if provisionalCorrection?.transaction == transaction &&
+                !provisionalPhysicalScopeMatches {
+                discardUntrustedProvisionalGeometry()
+            }
+            return false
+        }
+        revokeProvisionalScope()
+        return true
+    }
     private var nativeGestureActive: Bool {
         guard let scrollView else { return interactionPhaseActive }
         return interactionPhaseActive || scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
@@ -32,6 +119,11 @@ final class FeedNativeScrollOffset {
     /// sinal nativo de que nada do que o desenho mostrar agora é uma posição em repouso: um gesto não aparece aqui
     /// (`isDragging`/`isDecelerating` o dizem), e por isso ele fecha o caso de uma tela que se move **sem** o leitor.
     var isAnimatingScroll: Bool { scrollView?.isScrollAnimating ?? false }
+    /// Read-only guard for a host's measured physical rollback receipt.
+    /// This never applies, schedules or retries a native offset write.
+    var canVerifyPhysicalRollback: Bool {
+        scrollView != nil && !nativeGestureActive && !isAnimatingScroll && !isCorrecting
+    }
     #if DEBUG
     private(set) var activeWrites = 0
     private(set) var activeWindowChanges = 0
@@ -39,14 +131,31 @@ final class FeedNativeScrollOffset {
     private(set) var maximumActiveLayoutStep: CGFloat = 0
     private var gestureProofs: [PublicationCardID: (proof: FeedVisualCardGeometry, nativeOffset: CGFloat)] = [:]
     #endif
+    /// Only the IDs most recently reported by the physical SwiftUI probe.
+    /// Never use the full historical publication window as rollback evidence.
+    var currentWindowIDs: [PublicationCardID] { correction.currentWindowIDs }
     private(set) var appliedCount = 0
     private(set) var maximumResidual: CGFloat = 0
     private var visualWitness: (id: PublicationCardID, expectedY: CGFloat, offset: CGFloat)?
     private(set) var measuredCorrections = 0
     private(set) var maximumVisualResidual: CGFloat = 0
     func updateWindow(_ ids: [PublicationCardID]) {
+        if provisionalCorrection != nil && !provisionalPhysicalScopeMatches {
+            discardUntrustedProvisionalGeometry()
+        }
         let gestureActive = nativeGestureActive
+        if gestureActive {
+            revokeProvisionalScope()
+        }
+        let previousPending = correction.pendingCardID
         let changed = correction.updateWindow(ids, allowingCorrection: !gestureActive)
+        if changed, provisionalCorrection != nil {
+            if provisionalWindowChanged || previousPending != nil {
+                discardUntrustedProvisionalGeometry()
+            } else {
+                provisionalWindowChanged = true
+            }
+        }
         #if DEBUG
         if changed {
             let kept = Set(ids)
@@ -67,6 +176,10 @@ final class FeedNativeScrollOffset {
         visualWitness = nil
     }
     func observe(_ proof: FeedVisualCardGeometry) -> Bool {
+        if provisionalCorrection != nil && !provisionalPhysicalScopeMatches {
+            discardUntrustedProvisionalGeometry()
+            return false
+        }
         #if DEBUG
         if FeedVisualCapture.tracesCapture, let scrollView {
             let nativeOffset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
@@ -89,6 +202,7 @@ final class FeedNativeScrollOffset {
         // A gesture owns the native offset. Discard, never postpone, any witness
         // crossing it; keep fresh geometry only for a later independent idle mutation.
         if nativeGestureActive {
+            revokeProvisionalScope()
             correction.cancel()
             _ = correction.observe(proof)
             suppressCorrectionEvents = false
@@ -99,8 +213,18 @@ final class FeedNativeScrollOffset {
         // same retained card when the layout first reports the actual corrected native offset.
         if let witness = visualWitness, witness.id == proof.cardID,
             abs(proof.offset - witness.offset) < 0.5 {
-            maximumVisualResidual = max(maximumVisualResidual, abs(proof.frame.minY - witness.expectedY))
+            let residual = abs(proof.frame.minY - witness.expectedY)
+            maximumVisualResidual = max(maximumVisualResidual, residual)
             measuredCorrections += 1
+            if let entry = provisionalCorrection, entry.witness == proof.cardID,
+                case .written(let offset) = entry.phase,
+                let native = scrollView,
+                !isAnimatingScroll,
+                abs(native.contentOffset.y - offset) < 0.5,
+                abs(offset - proof.offset) < 0.5, residual <= 1 {
+                provisionalCorrection = (entry.transaction, entry.witness,
+                    .verified(offset: offset))
+            }
             visualWitness = nil
             // A correção **terminou**: esta é a geometria corrigida, reportada pelo próprio layout. Enquanto a
             // supressão ficasse de pé depois disso — ela só era desfeita por um gesto —, todo callback de carta era
@@ -111,7 +235,35 @@ final class FeedNativeScrollOffset {
             suppressCorrectionEvents = false
         }
         let prior = correction.pendingProof
-        guard let delta = correction.observe(proof) else { return isCorrecting }
+        let observedDelta = correction.observe(proof)
+        if observedDelta == nil, let entry = provisionalCorrection,
+            case .armed = entry.phase, provisionalWindowChanged,
+            entry.witness == proof.cardID,
+            let before = prior, before.cardID == proof.cardID,
+            before.height == proof.height, before.frame.size == proof.frame.size,
+            proof.frame.maxY > 0, proof.frame.minY < proof.height,
+            let scrollView, !isAnimatingScroll,
+            abs(scrollView.contentOffset.y - proof.offset) < 0.5,
+            abs(proof.frame.minY + proof.offset -
+                before.frame.minY - before.offset) <= 0.5 {
+            // The physical list changed but the reader's measured position did
+            // not. Confirm the post-layout callback without writing any offset.
+            // Same token, identity, viewport size and actual native position.
+            provisionalCorrection = (entry.transaction, entry.witness,
+                .verified(offset: scrollView.contentOffset.y))
+        }
+        guard let delta = observedDelta else { return isCorrecting }
+        if let entry = provisionalCorrection {
+            // Only one automatic native offset write, for this exact ready
+            // witness, is permitted while a provisional handoff is active.
+            // Another witness or mutation revokes its receipt instead of
+            // applying a competing correction to the reader's scroll view.
+            guard entry.witness == proof.cardID,
+                case .armed = entry.phase else {
+                discardUntrustedProvisionalGeometry()
+                return false
+            }
+        }
         guard let scrollView else {
             #if DEBUG
             if FeedVisualCapture.tracesCapture {
@@ -132,6 +284,18 @@ final class FeedNativeScrollOffset {
         #endif
         adjust(by: delta)
         correctedOffset = scrollView.contentOffset.y
+        let nativeMovement = correctedOffset - before
+        if let entry = provisionalCorrection, entry.witness == proof.cardID,
+            case .armed = entry.phase, !nativeGestureActive {
+            if abs(nativeMovement - delta) <= 0.5 {
+                provisionalCorrection = (entry.transaction, entry.witness,
+                    .written(offset: correctedOffset))
+            } else {
+                // A constrained UIScrollView move cannot authorize a full
+                // visual handoff. Do not leave a stale provisional receipt.
+                discardUntrustedProvisionalGeometry()
+            }
+        }
         visualWitness = (proof.cardID, proof.frame.minY - delta + proof.offset - before, correctedOffset)
         appliedCount += 1
         maximumResidual = max(maximumResidual, abs(delta - (scrollView.contentOffset.y - before)))

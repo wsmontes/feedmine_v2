@@ -15,6 +15,10 @@ final class InitialPublicationAtomicityTests: XCTestCase {
         XCTAssertNil(try store.edition(id: e.id))
         XCTAssertNil(try store.card(id: c.id))
         XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM feed_segments WHERE id = ?", arguments: [s.id.rawValue.uuidString.lowercased()]) }, 0)
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql:
+            "SELECT count(*) FROM session_checkpoint WHERE edition_id = ?",
+            arguments: [e.id.rawValue.uuidString.lowercased()]) }, 0,
+            "Rejected initial publication must not leak a saved cursor")
     }
     func testP1SuccessCreatesFourExactFacts() throws {
         let db = try StorageFixture.database(self), store = PublicationStore(database: db)
@@ -26,6 +30,10 @@ final class InitialPublicationAtomicityTests: XCTestCase {
         XCTAssertEqual(try store.segments(editionID: e.id), [s])
         XCTAssertEqual(try store.card(id: c.id), c)
         XCTAssertEqual(try SessionStore(database: db).checkpoint(), cp)
+        // Persisting the initial cursor cannot manufacture visual exposure.
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM publication_card_usage") }, 0)
+        XCTAssertEqual(try db.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM edition_reading_state") }, 0,
+            "A cursor is a position, not a seen high-water: no reading state exists before exposure")
     }
     func testP2CheckpointCardOutsideSegmentWritesNothing() throws {
         let db = try StorageFixture.database(self), e = StorageFixture.edition(), c = StorageFixture.card()

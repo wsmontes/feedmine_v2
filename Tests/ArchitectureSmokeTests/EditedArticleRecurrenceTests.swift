@@ -123,7 +123,7 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         let published = try live()
         XCTAssertEqual(published.map(\.primaryText), ["seen", "E1"])
         XCTAssertEqual(try PublicationHistory(database: database).exposure(editionID: edition,
-            originIDs: [editedOrigin], readerAnchorCardID: anchor).unseenOriginIDs, [editedOrigin],
+            originIDs: [editedOrigin]).unseenOriginIDs, [editedOrigin],
             "The second occurrence is published and still ahead of the reader")
         let segmentsBefore = try store.segments(editionID: edition)
         let checkpointBefore = try SessionStore(database: database).checkpoint()
@@ -137,7 +137,7 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         // forbids rewriting the published card, and the never-published story is published normally.
         guard case .published(_, let late) = try LocalProductionSlice(database: database).run(.init(plan: plan, policy: policy,
             editionID: edition, after: nil, examinedCapacity: 10, segmentID: FeedSegmentID(), segmentSeed: 1,
-            segmentCreatedAt: Date(timeIntervalSince1970: 3500), readerAnchorCardID: anchor), prepare: Self.prepare) else {
+            segmentCreatedAt: Date(timeIntervalSince1970: 3500)), prepare: Self.prepare) else {
             return XCTFail("The unexposed story must not block the rest of the supply")
         }
         XCTAssertEqual(try store.card(id: late.cardIDs[0])?.primaryText, "late")
@@ -162,7 +162,7 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         try store.markSeen(editionID: edition, cardID: published[1].id)
         guard case .published(_, let recurrence) = try LocalProductionSlice(database: database).run(.init(plan: plan, policy: policy,
             editionID: edition, after: nil, examinedCapacity: 10, segmentID: FeedSegmentID(), segmentSeed: 1,
-            segmentCreatedAt: Date(timeIntervalSince1970: 4500), readerAnchorCardID: published[1].id), prepare: Self.prepare) else {
+            segmentCreatedAt: Date(timeIntervalSince1970: 4500)), prepare: Self.prepare) else {
             return XCTFail("A material edit of a seen occurrence must be published")
         }
         XCTAssertEqual(recurrence.cardIDs.count, 1)

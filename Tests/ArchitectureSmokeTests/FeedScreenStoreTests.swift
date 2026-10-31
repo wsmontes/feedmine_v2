@@ -72,7 +72,8 @@ final class FeedScreenStoreTests: XCTestCase {
     /// esse fato como qualquer outra entrada explícita — ele não guarda a posição (o dono do cursor, a sessão, é
     /// quem lembra dela e decide o que ela custa). Publicar não submete observação nenhuma: é uma posição, não uma
     /// oportunidade de produção.
-    func testS1aPresentedPositionIsForwardedAndNeverStored() {
+    func testS1aPresentedPositionIsForwardedAndNeverStored() async throws {
+        let f = try fixture(), published = try await snapshot(f)
         var forwarded: [PresentationAnchor] = []
         var rests: [Bool] = []
         let store = FeedScreenStore(onViewport: { _, _ in XCTFail("Unrequested viewport") },
@@ -80,15 +81,19 @@ final class FeedScreenStoreTests: XCTestCase {
                 forwarded.append(anchor)
                 rests.append(atRest)
             })
-        let first = PublicationCardID()
+        try store.install(FeedPresentationState(presentation: published))
+        let first = try XCTUnwrap(store.renderedItems.first?.id)
         store.publishPresentedPosition(PresentationAnchor(cardID: first, placement: .top), atRest: false)
         store.publishPresentedPosition(PresentationAnchor(cardID: first, placement: .top), atRest: true)
         XCTAssertEqual(rests, [false, true], "o repouso do desenho é o fato que o host recebe")
         XCTAssertEqual(forwarded, [PresentationAnchor(cardID: first, placement: .top),
             PresentationAnchor(cardID: first, placement: .top)])
-        // E nada disso vira estado do store: nenhuma apresentação, nenhum conteúdo desenhado.
-        XCTAssertNil(store.state.presentation)
-        XCTAssertTrue(store.renderedItems.isEmpty)
+        // The physical ID is forwarded without rewriting the logical snapshot.
+        XCTAssertEqual(store.state.presentation, published)
+        XCTAssertEqual(store.renderedItems.first?.id, first)
+        let foreign = PublicationCardID()
+        store.publishPresentedPosition(.init(cardID: foreign, placement: .top), atRest: true)
+        XCTAssertEqual(rests, [false, true], "offscreen historical IDs cannot become reader positions")
     }
 
     func testS2InstallFirstRealRestoredPresentationExactly() async throws {
@@ -275,10 +280,11 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(store.state.work, .pending)
     }
 
-    /// The one admitted copy of presentation data: the projection the list draws (2026-10-14). It exists
-    /// because `state` changes on every advance (the anchor lives in it) and the list must not re-evaluate
-    /// for a position it does not draw. It is derived, never authored — `testS11ThePublishedProjectionCannotDrift`
-    /// proves it always equals what `install` accepted.
+    /// The one observable physical projection exists because logical state
+    /// changes on every advance. It is derived from the accepted history but
+    /// contains only a contiguous ready run, never deferred media descriptors.
+    /// The physical rail retains the snapshot that *its cells* came from;
+    /// this is visual evidence, not a second semantic cursor or session.
     private static let publishedProjection: Set<String> = ["_renderedItems", "_renderedEditionID",
         "_renderedContextKey", "_work"]
 
@@ -301,7 +307,7 @@ final class FeedScreenStoreTests: XCTestCase {
             "_availableDestinations", "onSubmitSearch", "onNavigate", "_bookmarkedIDs", "_isSearching",
             "_searchQuery", "_toast", "_filterCount", "_bookmarkBoxActive", "_hasCommittedSearch",
             "_$observationRegistrar", "onRenderedViewport", "viewportOrdinal", "_isReadingInteractionActive",
-            "_renderedItems", "_renderedEditionID", "_renderedContextKey", "_work",
+            "_renderedItems", "physicalWindow", "_renderedEditionID", "_renderedContextKey", "_work",
             // PO 2026-10-14: a posição do **viewport desenhado** é repassada, não guardada — o dono do cursor
             // (a sessão) é quem a lembra e quem decide de quanto em quanto tempo ela vira escrita.
             "onPresentedPosition",
@@ -442,18 +448,25 @@ final class FeedScreenStoreTests: XCTestCase {
             failedInThisSession: false), .ready)
     }
 
-    /// No drift is possible: every accepted install republishes the projection straight from the state the
-    /// handoff accepted, and an accepted absence (report-only) republishes it unchanged.
+    /// The logical snapshot is the full retained history; the physical list is
+    /// its anchor-containing contiguous ready run. Work-only updates keep the
+    /// installed physical IDs and never rewrite the logical position.
     func testS11ThePublishedProjectionCannotDrift() async throws {
         let f = try fixture(), published = try await snapshot(f)
         let store = FeedScreenStore { _, _ in }
         try store.install(try FeedPresentationHandoff.receive(snapshot: published, into: store.state))
-        XCTAssertEqual(store.renderedItems, store.state.presentation?.window.items ?? [])
+        XCTAssertEqual(store.renderedItems.map(\.id), published.window.items.map(\.id),
+            "This fixture is entirely ready: its physical run must match logical order")
+        XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady))
+        XCTAssertEqual(store.state.presentation?.window.items.map(\.id), published.window.items.map(\.id))
         XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
         XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
         XCTAssertEqual(store.work, store.state.work)
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
-        XCTAssertEqual(store.renderedItems, store.state.presentation?.window.items ?? [])
+        XCTAssertEqual(store.renderedItems.map(\.id), published.window.items.map(\.id),
+            "This fixture is entirely ready: its physical run must match logical order")
+        XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady))
+        XCTAssertEqual(store.state.presentation?.window.items.map(\.id), published.window.items.map(\.id))
         XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
         XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
         XCTAssertEqual(store.work, store.state.work)

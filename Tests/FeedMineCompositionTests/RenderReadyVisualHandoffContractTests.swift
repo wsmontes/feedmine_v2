@@ -1,0 +1,298 @@
+import Foundation
+import CoreGraphics
+import ImageIO
+import CryptoKit
+import XCTest
+import FeedMineDomain
+import FeedMinePersistence
+import FeedMinePublication
+import FeedMineRuntime
+@testable import FeedMineUI
+
+/// P0 / Issue #7: historical membership and render-ready UI membership are
+/// different contracts. No post-admission image completion is allowed in a cell.
+@MainActor
+final class RenderReadyVisualHandoffContractTests: XCTestCase {
+    /// Pixel-backed positive control: an existing valid SHA-256 asset must
+    /// remain an actual image (not a placeholder or text-only downgrade).
+    private func localPNG(in directory: URL) throws -> String {
+        let context = try XCTUnwrap(CGContext(
+            data: nil, width: 32, height: 24, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 32, height: 24))
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(
+            data, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try XCTUnwrap(context.makeImage()), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let bytes = data as Data
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let folder = directory.appendingPathComponent("Media/sha256")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try bytes.write(to: folder.appendingPathComponent(digest))
+        return digest
+    }
+
+    func testReadyHeroIsActuallyDecodedInNormalAndHeldVisualSurfaces() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let digest = try localPNG(in: directory)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let version = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(
+            id: EditorialRevisionID(), contextKey: .init(request: .main),
+            catalogGeneration: .init(rawValue: 1),
+            userSelectionVersion: version, eligibilityPolicyVersion: version,
+            scoringPolicyVersion: version, sequencingPolicyVersion: version,
+            exposurePolicyVersion: version, selectionSchemaVersion: .init(rawValue: 1))
+        let edition = PublicationStore.EditionRecord(
+            id: FeedEditionID(), editorialRevision: revision,
+            publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date())
+        let readyHero = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Decoded hero", primaryText: "Complete local media",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: "sha256:" + digest,
+            mediaPixelWidth: 32, mediaPixelHeight: 24,
+            mediaMimeType: "image/png", renderLayout: "hero",
+            renderMediaAspectRatio: 4.0 / 3.0, primaryActionKind: nil,
+            primaryActionReference: nil)
+        let textSibling = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Ready sibling", primaryText: "Prepared text",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil,
+            mediaMimeType: nil, renderLayout: "textOnly",
+            renderMediaAspectRatio: nil, primaryActionKind: nil,
+            primaryActionReference: nil)
+        try PublicationStore(database: database).createInitialEdition(
+            edition,
+            firstSegment: .init(id: FeedSegmentID(), editionID: edition.id,
+                ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1,
+                createdAt: Date(), cardIDs: [readyHero.id, textSibling.id]),
+            cards: [readyHero, textSibling],
+            initialCheckpoint: .init(editionID: edition.id, cardID: readyHero.id,
+                anchorPlacement: "center", updatedAt: Date()))
+        let decoder = try XCTUnwrap(PresentationImageDecoder(
+            assetDirectory: directory.appendingPathComponent("Media"),
+            heroMaxPixel: 64, thumbnailMaxPixel: 32))
+        let session = FeedSession(
+            publicationHistory: .init(database: database), imageDecoder: decoder)
+        let result = try await session.admitPresentation(
+            .restore(.init(backwardCapacity: 0, forwardCapacity: 1)))
+        let snapshot = try XCTUnwrap(result)
+        XCTAssertEqual(snapshot.window.items.map(\.id), [readyHero.id, textSibling.id],
+            "Ready hero must retain its original slot and neighbouring text")
+        XCTAssertEqual(snapshot.window.anchor.cardID, readyHero.id)
+        let readyRail = FeedVisualRailIndex(snapshot: snapshot)
+        XCTAssertEqual(readyRail.logicalCount, 2)
+        XCTAssertEqual(readyRail.visualAnchorID, readyHero.id)
+        XCTAssertEqual(readyRail.slot(at: 0), .ready(index: 0, card: snapshot.window.items[0]))
+        XCTAssertTrue(snapshot.window.items[0].isRenderReady,
+            "A valid locally decoded hero is a visual proof candidate")
+        XCTAssertTrue(snapshot.window.items[1].isRenderReady,
+            "Text-only sibling is ready without any image bytes")
+        XCTAssertNotNil(snapshot.evidence(for: .init(anchor: .init(
+            cardID: readyHero.id, placement: .center)), ordinal: 1),
+            "A genuinely decoded hero must remain eligible to generate visual evidence")
+        let decoded = try XCTUnwrap(snapshot.window.items.first?.image,
+            "The test's valid local asset must decode before admission")
+        XCTAssertEqual(decoded.key, "sha256:" + digest)
+        XCTAssertEqual(decoded.cgImage.width, 32)
+        XCTAssertEqual(decoded.cgImage.height, 24)
+
+        var observedReadyIDs: [PublicationCardID] = []
+        let screen = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { evidence, _ in observedReadyIDs.append(evidence.observation.anchor.cardID) })
+        try screen.install(FeedPresentationState(presentation: snapshot))
+        screen.submitViewport(.init(anchor: .init(cardID: readyHero.id, placement: .center)),
+            activity: .stationary, rendered: snapshot)
+        XCTAssertEqual(observedReadyIDs, [readyHero.id],
+            "A decoded hero must still reach the semantic viewport consumer")
+        XCTAssertEqual(screen.renderedItems.map(\.id), [readyHero.id, textSibling.id],
+            "Visual readiness must not be implemented by dropping all images")
+        XCTAssertEqual(screen.renderedItems.first?.layout, .hero)
+        XCTAssertEqual(screen.renderedItems.first?.image, decoded)
+
+        var interaction = FeedInteractionPresentation()
+        interaction.begin(snapshot, owner: ObjectIdentifier(screen),
+            renderedItems: screen.renderedItems)
+        let held = try XCTUnwrap(interaction.heldItems(matching: screen))
+        XCTAssertEqual(held.map(\.id), [readyHero.id, textSibling.id],
+            "Gesture-held surface must retain the same ready hero identity")
+        XCTAssertEqual(held.first?.image, decoded,
+            "Gesture hold must preserve the decoded image, not a placeholder")
+
+        // A newer logical projection cannot swap the old physical window
+        // while this gesture owns its rendered hero and offset.
+        let laterResult = try await session.submitViewport(.init(
+            anchor: .init(cardID: textSibling.id, placement: .top)))
+        let later = try XCTUnwrap(laterResult)
+        XCTAssertEqual(later.window.anchor.cardID, textSibling.id)
+        try screen.install(FeedPresentationState(presentation: later))
+        interaction.noteIncoming(screen)
+        XCTAssertEqual(interaction.presentation(for: screen), snapshot,
+            "The old projection remains the gesture's provenance authority")
+        XCTAssertEqual(interaction.heldItems(matching: screen), held,
+            "Even after new admission, the held pixels and ordering stay frozen")
+        interaction.end(afterReading: readyHero.id, store: screen)
+        if !later.window.items.contains(where: { $0.id == readyHero.id }) {
+            XCTAssertTrue(interaction.isHolding,
+                "Do not discard an active history reader before reconciliation")
+        }
+        interaction.end()
+    }
+
+    func testMissingHeroRemainsInHistoryButNeverBecomesARenderedCell() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let version = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(
+            id: EditorialRevisionID(), contextKey: .init(request: .main),
+            catalogGeneration: .init(rawValue: 1),
+            userSelectionVersion: version, eligibilityPolicyVersion: version,
+            scoringPolicyVersion: version, sequencingPolicyVersion: version,
+            exposurePolicyVersion: version, selectionSchemaVersion: .init(rawValue: 1))
+        let edition = PublicationStore.EditionRecord(
+            id: FeedEditionID(), editorialRevision: revision,
+            publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date())
+
+        // Frozen image-bearing publication, but its SHA-256 file does not exist.
+        let missing = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Missing hero", primaryText: "Historical identity",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: "sha256:" + String(repeating: "0", count: 64),
+            mediaPixelWidth: 600, mediaPixelHeight: 400,
+            mediaMimeType: "image/png", renderLayout: "hero",
+            renderMediaAspectRatio: 1.5, primaryActionKind: nil,
+            primaryActionReference: nil)
+        let readyBefore = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Ready before", primaryText: "Ready even before the unavailable image",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil,
+            mediaMimeType: nil, renderLayout: "textOnly",
+            renderMediaAspectRatio: nil, primaryActionKind: nil,
+            primaryActionReference: nil)
+        let ready = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Ready text", primaryText: "Already prepared",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil,
+            mediaMimeType: nil, renderLayout: "textOnly",
+            renderMediaAspectRatio: nil, primaryActionKind: nil,
+            primaryActionReference: nil)
+        try PublicationStore(database: database).createInitialEdition(
+            edition,
+            firstSegment: .init(id: FeedSegmentID(), editionID: edition.id,
+                ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1,
+                createdAt: Date(), cardIDs: [readyBefore.id, missing.id, ready.id]),
+            cards: [readyBefore, missing, ready],
+            initialCheckpoint: .init(editionID: edition.id, cardID: ready.id,
+                anchorPlacement: "top", updatedAt: Date()))
+
+        let history = PublicationHistory(database: database)
+        let retained = try history.window(
+            editionID: edition.id,
+            around: .init(cardID: missing.id, placement: .center),
+            backwardCapacity: 1, forwardCapacity: 1)
+        XCTAssertEqual(retained.cards.map(\.id), [readyBefore.id, missing.id, ready.id],
+            "Not rendering a missing hero must not delete its publication identity")
+
+        // Use a real decoder, exactly as in the positive control. The only
+        // difference is that this published SHA-256 has no local bytes.
+        // The checkpoint itself is a legitimate ready text card.
+        let decoder = try XCTUnwrap(PresentationImageDecoder(
+            assetDirectory: directory.appendingPathComponent("Media"),
+            heroMaxPixel: 64, thumbnailMaxPixel: 32))
+        let session = FeedSession(publicationHistory: history, imageDecoder: decoder)
+        let result = try await session.admitPresentation(
+            .restore(.init(backwardCapacity: 2, forwardCapacity: 0)))
+        let snapshot = try XCTUnwrap(result)
+        XCTAssertEqual(snapshot.window.anchor.cardID, ready.id)
+        let deferredRail = FeedVisualRailIndex(snapshot: snapshot)
+        XCTAssertEqual(deferredRail.logicalCount, 3)
+        XCTAssertEqual(deferredRail.logicalAnchorIndex, 2)
+        XCTAssertEqual(deferredRail.visualAnchorID, ready.id)
+        XCTAssertEqual(deferredRail.slot(at: 1), .deferred(index: 1, id: missing.id))
+        let readyVisualIDs = snapshot.window.items.filter { $0.isRenderReady }.map(\.id)
+        XCTAssertEqual(readyVisualIDs, [readyBefore.id, ready.id],
+            "The shared visual proof predicate must not stall ready text siblings")
+        XCTAssertFalse(try XCTUnwrap(snapshot.window.items.first {
+            $0.id == missing.id
+        }).isRenderReady, "Missing published bytes are historical data, not visual evidence")
+        let missingObservation = ViewportObservation(
+            anchor: .init(cardID: missing.id, placement: .center))
+        let readyObservation = ViewportObservation(
+            anchor: .init(cardID: ready.id, placement: .top))
+        XCTAssertNil(snapshot.evidence(for: missingObservation, ordinal: 1),
+            "A retained historical image without pixels is not visual evidence")
+        XCTAssertNotNil(snapshot.evidence(for: readyObservation, ordinal: 2),
+            "The neighbouring ready text card must still generate viewport evidence")
+
+        var observedReadyIDs: [PublicationCardID] = []
+        let screen = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { evidence, _ in observedReadyIDs.append(evidence.observation.anchor.cardID) })
+        try screen.install(FeedPresentationState(presentation: snapshot))
+        screen.submitViewport(missingObservation, activity: .stationary, rendered: snapshot)
+        XCTAssertTrue(observedReadyIDs.isEmpty,
+            "Missing historical pixels must never be forwarded as a rendered observation")
+        screen.submitViewport(readyObservation, activity: .stationary, rendered: snapshot)
+        XCTAssertEqual(observedReadyIDs, [ready.id],
+            "Withholding an image cannot suppress a ready text observation")
+        XCTAssertEqual(screen.renderedItems.map(\.id), [ready.id],
+            "The physical rail starts at the durable ready anchor; never bridge a deferred hero")
+        XCTAssertFalse(screen.renderedItems.contains {
+            $0.isImageBearing && $0.image == nil
+        }, "An image-bearing placeholder must not be treated as a rendered card")
+        XCTAssertEqual(screen.renderedItems.map(\.title), ["Ready text"],
+            "The other ready sibling stays in logical history until measured cross-gap re-entry")
+        screen.submitViewport(.init(anchor: .init(cardID: readyBefore.id, placement: .top)),
+            activity: .stationary, rendered: snapshot)
+        XCTAssertEqual(observedReadyIDs, [ready.id],
+            "Logical readiness alone cannot invent viewport evidence outside the installed physical run")
+
+        // The held interaction is a second drawing route: it must not bypass
+        // the same visual readiness gate while a finger owns the old snapshot.
+        var interaction = FeedInteractionPresentation()
+        interaction.begin(snapshot, owner: ObjectIdentifier(screen),
+            renderedItems: screen.renderedItems)
+        XCTAssertEqual(interaction.heldItems(matching: screen)?.map(\.id),
+            [ready.id],
+            "A held viewport borrows exactly the installed ready cells")
+        interaction.end()
+
+        // A rejected historical observation must not erase the visible text
+        // siblings, change the anchor or advance the projection.
+        let attempted = ViewportObservation(anchor: .init(cardID: missing.id, placement: .center))
+        let beforeRejected = await session.currentPresentation()
+        _ = try await session.submitViewport(attempted)
+        let afterRejected = await session.currentPresentation()
+        XCTAssertEqual(afterRejected, beforeRejected,
+            "A missing-image target must be rejectable without mutating the reader")
+        if let afterRejected {
+            try screen.install(FeedPresentationState(presentation: afterRejected))
+        }
+        XCTAssertEqual(screen.renderedItems.map(\.id), [ready.id],
+            "Rejected image return cannot change the physically installed ready run")
+    }
+}

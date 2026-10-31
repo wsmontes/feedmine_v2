@@ -12,8 +12,7 @@ final class SessionStoreTests: XCTestCase {
         try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, cards), cards: cards)
         try store.markSeen(editionID: edition.id, cardID: cards[2].id)
         try store.markSeen(editionID: edition.id, cardID: cards[0].id)
-        let exposure = try store.exposure(editionID: edition.id, originIDs: [cards[1].originRecordID],
-            readerAnchorCardID: cards[0].id)
+        let exposure = try store.exposure(editionID: edition.id, originIDs: [cards[1].originRecordID])
         XCTAssertTrue(exposure.unseenOriginIDs.isEmpty,
             "The high water reached card 2 and never rewound to card 0")
         XCTAssertEqual(try store.segments(editionID: edition.id).flatMap(\.cardIDs), cards.map(\.id),

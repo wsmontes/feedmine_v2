@@ -233,9 +233,13 @@ public actor FeedSession {
             // even when this move changed neither the anchor nor residency.
             substitutionCleared = true
         }
-        try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
         let (bounded, residencyChanged) = try boundedResidency(items: items,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
+        // A card whose pixels were not drawn cannot certify visual exposure: rejecting the
+        // observation before `markSeen` keeps a restored descriptor from becoming "seen" material.
+        guard let target = bounded.first(where: { $0.id == observation.anchor.cardID }),
+            !target.isImageBearing || target.image != nil else { return current.presentation }
+        try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
         let anchorChanged = observation.anchor != current.presentation.window.anchor
         guard anchorChanged || residencyChanged || substitutionCleared else { return current.presentation }
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else { return current.presentation }
@@ -627,8 +631,9 @@ public actor FeedSession {
                 : try publicationHistory.restore(backwardCapacity: bounds.backwardCapacity,
                     forwardCapacity: bounds.forwardCapacity, contextKey: bounds.contextKey)
             guard let restored else { return nil }
-            try publicationHistory.markSeen(editionID: restored.edition.id,
-                cardID: restored.cursor.anchor.cardID)
+            // Restoring a durable cursor only prepares a logical window. Even a decoded image or
+            // text card has not necessarily appeared in the physical viewport. The host's observed
+            // viewport path, never a warm-start/read projection, records exposure.
             var released: Set<PublicationCardID> = []
             var unavailable: Set<PublicationCardID> = []
             guard let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
