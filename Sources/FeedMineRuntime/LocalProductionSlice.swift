@@ -65,17 +65,14 @@ public struct LocalProductionSlice: Sendable {
         public let segmentID: FeedSegmentID
         public let segmentSeed: UInt64
         public let segmentCreatedAt: Date
-        /// Reader position; an origin with an occurrence after it is not published again (PD-1 rule 2).
-        public let readerAnchorCardID: PublicationCardID?
         /// The replenishment attempt this slice belongs to, when a host decided one; nil for work that is not a
         /// replenishment (the first Edition, hidden tail maintenance).
         public let operation: FeedReplenishmentOperationID?
 
         public init(plan: FeedPlan, policy: ResolvedSelectionPolicy, editionID: FeedEditionID,
             after: CandidateSupplyCursor?, examinedCapacity: Int, segmentID: FeedSegmentID,
-            segmentSeed: UInt64, segmentCreatedAt: Date, readerAnchorCardID: PublicationCardID? = nil,
+            segmentSeed: UInt64, segmentCreatedAt: Date,
             operation: FeedReplenishmentOperationID? = nil) {
-            self.readerAnchorCardID = readerAnchorCardID
             self.operation = operation
             self.plan = plan
             self.policy = policy
@@ -98,7 +95,7 @@ public struct LocalProductionSlice: Sendable {
             after: request.after, examinedCapacity: request.examinedCapacity,
             operation: request.operation, consult: "slice", trace: trace)
         let facts = try publicationHistory.exposure(editionID: request.editionID,
-            originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: request.readerAnchorCardID)
+            originIDs: window.candidates.map(\.originRecordID))
         guard facts.editionID == request.editionID,
             let exposure = SelectionExposureSnapshot(requestedOriginIDs: facts.requestedOriginIDs,
                 publishedOriginIDs: facts.publishedOriginIDs, publishedMaterialKeys: facts.publishedMaterialKeys,
