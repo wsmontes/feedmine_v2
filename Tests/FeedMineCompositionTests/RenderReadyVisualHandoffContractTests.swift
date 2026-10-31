@@ -129,6 +129,23 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
             "Gesture-held surface must retain the same ready hero identity")
         XCTAssertEqual(held.first?.image, decoded,
             "Gesture hold must preserve the decoded image, not a placeholder")
+
+        // A newer logical projection cannot swap the old physical window
+        // while this gesture owns its rendered hero and offset.
+        let later = try XCTUnwrap(try await session.submitViewport(.init(
+            anchor: .init(cardID: textSibling.id, placement: .top))))
+        XCTAssertEqual(later.window.anchor.cardID, textSibling.id)
+        try screen.install(FeedPresentationState(presentation: later))
+        interaction.noteIncoming(screen)
+        XCTAssertEqual(interaction.presentation(for: screen), snapshot,
+            "The old projection remains the gesture's provenance authority")
+        XCTAssertEqual(interaction.heldItems(matching: screen), held,
+            "Even after new admission, the held pixels and ordering stay frozen")
+        interaction.end(afterReading: readyHero.id, store: screen)
+        if !later.window.items.contains(where: { $0.id == readyHero.id }) {
+            XCTAssertTrue(interaction.isHolding,
+                "Do not discard an active history reader before reconciliation")
+        }
         interaction.end()
     }
 
