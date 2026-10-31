@@ -1,0 +1,204 @@
+name: Safari A/B iOS 18 regression (opt-in)
+
+# Only a deliberate label on this workflow's own PR starts the macOS job.
+# No push, workflow_dispatch or regular pull_request trigger.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safari-ab-ios18-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  safari:
+    if: >-
+      github.event.label.name == 'run-ios-safari' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ci/safari-ab-ios18-20261030'
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      REPORT_DIR: ${{ github.workspace }}/safari-ci-results
+      TEST_VISUAL: FeedMineUITests/ReadingSurfaceUITests/testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory
+      TEST_DIAG: FeedMineUITests/ReadingSurfaceUITests/testSafariViewportDiagnosisCapturesMountWindowAndAnchor
+    steps:
+      - name: Checkout workflow repository (read-only)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Freeze branch heads and boot ONE iOS 18.5 simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORT_DIR"
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee "$REPORT_DIR/xcode-version.txt"
+          xcrun simctl list devices available | tee "$REPORT_DIR/available-devices.txt"
+          DEVICE_ID=$(xcrun simctl list -j devices available | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next((x["udid"] for runtime, xs in devices.items() if runtime.endswith("iOS-18-5") for x in xs if x.get("name") == "iPhone 16" and x.get("isAvailable", True)), ""))')
+          if [[ -z "$DEVICE_ID" ]]; then
+            echo "No iPhone 16 / iOS 18.5 simulator is installed" >&2
+            exit 1
+          fi
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+          printf 'arm\tref\tcommit\n' > "$REPORT_DIR/branches.tsv"
+          for arm in control experiment diagnostic; do
+            case "$arm" in
+              control) ref='audit/browser-return-identity-regression-20261030' ;;
+              experiment) ref='experiment/reader-host-over-full-screen-20261030' ;;
+              diagnostic) ref='diagnostic/safari-viewport-probe-20261030' ;;
+            esac
+            git fetch --no-tags --depth=1 origin "refs/heads/$ref"
+            sha=$(git rev-parse FETCH_HEAD)
+            echo "$sha" > "$REPORT_DIR/$arm.sha"
+            printf '%s\t%s\t%s\n' "$arm" "$ref" "$sha" >> "$REPORT_DIR/branches.tsv"
+          done
+          cat "$REPORT_DIR/branches.tsv"
+
+          # A/B results are comparable only if BOTH frozen commits contain the
+          # exact same XCTest source. Reject branch drift before any Xcode build.
+          test_path='FeedMineApp/FeedMineAppTests/ReadingSurfaceUITests.swift'
+          control_blob=$(git rev-parse "$(cat "$REPORT_DIR/control.sha"):$test_path")
+          experiment_blob=$(git rev-parse "$(cat "$REPORT_DIR/experiment.sha"):$test_path")
+          printf 'control=%s\nexperiment=%s\n' "$control_blob" "$experiment_blob" > "$REPORT_DIR/test-parity.txt"
+          if [[ "$control_blob" != "$experiment_blob" ]]; then
+            echo "A/B invalid: control and experiment do not contain the same UI test" >&2
+            cat "$REPORT_DIR/test-parity.txt"
+            exit 1
+          fi
+          echo "A/B test source identical: $control_blob"
+
+          # Keep each ref's source checkout isolated. Xcode/SPM is allowed to
+          # alter its own working tree without blocking the next arm.
+          for arm in control experiment diagnostic; do
+            git worktree add --detach "$RUNNER_TEMP/feedmine-src-$arm" "$(cat "$REPORT_DIR/$arm.sha")"
+          done
+
+      - name: Build tests for three frozen refs (one simulator SDK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'arm\tbuild\n' > "$REPORT_DIR/builds.tsv"
+          for arm in control experiment diagnostic; do
+            mkdir -p "$REPORT_DIR/$arm"
+            worktree="$RUNNER_TEMP/feedmine-src-$arm"
+            test -f "$worktree/FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj"
+            dd="${RUNNER_TEMP}/feedmine-derived-$arm"
+            log="$REPORT_DIR/$arm/build.log"
+            expected_sha=$(cat "$REPORT_DIR/$arm.sha")
+            actual_sha=$(git -C "$worktree" rev-parse HEAD)
+            printf 'arm=%s expected=%s actual=%s\n' "$arm" "$expected_sha" "$actual_sha" > "$REPORT_DIR/$arm/source-identity.txt"
+            if [[ "$expected_sha" != "$actual_sha" ]]; then
+              echo "Frozen build source mismatch for $arm" | tee -a "$log"
+              printf '%s\tfail-source-mismatch\n' "$arm" >> "$REPORT_DIR/builds.tsv"
+              continue
+            fi
+            echo "Building $arm at $actual_sha"
+            if xcodebuild build-for-testing \
+              -project "$worktree/FeedMineApp/FeedMineApp.xcodeproj" \
+              -scheme FeedMine -configuration Debug \
+              -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+              -derivedDataPath "$dd" \
+              -parallel-testing-enabled NO \
+              CODE_SIGNING_ALLOWED=NO > "$log" 2>&1; then
+              # A success exit from xcodebuild is insufficient if the test manifest
+              # was not emitted. Avoid an unhandled find error under set -e: record
+              # the missing bundle explicitly so all three arms remain diagnosable.
+              products="$dd/Build/Products"
+              file=""
+              if [[ -d "$products" ]]; then
+                file=$(find "$products" -maxdepth 1 -name '*.xctestrun' -print -quit)
+              fi
+              if [[ -n "$file" ]]; then
+                echo "$file" > "$REPORT_DIR/$arm/xctestrun-path.txt"
+                printf '%s\tpass\n' "$arm" >> "$REPORT_DIR/builds.tsv"
+              else
+                echo "No xctestrun bundle produced for $arm" | tee -a "$log"
+                printf '%s\tfail-no-xctestrun\n' "$arm" >> "$REPORT_DIR/builds.tsv"
+              fi
+            else
+              tail -n 100 "$log"
+              printf '%s\tfail-build\n' "$arm" >> "$REPORT_DIR/builds.tsv"
+            fi
+          done
+          cat "$REPORT_DIR/builds.tsv"
+
+      - name: Interleave three A/B tests on the same booted simulator and take diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'arm\trepetition\tresult\tcommit\tselector\n' > "$REPORT_DIR/results.tsv"
+          failures=0
+          run_one() {
+            arm="$1"
+            repetition="$2"
+            selector="$3"
+            sha=$(cat "$REPORT_DIR/$arm.sha")
+            if [[ ! -f "$REPORT_DIR/$arm/xctestrun-path.txt" ]]; then
+              printf '%s\t%s\tbuild-unavailable\t%s\t%s\n' "$arm" "$repetition" "$sha" "$selector" >> "$REPORT_DIR/results.tsv"
+              failures=$((failures+1))
+              return
+            fi
+            bundle="$REPORT_DIR/$arm/run-$repetition.xcresult"
+            log="$REPORT_DIR/$arm/run-$repetition.log"
+            xctestrun=$(cat "$REPORT_DIR/$arm/xctestrun-path.txt")
+            echo "Running $arm repetition $repetition commit=$sha simulator=$DEVICE_ID"
+            if xcodebuild test-without-building \
+              -xctestrun "$xctestrun" \
+              -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+              -parallel-testing-enabled NO \
+              -only-testing:"$selector" \
+              -resultBundlePath "$bundle" \
+              CODE_SIGNING_ALLOWED=NO > "$log" 2>&1; then
+              outcome=pass
+            else
+              outcome=xcodebuild-fail
+            fi
+            tail -n 45 "$log"
+            summary="$REPORT_DIR/$arm/run-$repetition-summary.json"
+            if [[ -d "$bundle" ]]; then
+              xcrun xcresulttool get test-results summary --path "$bundle" \
+                > "$summary" \
+                2> "$REPORT_DIR/$arm/run-$repetition-summary.stderr" || true
+            fi
+            # A successful xcodebuild exit does NOT establish that the selected
+            # test was found or executed. Each -only-testing selector has one
+            # XCTest case: require exactly one passing, zero failed/skipped.
+            if [[ "$outcome" == pass ]]; then
+              if [[ ! -s "$summary" ]]; then
+                outcome=missing-xcresult-summary
+              elif ! python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("totalTestCount") == 1 and s.get("passedTests") == 1 and s.get("failedTests",0) == 0 and s.get("skippedTests",0) == 0 else 1)' "$summary"; then
+                outcome=wrong-xctest-count
+              fi
+            fi
+            if [[ "$outcome" != pass ]]; then failures=$((failures+1)); fi
+            printf '%s\t%s\t%s\t%s\t%s\n' "$arm" "$repetition" "$outcome" "$sha" "$selector" >> "$REPORT_DIR/results.tsv"
+          }
+          for repetition in 1 2 3; do
+            run_one control "$repetition" "$TEST_VISUAL"
+            run_one experiment "$repetition" "$TEST_VISUAL"
+          done
+          run_one diagnostic 1 "$TEST_DIAG"
+          cat "$REPORT_DIR/results.tsv"
+          if ((failures > 0)); then
+            echo "$failures browser or diagnostic runs failed (or were unavailable)"
+            exit 1
+          fi
+
+      - name: Upload each xcresult and run metrics even on test failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-ab-single-simulator
+          path: ${{ github.workspace }}/safari-ci-results/
+          retention-days: 7
+          if-no-files-found: warn
