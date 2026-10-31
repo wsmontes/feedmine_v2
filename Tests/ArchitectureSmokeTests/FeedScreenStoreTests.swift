@@ -193,26 +193,26 @@ final class FeedScreenStoreTests: XCTestCase {
         let initial = try XCTUnwrap(try await f.session.admitPresentation(
             .restore(.init(backwardCapacity: 1, forwardCapacity: 1))))
         try store.install(.init(presentation: initial))
-        XCTAssertEqual(store.renderedItems.map(\\.id), Array(f.cardIDs[0...1]))
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...1]))
 
         let atB = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
         _ = try await f.session.submitViewport(atB)
         let firstGrowth = try XCTUnwrap(try await f.session.admitPresentation(.forwardScroll(atB)))
         try store.install(.init(presentation: firstGrowth))
-        XCTAssertEqual(firstGrowth.window.items.map(\\.id), Array(f.cardIDs[0...2]))
-        XCTAssertEqual(store.renderedItems.map(\\.id), Array(f.cardIDs[0...2]),
+        XCTAssertEqual(firstGrowth.window.items.map(\.id), Array(f.cardIDs[0...2]))
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...2]),
             "Prefix growth already has an automatic physical installation")
 
         let atC = ViewportObservation(anchor: .init(cardID: f.cardIDs[2], placement: .center))
         _ = try await f.session.submitViewport(atC)
         let trimmed = try XCTUnwrap(try await f.session.admitPresentation(.forwardScroll(atC)))
-        XCTAssertEqual(trimmed.window.items.map(\\.id), Array(f.cardIDs[1...3]),
+        XCTAssertEqual(trimmed.window.items.map(\.id), Array(f.cardIDs[1...3]),
             "The runtime has produced a real non-prefix ready window")
         XCTAssertEqual(trimmed.window.anchor.cardID, f.cardIDs[2])
         try store.install(.init(presentation: trimmed))
         XCTAssertEqual(store.state.presentation, trimmed,
             "Semantic history must retain its accepted projection")
-        XCTAssertEqual(store.renderedItems.map(\\.id), Array(f.cardIDs[1...3]),
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[1...3]),
             "A measured physical handoff must replace stale [A,B,C] with [B,C,D] without inventing scroll")
     }
 
