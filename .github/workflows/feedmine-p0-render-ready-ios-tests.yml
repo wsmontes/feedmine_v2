@@ -1,0 +1,79 @@
+name: FeedMine P0 ready-window iOS XCTest
+
+# Isolated evidence branch only. Swift package tests do not need the app's
+# uncommitted catalog.sqlite; no app build, signing, benchmark or release.
+on:
+  push:
+    branches:
+      - fix/p0-ios-handshake-fixture-lifetime-20261030
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feedmine-p0-ready-window-apple
+  cancel-in-progress: true
+
+jobs:
+  p0-xctest:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Identify Xcode and an available iOS simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+          xcodebuild -list -json
+          python3 - <<'PY'
+          import json, os, subprocess
+          data = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devices", "available", "--json"], text=True))
+          choices = [
+              (runtime, device)
+              for runtime, devices in data["devices"].items()
+              if "SimRuntime.iOS" in runtime
+              for device in devices
+              if device.get("isAvailable") and "iPhone" in device.get("name", "")
+          ]
+          if not choices:
+              raise SystemExit("No available iOS iPhone simulator")
+          runtime, chosen = sorted(
+              choices, key=lambda x: (x[0], x[1]["name"]), reverse=True
+          )[0]
+          print("Selected", runtime, chosen["name"], chosen["udid"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("FEEDMINE_SIMULATOR_ID=" + chosen["udid"] + "\n")
+          PY
+
+      - name: Run selected ready-window and native-scroll XCTest suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme FeedMine-Package \
+            -destination "platform=iOS Simulator,id=$FEEDMINE_SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/P0ReadyWindow.xcresult" \
+            -only-testing:ArchitectureSmokeTests/FeedNativeReadyWindowHandshakeTests \
+            -only-testing:FeedMineCompositionTests/FeedReadyWindowOwnershipTests \
+            -only-testing:FeedMineCompositionTests/RenderReadyVisualHandoffContractTests \
+            -only-testing:FeedMineRuntimeTests/RenderReadyAdmissionContractTests \
+            -only-testing:FeedMineRuntimeTests/RenderReadyCheckpointExposureContractTests \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/P0ReadyWindow-xcodebuild.log"
+
+      - name: Upload measured XCTest evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-ready-window-apple-xcresult
+          path: |
+            ${{ runner.temp }}/P0ReadyWindow.xcresult
+            ${{ runner.temp }}/P0ReadyWindow-xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
