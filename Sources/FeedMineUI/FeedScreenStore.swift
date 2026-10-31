@@ -55,6 +55,7 @@ public final class FeedScreenStore {
     /// isso custa é o dono do cursor (`FeedSession.notePresentedPosition(_:atRest:)`): uma posição já durável não é
     /// reescrita, e em movimento a janela declarada em `FeedSession.settledPositionDebounceWindow` segue valendo.
     public func publishPresentedPosition(_ anchor: PresentationAnchor, atRest: Bool) {
+        guard renderedItems.contains(where: { $0.id == anchor.cardID }) else { return }
         onPresentedPosition?(anchor, atRest)
     }
 
@@ -199,6 +200,7 @@ public final class FeedScreenStore {
     /// Emits one explicit user observation. The external consumer decides how to execute it.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         rendered: FeedPresentationSnapshot? = nil, reconciliation: Bool = false) {
+        guard renderedItems.contains(where: { $0.id == observation.anchor.cardID }) else { return }
         if let onRenderedViewport, let rendered {
             viewportOrdinal += 1
             guard let evidence = rendered.evidence(for: observation, ordinal: viewportOrdinal, reconciliation: reconciliation) else { return }
@@ -211,6 +213,7 @@ public final class FeedScreenStore {
     /// One semantic request from one admitted card. Only an admitted occurrence may act, and the
     /// external consumer decides how to execute it.
     public func perform(_ event: ReaderCardActionEvent, rendered: FeedPresentationSnapshot? = nil) {
+        guard renderedItems.contains(where: { $0.id == event.cardID }) else { return }
         if let rendered {
             guard let current = state.presentation,
                 rendered.contextKey == current.contextKey, rendered.editionID == current.editionID,
