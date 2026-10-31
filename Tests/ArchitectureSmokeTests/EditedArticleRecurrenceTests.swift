@@ -155,6 +155,79 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         XCTAssertEqual(try store.cards(editionID: edition, around: prepared.cardIDs[0], backwardCapacity: 0, forwardCapacity: 10).last?.primaryText, "E3")
     }
 
+    func testHiddenTailMaintenanceStartsAfterProtectedButUnreadCard() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: .init(directory: root))
+        let content = ContentStore(database: database), source = SourceID()
+        let a = OriginRecordID(), b = OriginRecordID(), c = OriginRecordID()
+        func admit(_ id: OriginRecordID, text: String, authored: Double,
+            previous: OriginRevisionID? = nil) throws -> OriginRevisionID {
+            let date = Date(timeIntervalSince1970: authored)
+            let revision = OriginRevision(id: OriginRevisionID(), originRecordID: id,
+                externalVersionIdentity: nil, headline: text, summary: text,
+                bodyText: nil, authoredAt: date, modifiedAt: nil, observedAt: date,
+                language: nil, primaryLink: nil, searchProjection: nil, providerID: nil)
+            try content.commitCanonicalChange(.init(recordID: id,
+                externalObjectIdentity: .init(connectorKind: .syndication,
+                    namespace: "protected-tail", value: id.rawValue.uuidString, role: .object),
+                revision: revision, mediaCandidates: [], availability: .available,
+                observedAt: date, expectedCurrent: previous.map { .revision($0) } ?? .none,
+                currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: date)]))
+            return revision.id
+        }
+        _ = try admit(a, text: "A seen", authored: 3000)
+        _ = try admit(b, text: "B saved, not seen", authored: 2000)
+        let originalC = try admit(c, text: "C original", authored: 1000)
+        let context = FeedContext(request: .source(source)), v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+        let policy = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1),
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending,
+            exposure: .excludePublishedMaterial)
+        let window = try CandidateProvider(contentStore: content).candidates(
+            for: plan, after: nil, examinedCapacity: 10)
+        let exposure = try XCTUnwrap(SelectionExposureSnapshot(
+            requestedOriginIDs: window.candidates.map(\.originRecordID), publishedOriginIDs: []))
+        let selection = try SelectionEngine().select(plan: plan, policy: policy,
+            window: window, exposure: exposure)
+        XCTAssertEqual(selection.orderedCandidates.map(\.originRecordID), [a, b, c])
+        let prepared = Self.prepare(selection), edition = FeedEditionID()
+        _ = try PublicationCoordinator(database: database).createInitialEdition(.init(
+            publication: .init(selection: selection,
+                drafts: PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs),
+                editionID: edition, publicationSchemaVersion: .init(rawValue: 1),
+                selectionSeed: 1, editionCreatedAt: Date(), segmentID: FeedSegmentID(),
+                segmentSeed: 1, segmentCreatedAt: Date(), cardIDs: prepared.cardIDs),
+            anchorPlacement: .top, checkpointedAt: Date(timeIntervalSince1970: 4000)))
+
+        let store = PublicationStore(database: database)
+        try store.markSeen(editionID: edition, cardID: prepared.cardIDs[0])
+        try SessionStore(database: database).saveCheckpoint(.init(editionID: edition,
+            cardID: prepared.cardIDs[1], anchorPlacement: "top",
+            updatedAt: Date(timeIntervalSince1970: 5000)))
+        let lease = try XCTUnwrap(store.hiddenTail(editionID: edition))
+        XCTAssertEqual(lease.highWaterCardID, prepared.cardIDs[0])
+        XCTAssertEqual(lease.protectedThroughCardID, prepared.cardIDs[1])
+        let editedC = try admit(c, text: "C edited", authored: 1000, previous: originalC)
+        let result = try await HiddenTailMaintenance(database: database).run(
+            plan: plan, policy: policy, lease: lease, examinedCapacity: 10,
+            prefetch: { _ in }, prepare: Self.prepare)
+        XCTAssertEqual(result, .applied,
+            "Maintenance must prepare only the suffix after B; B cannot be republished")
+        let ids = try store.segments(editionID: edition).flatMap(\.cardIDs)
+        XCTAssertEqual(Array(ids.prefix(2)), Array(prepared.cardIDs.prefix(2)))
+        XCTAssertEqual(ids.count, 3)
+        XCTAssertEqual(try store.card(id: ids[2])?.originRevisionID, editedC)
+        XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, prepared.cardIDs[1])
+    }
+
     func testRecurrenceForbiddenPolicyKeepsPhase3R5Uniqueness() throws {
         let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [OriginRecordID()], publishedOriginIDs: []))
         XCTAssertTrue(snapshot.publishedMaterialKeys.isEmpty)
