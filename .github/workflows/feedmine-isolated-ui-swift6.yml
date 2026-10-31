@@ -1,0 +1,106 @@
+name: FeedMine isolated Swift package validation
+
+# The package suite requires no untracked catalog.sqlite. The app's catalog,
+# signing, UI journeys and device benchmarks have their own acceptance gates.
+on:
+  push:
+    branches: [fix/ui-row-play-presence-equality-20261031]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feedmine-main-package-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-ios:
+    name: Swift package tests (iOS Simulator)
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Discover toolchain and simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Commit: $GITHUB_SHA"
+          xcodebuild -version
+          swift --version
+          swift package describe
+          xcodebuild -list -json
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          data = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devices", "available", "--json"],
+              text=True
+          ))
+          choices = [
+              (runtime, device)
+              for runtime, devices in data["devices"].items()
+              if "SimRuntime.iOS" in runtime
+              for device in devices
+              if device.get("isAvailable") and "iPhone" in device.get("name", "")
+          ]
+          if not choices:
+              raise SystemExit("No available iOS iPhone simulator")
+          runtime, device = sorted(
+              choices, key=lambda candidate: (candidate[0], candidate[1]["name"]),
+              reverse=True
+          )[0]
+          print("Selected simulator:", runtime, device["name"], device["udid"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("FEEDMINE_SIMULATOR_ID=" + device["udid"] + "\n")
+          PY
+
+      - name: Run all Swift package XCTest targets on iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme FeedMine-Package \
+            -destination "platform=iOS Simulator,id=$FEEDMINE_SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/FeedMinePackage.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Validate that XCTest actually executed tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun xcresulttool get test-results summary \
+            --path "$RUNNER_TEMP/FeedMinePackage.xcresult" \
+            > "$RUNNER_TEMP/FeedMinePackage-summary.json"
+          python3 - <<'PY'
+          import json
+          import os
+
+          path = os.path.join(
+              os.environ["RUNNER_TEMP"], "FeedMinePackage-summary.json"
+          )
+          with open(path, encoding="utf-8") as file:
+              result = json.load(file)
+          print("XCTest:", result)
+          if result.get("totalTestCount", 0) < 1:
+              raise SystemExit("No tests executed: refusing false green CI")
+          if result.get("failedTests", 0):
+              raise SystemExit("XCTest reported failed tests")
+          PY
+
+      - name: Preserve XCTest evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedmine-main-swiftpm-xcresult
+          path: |
+            ${{ runner.temp }}/FeedMinePackage.xcresult
+            ${{ runner.temp }}/FeedMinePackage-summary.json
+          if-no-files-found: warn
+          retention-days: 7
