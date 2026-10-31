@@ -333,8 +333,13 @@ def verify_payload(entries: list[dict], payload_root: Path, base: str, refetch: 
 
 
 def compiler_command(compiler: Path, feeds_root: Path, output: Path, report: Path) -> list[str]:
-    return [sys.executable, str(compiler), "--feeds-root", str(feeds_root), "--output", str(output),
-        "--manifest-output", str(report), "--json"]
+    # A compiler is identified by its resolved bytes/path in compiler_identity().
+    # Record that same canonical spelling in argv. On macOS, TemporaryDirectory
+    # paths can otherwise alternate between /var and /private/var.
+    return [sys.executable, str(compiler.expanduser().resolve()),
+        "--feeds-root", str(feeds_root.resolve()),
+        "--output", str(output.resolve()),
+        "--manifest-output", str(report.resolve()), "--json"]
 
 
 def compiler_identity(compiler: Path, expected_compiler_sha: str, expected_identity_sha: str) -> dict:

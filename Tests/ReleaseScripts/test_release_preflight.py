@@ -86,6 +86,8 @@ class ReleasePreflightTests(unittest.TestCase):
         self.assertEqual(self.marker.read_text().strip(), "ARCHIVE")
         self.assertEqual(self.git("tag", "--list"), "")
 
+    @unittest.skipUnless(Path("/usr/libexec/PlistBuddy").exists(),
+                         "requires macOS PlistBuddy to reach the catalogue gate")
     def test_corrupt_preflight_stops_before_archive(self):
         resources = self.root / "FeedMineApp/FeedMineApp/Resources"
         (resources / "catalog.sqlite").write_bytes(b"NOT SQLITE")

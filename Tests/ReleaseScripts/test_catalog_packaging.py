@@ -120,6 +120,14 @@ class PackagingTests(unittest.TestCase):
         # Emulates macOS /var/... versus /private/var/... for the same bytes.
         alias = self.root / "alias"
         alias.symlink_to(self.root, target_is_directory=True)
+        serialized = catalog.compiler_command(
+            alias / "legacy/scripts/build_catalog.py",
+            alias / "staging/payload/Feeds",
+            alias / "staging/.work/catalog.sqlite",
+            alias / "staging/.work/build-report.json")
+        self.assertEqual(serialized[1], self.identity["path"],
+                         "bootstrap must record the exact resolved compiler identity")
+        self.assertEqual(Path(serialized[3]), (self.staging / "payload/Feeds").resolve())
         command = list(self.provenance["compiler"]["command"])
         command[1] = str(alias / "legacy/scripts/build_catalog.py")
         command[3] = str(alias / "staging/payload/Feeds")
