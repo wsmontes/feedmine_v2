@@ -5,13 +5,13 @@ name: FeedMine P0 ready-window iOS XCTest
 on:
   push:
     branches:
-      - test/initial-exposure-contract-align-20261030
+      - fix/restore-projection-no-false-seen-20261030
 
 permissions:
   contents: read
 
 concurrency:
-  group: feedmine-initial-exposure-aligned-apple-20261030
+  group: feedmine-restore-no-false-seen-apple-20261030
   cancel-in-progress: false
 
 jobs:
