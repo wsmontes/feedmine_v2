@@ -134,6 +134,9 @@ public struct FeedVisualWindowHandoff: Sendable {
             before.isValid, after.isValid,
             before.cardHeight == after.cardHeight,
             before.viewportHeight == after.viewportHeight,
+            // The UI adapter may physically install only a single ready run.
+            // A common measured card does not make deferred gaps disappear.
+            old.contiguousReadyCards != nil, next.contiguousReadyCards != nil,
             old.containsReadyCard(before.cardID), next.containsReadyCard(after.cardID)
         else { return nil }
 
