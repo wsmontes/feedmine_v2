@@ -41,9 +41,20 @@ final class ScrollAdmissionTests: XCTestCase {
         _ = try await admitted(f.session, .initial(f.bounds))
         _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
         let current = try await admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
-        let other = FeedSession(publicationHistory: PublicationHistory(database: f.database))
+        // The foreign proof must be genuinely render-ready. Otherwise a
+        // missing decoder would now reject it for media, not for its session.
+        let otherDecoder = try XCTUnwrap(PresentationImageDecoder(
+            assetDirectory: f.directory.appendingPathComponent("Media"),
+            heroMaxPixel: 60, thumbnailMaxPixel: 30))
+        let other = FeedSession(publicationHistory: PublicationHistory(database: f.database),
+            imageDecoder: otherDecoder)
         let otherProjection = try await admitted(other, .initial(.init(backwardCapacity: 0, forwardCapacity: 10)))
         let observation = observation(f.cards[6], placement: .center)
+        let readyForeignHero = try XCTUnwrap(otherProjection.window.items.first {
+            $0.id == observation.anchor.cardID
+        })
+        XCTAssertNotNil(readyForeignHero.image,
+            "Foreign session provenance, not missing media, must cause rejection")
         let wrong = try XCTUnwrap(otherProjection.evidence(for: observation))
         let after = try await f.session.submitViewport(observation, from: wrong)
         XCTAssertNil(after, "another sequence must not become a reading observation")
