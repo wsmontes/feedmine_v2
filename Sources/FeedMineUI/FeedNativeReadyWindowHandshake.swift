@@ -92,6 +92,18 @@ struct FeedNativeReadyWindowHandshake {
         return ownership.cancelProvisionalHandoff(owner: owner)
     }
 
+    /// Context/edition replacement revokes every outstanding proof. This is
+    /// a state reset only; the physical host is responsible for replacing the
+    /// old content and must not treat the previous offset as a new reader.
+    mutating func reset() {
+        if let token = ownership.provisionalID {
+            _ = native.cancelProvisionalCorrection(transaction: token)
+        }
+        native.cancel(discardingSamples: true)
+        ownership.reset(owner: owner)
+        before = nil
+    }
+
     /// Native gestures always win. They revoke both receipts and borrow the
     /// original installed rail; no delayed callback may resurrect the swap.
     @discardableResult
