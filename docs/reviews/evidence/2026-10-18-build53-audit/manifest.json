@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-18",
+  "timezone": "America/Vancouver",
+  "base": "b0b961a049f82fece037363a6cb0e986d556330c",
+  "comparisonBase": "bc6a38dc2e16072fb82dc17071d100534d070a8a",
+  "productionCodeModified": false,
+  "logs": [
+    {
+      "file": "package.log.gz",
+      "uncompressedSHA256": "337244a939b708f50accfef53381a6ac4892ce562a95f817d146df10c7a384be"
+    },
+    {
+      "file": "host.log.gz",
+      "uncompressedSHA256": "300864edca89fa5b36940bb3fb3bdab32356daa0ac898458f84fb218d68a343c"
+    },
+    {
+      "file": "destinations.log.gz",
+      "uncompressedSHA256": "3e20d29fce3203c2c47605864dfc919c2ba525669f671be11b67bbaf2ec2234b"
+    }
+  ],
+  "newChecks": {
+    "swiftTest": {
+      "exitCode": 0,
+      "executed": 1481,
+      "skipped": 3,
+      "failures": 0,
+      "seconds": 110.69
+    },
+    "nativeFocused": {
+      "exitCode": 0,
+      "executed": 5,
+      "failures": 0,
+      "seconds": 62.87,
+      "language": "pt-BR",
+      "region": "BR",
+      "destination": "platform=iOS Simulator,id=3314B597-4CBF-4B95-9B7C-AF52BB432FC2",
+      "resultBundle": "/tmp/feedmine-v2-audit-2026-10-18-host.xcresult",
+      "tests": [
+        "testCoalescingPreservesCapturedConsumptionTiming",
+        "testContextSwitchUnderLoadReusesCanonicalWork",
+        "testFailedActivationLeavesThePreviousContextAndKeyIntact",
+        "testInstallDoesNotReadDatabase",
+        "testOldBookmarkPreparationCannotUndoConfirmedToggle"
+      ]
+    }
+  },
+  "historicalUI": {
+    "source": "/tmp/fm-v2-full-pt.log",
+    "sha256": "d1eac3f8a34bcb13160caf489e935b061700b508a41a16a3afeae0929d1e8e46",
+    "executed": 74,
+    "skipped": 6,
+    "failures": 37,
+    "rerunInThisAudit": false
+  },
+  "releaseFrames": "NOT_MEASURED",
+  "benchmarks": "NOT_RUN",
+  "productGates": "OPEN"
+}

@@ -33,3 +33,6 @@ bench/corpus/
 __pycache__/
 *.xcresult
 tmp/
+
+# Capacity guard output written by ad-hoc measurements at the repo root (canonical copy lives in .build/omp-reader-controls-*).
+/capacity-ready.json
