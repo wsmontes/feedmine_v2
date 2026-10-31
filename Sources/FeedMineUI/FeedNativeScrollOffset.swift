@@ -191,7 +191,24 @@ final class FeedNativeScrollOffset {
             suppressCorrectionEvents = false
         }
         let prior = correction.pendingProof
-        guard let delta = correction.observe(proof) else { return isCorrecting }
+        let observedDelta = correction.observe(proof)
+        if observedDelta == nil, let entry = provisionalCorrection,
+            case .armed = entry.phase, provisionalWindowChanged,
+            entry.witness == proof.cardID,
+            let before = prior, before.cardID == proof.cardID,
+            before.height == proof.height, before.frame.size == proof.frame.size,
+            proof.frame.maxY > 0, proof.frame.minY < proof.height,
+            let scrollView, !isAnimatingScroll,
+            abs(scrollView.contentOffset.y - proof.offset) < 0.5,
+            abs(proof.frame.minY + proof.offset -
+                before.frame.minY - before.offset) <= 0.5 {
+            // The physical list changed but the reader's measured position did
+            // not. Confirm the post-layout callback without writing any offset.
+            // Same token, identity, viewport size and actual native position.
+            provisionalCorrection = (entry.transaction, entry.witness,
+                .verified(offset: scrollView.contentOffset.y))
+        }
+        guard let delta = observedDelta else { return isCorrecting }
         if let entry = provisionalCorrection {
             // Only one automatic native offset write, for this exact ready
             // witness, is permitted while a provisional handoff is active.
