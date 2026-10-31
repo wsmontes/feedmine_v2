@@ -4,6 +4,16 @@ import UIKit
 import FeedMineDomain
 import FeedMineRuntime
 
+/// A canceled handoff may leave a native offset that belonged to a provisional
+/// layout. This is a debt for the future *physical host*, not a write request:
+/// the old cells and offset must be restored and measured before another swap.
+struct FeedNativePhysicalRollbackRequirement: Sendable {
+    let transaction: UUID
+    let originalOffset: Double
+    let originalIDs: [PublicationCardID]
+    let originalWitness: FeedVisualWindowWitness
+}
+
 /// A single token binds the future physical ready-only rail to the existing
 /// UIKit offset writer. This is a non-rendering host seam: no LazyVStack swap,
 /// no invented historical heights and no second setContentOffset call.
@@ -13,6 +23,7 @@ struct FeedNativeReadyWindowHandshake {
     private let native: FeedNativeScrollOffset
     private var ownership = FeedReadyWindowOwnership()
     private var before: FeedVisualWindowWitness?
+    private(set) var rollbackRequired: FeedNativePhysicalRollbackRequirement?
 
     init(owner: ObjectIdentifier, native: FeedNativeScrollOffset) {
         self.owner = owner
@@ -38,6 +49,7 @@ struct FeedNativeReadyWindowHandshake {
     /// The returned candidate is not a durable reader acknowledgment.
     mutating func begin(before witness: FeedVisualWindowWitness)
         -> (token: UUID, window: FeedReadyVisualWindow)? {
+        guard rollbackRequired == nil else { return nil }
         guard let window = ownership.beginProvisionalHandoff(
             owner: owner, before: witness),
             let token = ownership.provisionalID else { return nil }
@@ -81,15 +93,60 @@ struct FeedNativeReadyWindowHandshake {
         return true
     }
 
+    /// Record a physical rollback obligation *before* discarding the original
+    /// witness. This does not write offset or mutate the saved reading cursor.
+    private mutating func recordRollbackIfMoved(transaction: UUID) {
+        guard rollbackRequired == nil, let before,
+            let installed = ownership.installed,
+            let scroll = native.scrollView,
+            abs(Double(scroll.contentOffset.y) - before.contentOffset) > 0.5
+        else { return }
+        rollbackRequired = FeedNativePhysicalRollbackRequirement(
+            transaction: transaction,
+            originalOffset: before.contentOffset,
+            originalIDs: installed.cards.map(\.id),
+            originalWitness: before)
+    }
+
     /// Invalid geometry or abandonment restores logical display ownership.
-    /// Physical offset/list rollback must be performed by the future host
-    /// while suppressing intermediate paint and user interaction.
+    /// If the native writer already moved, the host must also restore the old
+    /// physical cells + offset and acknowledge the measured layout before retry.
     @discardableResult
     mutating func cancel(transaction: UUID) -> Bool {
         guard ownership.provisionalID == transaction else { return false }
+        recordRollbackIfMoved(transaction: transaction)
         _ = native.cancelProvisionalCorrection(transaction: transaction)
         before = nil
         return ownership.cancelProvisionalHandoff(owner: owner)
+    }
+
+    /// The native host owns the actual physical restoration. Acknowledging it
+    /// requires the exact previous ordered IDs, actual UIKit content offset
+    /// and a freshly measured visible witness; no guessed height or second
+    /// hidden offset writer is introduced here.
+    @discardableResult
+    mutating func acknowledgePhysicalRollback(
+        restoredIDs: [PublicationCardID],
+        measured: FeedVisualWindowWitness) -> Bool {
+        guard let debt = rollbackRequired,
+            let installed = ownership.installed,
+            ownership.provisionalID == nil,
+            native.canVerifyPhysicalRollback,
+            let scroll = native.scrollView,
+            restoredIDs == debt.originalIDs,
+            installed.cards.map(\.id) == debt.originalIDs,
+            measured.cardID == debt.originalWitness.cardID,
+            measured.cardHeight == debt.originalWitness.cardHeight,
+            measured.viewportHeight == debt.originalWitness.viewportHeight,
+            abs(measured.viewportTop - debt.originalWitness.viewportTop) <= 1,
+            measured.viewportTop < measured.viewportHeight,
+            measured.viewportTop > -measured.cardHeight,
+            abs(measured.contentOffset - debt.originalOffset) < 0.5,
+            abs(Double(scroll.contentOffset.y) - debt.originalOffset) < 0.5
+        else { return false }
+        rollbackRequired = nil
+        native.cancel(discardingSamples: true)
+        return true
     }
 
     /// Context/edition replacement revokes every outstanding proof. This is
@@ -101,6 +158,7 @@ struct FeedNativeReadyWindowHandshake {
         }
         native.cancel(discardingSamples: true)
         ownership.reset(owner: owner)
+        rollbackRequired = nil
         before = nil
     }
 
@@ -108,6 +166,9 @@ struct FeedNativeReadyWindowHandshake {
     /// original installed rail; no delayed callback may resurrect the swap.
     @discardableResult
     mutating func nativeGestureBegan() -> Bool {
+        if let token = ownership.provisionalID {
+            recordRollbackIfMoved(transaction: token)
+        }
         native.setInteractionActive(true)
         before = nil
         return ownership.nativeInteractionBegan(owner: owner)
