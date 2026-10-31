@@ -6,7 +6,7 @@ import FeedMinePersistence
 import FeedMineEditorial
 import FeedMinePublication
 @testable import FeedMineRuntime
-import FeedMineUI
+@testable import FeedMineUI
 import FeedMineComposition
 
 @MainActor
@@ -278,6 +278,63 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(after?.cursor, checkpoint?.cursor)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID), segments)
         XCTAssertEqual(store.state.work, .pending)
+    }
+
+    /// Issue #32: the native owner receives an exact later ready rail, but
+    /// staging must never publish cells or invent reading/position evidence.
+    func testNonPrefixReadyCandidateIsStagedWithoutDrawingOrChangingCursor() throws {
+        let ids = (0..<4).map { _ in PublicationCardID() }
+        let cards = ids.enumerated().map { index, id in
+            PresentationCard(id: id, title: "Ready \(index)",
+                primaryText: "Local", timestamp: nil, sourceID: nil,
+                sourceDisplayName: nil, providerDisplayName: nil,
+                layout: .textOnly, mediaAspectRatio: nil,
+                primaryActionKind: nil, image: nil)
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        func snapshot(_ indices: Range<Int>, ordinal: UInt64) throws -> FeedPresentationSnapshot {
+            FeedPresentationSnapshot(contextKey: FeedContext(request: .main).key,
+                editionID: edition,
+                window: try XCTUnwrap(FeedWindowSnapshot(items: Array(cards[indices]),
+                    anchor: .init(cardID: ids[1], placement: .top))),
+                provenance: .init(sequenceID: sequence, position: ordinal))
+        }
+        let first = try snapshot(0..<3, ordinal: 1)
+        let later = try snapshot(1..<4, ordinal: 2)
+        var publishedEvents = 0
+        let store = FeedScreenStore(onViewport: { _, _ in publishedEvents += 1 },
+            onRenderedViewport: { _, _ in publishedEvents += 1 })
+        try store.install(.init(presentation: first))
+        XCTAssertNil(store.pendingNativeReadyWindow)
+        XCTAssertEqual(store.installedNativeReadyWindow?.cards.map(\.id), Array(ids[0..<3]))
+
+        try store.install(.init(presentation: later))
+        XCTAssertEqual(store.state.presentation, later)
+        XCTAssertEqual(store.pendingNativeReadyWindow?.cards.map(\.id), Array(ids[1..<4]))
+        XCTAssertEqual(store.pendingNativeReadyWindow?.snapshot, later)
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(ids[0..<3]))
+        XCTAssertEqual(store.displayedPresentation, first)
+        XCTAssertEqual(publishedEvents, 0)
+
+        var nativeOwner = FeedReadyWindowOwnership()
+        let owner = ObjectIdentifier(store)
+        XCTAssertTrue(nativeOwner.installInitial(
+            try XCTUnwrap(store.installedNativeReadyWindow), owner: owner))
+        XCTAssertTrue(nativeOwner.stage(
+            try XCTUnwrap(store.pendingNativeReadyWindow), owner: owner))
+        XCTAssertEqual(nativeOwner.displayed(owner: owner)?.cards.map(\.id),
+            Array(ids[0..<3]), "Staged is not rendered before witness and transaction")
+        XCTAssertEqual(nativeOwner.pending?.cards.map(\.id), Array(ids[1..<4]))
+        XCTAssertEqual(publishedEvents, 0)
+
+        // A later append-only ready projection becomes physical by the already
+        // safe path; its older non-prefix proposal must not remain available.
+        let appended = try snapshot(0..<4, ordinal: 3)
+        try store.install(.init(presentation: appended))
+        XCTAssertNil(store.pendingNativeReadyWindow)
+        XCTAssertEqual(store.renderedItems.map(\.id), ids)
+        XCTAssertEqual(store.displayedPresentation, appended)
+        XCTAssertEqual(publishedEvents, 0)
     }
 
     /// The one observable physical projection exists because logical state

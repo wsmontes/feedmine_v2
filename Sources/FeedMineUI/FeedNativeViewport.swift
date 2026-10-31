@@ -36,6 +36,45 @@ struct NativeFeedViewport: ViewModifier {
             current.provenance.sequenceID == presented.provenance.sequenceID
     }
 
+    /// Stage a ready-only non-prefix candidate alongside the actual rail
+    /// whenever the semantic window advances. No physical SwiftUI IDs change
+    /// here: only a measured begin/commit may authorize that future transition.
+    private func synchronizeNativeReadyOwnership() {
+        #if canImport(UIKit)
+        guard let installed = store.installedNativeReadyWindow else {
+            // Dropping an unbegun staged proposal must never cancel samples
+            // owned by the existing native offset correction path.
+            if capture.readyWindowHandshake?.provisionalID == nil &&
+                capture.readyWindowHandshake?.rollbackRequired == nil {
+                capture.readyWindowHandshake = nil
+            }
+            return
+        }
+        // A newer semantic projection can revoke an earlier candidate.
+        // Never leave a stale pending handoff ready to activate on later idle
+        // geometry; no in-flight provisional transaction is reset here.
+        let pending = store.pendingNativeReadyWindow
+        let staleStaged = capture.readyWindowHandshake?.pending != nil &&
+            capture.readyWindowHandshake?.pending?.snapshot != pending?.snapshot
+        if capture.readyWindowHandshake?.displayed?.snapshot != installed.snapshot ||
+            staleStaged {
+            // The staging-only bridge never revokes a live provisional write
+            // or an outstanding physical rollback. Most importantly, do NOT
+            // call handshake.reset() here: it would cancel the native writer's
+            // samples during ordinary append-only scrolling.
+            guard capture.readyWindowHandshake?.provisionalID == nil,
+                capture.readyWindowHandshake?.rollbackRequired == nil else { return }
+            var handshake = FeedNativeReadyWindowHandshake(
+                owner: ObjectIdentifier(store), native: capture.nativeScrollOffset)
+            guard handshake.installInitial(installed) else { return }
+            capture.readyWindowHandshake = handshake
+        }
+        if let candidate = pending {
+            _ = capture.readyWindowHandshake?.stage(candidate)
+        }
+        #endif
+    }
+
     /// R04: the binding's own updates. This is an echo of the rendered position (first layout, a published window
     /// change, a gesture); it may prevent an empty slot by asking for the destination band, but it is **not** a
     /// reader intention and never establishes a position. Callers that mean a jump call `FeedPositionRequest.apply`
@@ -205,6 +244,7 @@ struct NativeFeedViewport: ViewModifier {
                 capture.invalidateLayout()
             }
             .onChange(of: store.state.presentation?.window) { _, _ in
+                synchronizeNativeReadyOwnership()
                 // Só o fim do empréstimo escreve o estado observado da view; uma janela adiada sob o gesto é
                 // contada no livro que o corpo não observa, e não custa uma segunda avaliação da lista.
                 if capture.interaction.incoming(store) == .released {
@@ -213,8 +253,15 @@ struct NativeFeedViewport: ViewModifier {
                 }
                 settlePendingJump()
             }
+            // A new causal projection can retain exactly the same window
+            // IDs while advancing its provenance. Keep the native owner in
+            // sync with that case too; window equality alone misses it.
+            .onChange(of: store.state.presentation?.provenance.position) { _, _ in
+                synchronizeNativeReadyOwnership()
+            }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
+                synchronizeNativeReadyOwnership()
                 armPresentationRestoration()
             }
             // The relative point a restore must reproduce. `initial: true` covers the first presentation,

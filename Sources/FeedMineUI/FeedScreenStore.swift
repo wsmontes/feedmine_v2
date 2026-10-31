@@ -344,6 +344,27 @@ public final class FeedScreenStore {
     /// causal provenance of the cells the user can still see and tap.
     @ObservationIgnored private var physicalWindow: FeedReadyVisualWindow?
     var displayedPresentation: FeedPresentationSnapshot? { physicalWindow?.snapshot }
+    /// The only pending native handoff candidate. Derived from the accepted
+    /// semantic value, never stored as a second cursor or a second publisher.
+    /// An unchanged/append-only ready rail is already handled by install();
+    /// trims, prepends and bitmap re-entry need measured physical ownership.
+    var pendingNativeReadyWindow: FeedReadyVisualWindow? {
+        guard let installed = physicalWindow,
+            let latest = state.presentation,
+            latest.contextKey == installed.snapshot.contextKey,
+            latest.editionID == installed.snapshot.editionID,
+            latest.provenance.sequenceID == installed.snapshot.provenance.sequenceID,
+            latest.provenance.position > installed.snapshot.provenance.position,
+            let candidate = FeedReadyVisualWindow.initial(snapshot: latest),
+            !candidate.cards.map(\.id).starts(with: renderedItems.map(\.id))
+        else { return nil }
+        return candidate
+    }
+
+    /// Physical ownership must be pinned to the actual painted cards, not to
+    /// state.presentation when the latter has advanced past a trim.
+    var installedNativeReadyWindow: FeedReadyVisualWindow? { physicalWindow }
+
     public private(set) var renderedEditionID: FeedEditionID?
     public private(set) var renderedContextKey: ContextKey?
     public private(set) var work: FeedPresentationState.Work = .idle
