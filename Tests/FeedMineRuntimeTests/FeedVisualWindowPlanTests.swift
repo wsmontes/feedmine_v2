@@ -170,6 +170,19 @@ final class FeedVisualWindowPlanTests: XCTestCase {
             "A partly visible measured reader is a valid shared witness")
     }
 
+    func testLargeContiguousReadyBandPreservesAllIDsInOneRun() throws {
+        let ready = (0..<1000).map { _ in card() }
+        let s = try snapshot(ready, anchor: ready[500].id)
+        let plan = try XCTUnwrap(FeedVisualWindowPlan(snapshot: s,
+            center: 500, backward: 500, forward: 499))
+        XCTAssertEqual(plan.range, 0..<1000)
+        XCTAssertEqual(plan.segments.count, 1,
+            "Long ready bands should be built without per-card repeated array concatenation")
+        XCTAssertEqual(plan.contiguousReadyCards?.map(\.id), ready.map(\.id))
+        XCTAssertEqual(plan.visualAnchorID, ready[500].id)
+        XCTAssertEqual(plan.logicalCount, 1000)
+    }
+
     func testForeignScopeUnreadyWitnessAndUnmeasuredLayoutAreRejected() throws {
         let a = card(), blocked = card(.init(),.hero), b = card()
         let ed=FeedEditionID(), sequence=UUID()
