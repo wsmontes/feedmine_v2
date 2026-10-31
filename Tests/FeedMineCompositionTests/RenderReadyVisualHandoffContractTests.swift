@@ -92,6 +92,10 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertEqual(snapshot.window.items.map(\.id), [readyHero.id, textSibling.id],
             "Ready hero must retain its original slot and neighbouring text")
         XCTAssertEqual(snapshot.window.anchor.cardID, readyHero.id)
+        let readyRail = FeedVisualRailIndex(snapshot: snapshot)
+        XCTAssertEqual(readyRail.logicalCount, 2)
+        XCTAssertEqual(readyRail.visualAnchorID, readyHero.id)
+        XCTAssertEqual(readyRail.slot(at: 0), .ready(index: 0, card: snapshot.window.items[0]))
         XCTAssertTrue(snapshot.window.items[0].isRenderReady,
             "A valid locally decoded hero is a visual proof candidate")
         XCTAssertTrue(snapshot.window.items[1].isRenderReady,
@@ -206,6 +210,11 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
             .restore(.init(backwardCapacity: 2, forwardCapacity: 0)))
         let snapshot = try XCTUnwrap(result)
         XCTAssertEqual(snapshot.window.anchor.cardID, ready.id)
+        let deferredRail = FeedVisualRailIndex(snapshot: snapshot)
+        XCTAssertEqual(deferredRail.logicalCount, 3)
+        XCTAssertEqual(deferredRail.logicalAnchorIndex, 2)
+        XCTAssertEqual(deferredRail.visualAnchorID, ready.id)
+        XCTAssertEqual(deferredRail.slot(at: 1), .deferred(index: 1, id: missing.id))
         let readyVisualIDs = snapshot.window.items.filter { $0.isRenderReady }.map(\.id)
         XCTAssertEqual(readyVisualIDs, [readyBefore.id, ready.id],
             "The shared visual proof predicate must not stall ready text siblings")
