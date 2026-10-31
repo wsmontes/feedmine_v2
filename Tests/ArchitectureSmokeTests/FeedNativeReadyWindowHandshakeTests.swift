@@ -291,6 +291,9 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
         XCTAssertNil(handshake.begin(before:before))
         XCTAssertFalse(handshake.acknowledgePhysicalRollback(
             restoredIDs:[a.id,b.id,c.id],measured:before))
+        XCTAssertFalse(handshake.acknowledgePhysicalRollback(
+            restoredIDs:[a.id,b.id],measured:before),
+            "Caller-supplied IDs cannot claim restoration while the native probe still owns the provisional list")
         native.updateWindow([a.id,b.id])
         XCTAssertEqual(scroll.contentOffset.y,500,accuracy:0.01)
         XCTAssertTrue(handshake.acknowledgePhysicalRollback(
