@@ -154,7 +154,9 @@ public final class FeedScreenStore {
                 FeedReadyVisualWindow.initial(snapshot: $0)
             }
             let sameScope = renderedEditionID == presentationState.presentation?.editionID &&
-                renderedContextKey == presentationState.presentation?.contextKey
+                renderedContextKey == presentationState.presentation?.contextKey &&
+                physicalWindow?.snapshot.provenance.sequenceID ==
+                    presentationState.presentation?.provenance.sequenceID
             if !sameScope || renderedItems.isEmpty {
                 // An explicit context/edition replacement has no old reader
                 // position to preserve. A deferred durable anchor gets no
