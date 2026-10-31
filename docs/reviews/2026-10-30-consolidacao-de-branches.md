@@ -137,6 +137,16 @@ a rodada não criou mecanismo novo de agendamento.
 
 ## 5. Publicação
 
-`integration/main-consolidated-20261030` foi empurrada e a `main` avançou por fast-forward com o
-verdict desta rodada. As 21 PRs abertas foram revisadas uma a uma: as integradas foram fechadas
-apontando o merge que as contém; as não integradas foram fechadas com o motivo medido do §3.
+`integration/main-consolidated-20261030` foi empurrada e a `main` avançou por fast-forward
+(`fb8e65ff → 5de2e54b`) com o verdict desta rodada.
+
+As 21 PRs abertas foram revisadas uma a uma:
+
+- **16 marcadas MERGED** — `#5, #6, #10, #11, #12, #15, #16, #17, #19, #20, #21, #22, #23, #24, #26, #28`.
+  Os heads estão contidos na `main`; as empilhadas tiveram a base retargetada para `main` antes do
+  merge, e a própria API as reconhece como já integradas.
+- **5 fechadas com veredito** — `#8, #9, #13, #14` (motivos no §3) e `#25` (patch-id idêntico a
+  `29153ea2`, já na `main`; merge próprio seria commit redundante).
+
+O workflow `ci/p0-render-ready-apple-tests-20261030` não tem PR e não entrou: aponta para testes que
+foram descartados no §2.
