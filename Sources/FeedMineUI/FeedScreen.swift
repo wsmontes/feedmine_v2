@@ -84,6 +84,10 @@ public struct FeedScreen: View {
         // gesto, a janela segurada. A posição do leitor **não** é lida aqui — era ela que fazia a lista inteira ser
         // reavaliada a cada avanço (medido no aparelho, 2026-10-14: 12–14 instalações por segundo numa rajada).
         // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
+        // Physical cells only: store.renderedItems is a contiguous ready run,
+        // and a gesture borrows the exact same drawn cells. The full causal
+        // snapshot stays in store.state for identity, checkpoint and actions.
+        // Never substitute window.items here: that includes deferred pixels.
         let items = capture.interaction.heldItems(matching: store) ?? store.renderedItems
         if !items.isEmpty {
             if #available(iOS 18, macOS 15, *) {
