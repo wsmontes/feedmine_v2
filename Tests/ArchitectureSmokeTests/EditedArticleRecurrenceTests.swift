@@ -125,9 +125,18 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         // The second card is published and ahead of the reader's anchor: it has never been exposed.
         let published = try live()
         XCTAssertEqual(published.map(\.primaryText), ["seen", "E1"])
-        XCTAssertEqual(try PublicationHistory(database: database).exposure(editionID: edition,
-            originIDs: [editedOrigin]).unseenOriginIDs, [editedOrigin],
-            "The second occurrence is published and still ahead of the reader")
+        // An initial durable checkpoint is only a logical position. It must not mark even A
+        // as exposed before the native viewport has supplied visual evidence.
+        let history = PublicationHistory(database: database)
+        XCTAssertEqual(try history.exposure(editionID: edition,
+            originIDs: [anchorOrigin, editedOrigin]).unseenOriginIDs, [anchorOrigin, editedOrigin],
+            "The initial checkpoint must not act as visual seen high-water")
+        // Simulate exactly the first accepted viewport observation: seeing A cannot
+        // silently include B just because B was already published and projected.
+        try store.markSeen(editionID: edition, cardID: anchor)
+        XCTAssertEqual(try history.exposure(editionID: edition,
+            originIDs: [anchorOrigin, editedOrigin]).unseenOriginIDs, [editedOrigin],
+            "Only the actually seen high-water may release editorial recurrence")
         let segmentsBefore = try store.segments(editionID: edition)
         let checkpointBefore = try SessionStore(database: database).checkpoint()
         XCTAssertEqual(checkpointBefore?.cardID, anchor)
@@ -159,10 +168,16 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         XCTAssertEqual(restored.window.cards.map(\.text.primaryText), ["seen", "E1", "late"])
         XCTAssertEqual(restored.window.cards[1].origin.originRevisionID, e1)
         XCTAssertEqual(restored.cursor.anchor.cardID, anchor)
+        XCTAssertEqual(try PublicationHistory(database: reopened).exposure(editionID: edition,
+            originIDs: [anchorOrigin, editedOrigin]).unseenOriginIDs, [editedOrigin],
+            "Reopening the logical checkpoint cannot promote B into visually seen history")
 
         // Once the reader has seen the occurrence, the edit is a new occurrence in a later segment (PD-1): a new
         // card id, the old one untouched, appended rather than substituted.
         try store.markSeen(editionID: edition, cardID: published[1].id)
+        XCTAssertTrue(try history.exposure(editionID: edition,
+            originIDs: [anchorOrigin, editedOrigin]).unseenOriginIDs.isEmpty,
+            "Only accepting B as visually seen may release the edited occurrence")
         guard case .published(_, let recurrence) = try LocalProductionSlice(database: database).run(.init(plan: plan, policy: policy,
             editionID: edition, after: nil, examinedCapacity: 10, segmentID: FeedSegmentID(), segmentSeed: 1,
             segmentCreatedAt: Date(timeIntervalSince1970: 4500)), prepare: Self.prepare) else {
