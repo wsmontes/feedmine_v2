@@ -36,6 +36,29 @@ struct NativeFeedViewport: ViewModifier {
             current.provenance.sequenceID == presented.provenance.sequenceID
     }
 
+    /// Stage a ready-only non-prefix candidate alongside the actual rail
+    /// whenever the semantic window advances. No physical SwiftUI IDs change
+    /// here: only a measured begin/commit may authorize that future transition.
+    private func synchronizeNativeReadyOwnership() {
+        #if canImport(UIKit)
+        guard let installed = store.installedNativeReadyWindow else {
+            capture.readyWindowHandshake?.reset()
+            capture.readyWindowHandshake = nil
+            return
+        }
+        if capture.readyWindowHandshake?.displayed?.snapshot != installed.snapshot {
+            capture.readyWindowHandshake?.reset()
+            var handshake = FeedNativeReadyWindowHandshake(
+                owner: ObjectIdentifier(store), native: capture.nativeScrollOffset)
+            guard handshake.installInitial(installed) else { return }
+            capture.readyWindowHandshake = handshake
+        }
+        if let candidate = store.pendingNativeReadyWindow {
+            _ = capture.readyWindowHandshake?.stage(candidate)
+        }
+        #endif
+    }
+
     /// R04: the binding's own updates. This is an echo of the rendered position (first layout, a published window
     /// change, a gesture); it may prevent an empty slot by asking for the destination band, but it is **not** a
     /// reader intention and never establishes a position. Callers that mean a jump call `FeedPositionRequest.apply`
@@ -205,6 +228,7 @@ struct NativeFeedViewport: ViewModifier {
                 capture.invalidateLayout()
             }
             .onChange(of: store.state.presentation?.window) { _, _ in
+                synchronizeNativeReadyOwnership()
                 // Só o fim do empréstimo escreve o estado observado da view; uma janela adiada sob o gesto é
                 // contada no livro que o corpo não observa, e não custa uma segunda avaliação da lista.
                 if capture.interaction.incoming(store) == .released {
@@ -215,6 +239,7 @@ struct NativeFeedViewport: ViewModifier {
             }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
+                synchronizeNativeReadyOwnership()
                 armPresentationRestoration()
             }
             // The relative point a restore must reproduce. `initial: true` covers the first presentation,
