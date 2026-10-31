@@ -87,7 +87,7 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// A run whose only supply is the app's own local fixtures: the development feeds served in process, so there
     /// is no network, no server, no clock — and no add-feed sheet in the way of reaching an article.
     private func launched(shape: String, blocked: Bool = false, largeText: Bool = false,
-        media: Bool = false) -> XCUIApplication {
+        media: Bool = false, itemsPerFeed: Int? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
@@ -98,6 +98,7 @@ final class ReadingSurfaceUITests: XCTestCase {
         // `MediaPlaybackAdapter.state` every 0.5 s, and the host reads that state while the reader is up. It is
         // the deterministic version of the churn a live feed produces while a reader is reading.
         if media { app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1" }
+        if let itemsPerFeed { app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = String(itemsPerFeed) }
         // The closed HTTPS proxy the app itself installs: real connections fail, the fixture still answers.
         if blocked { app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1" }
         if largeText {
@@ -134,6 +135,61 @@ final class ReadingSurfaceUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 1.0)
         }
         return card(app, identity: identity)
+    }
+
+    /// XCUITest may return immediately after the last fast fling, while the native scroll
+    /// is still decelerating. Sample the same card and frame three times before opening it.
+    /// This waits only during setup: browser return is still inspected without a recovery swipe.
+    private func settledVisibleCard(_ app: XCUIApplication, within seconds: TimeInterval)
+        -> (identity: String, frame: CGRect)? {
+        let deadline = Date().addingTimeInterval(seconds)
+        var previous: (identity: String, frame: CGRect)?
+        var matches = 0
+        while Date() < deadline {
+            if let card = visibleCard(app), card.isHittable {
+                let current = (identity: card.identifier, frame: card.frame)
+                if let previous, previous.identity == current.identity,
+                    abs(previous.frame.minY - current.frame.minY) <= 1,
+                    abs(previous.frame.maxY - current.frame.maxY) <= 1 {
+                    matches += 1
+                } else {
+                    matches = 1
+                }
+                if matches >= 3 { return current }
+                previous = current
+            } else {
+                previous = nil
+                matches = 0
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return nil
+    }
+
+    /// Browser dismissal is asynchronous. Read the returned card only after its frame
+    /// settles, without scrolling to find it: a card in the wrong place still fails.
+    private func settledFrame(of card: XCUIElement, within seconds: TimeInterval) -> CGRect? {
+        let deadline = Date().addingTimeInterval(seconds)
+        var previous: CGRect?
+        var matches = 0
+        while Date() < deadline {
+            if card.exists, card.frame.height > 40 {
+                let current = card.frame
+                if let previous, abs(previous.minY - current.minY) <= 1,
+                    abs(previous.maxY - current.maxY) <= 1 {
+                    matches += 1
+                } else {
+                    matches = 1
+                }
+                if matches >= 3 { return current }
+                previous = current
+            } else {
+                previous = nil
+                matches = 0
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return nil
     }
 
     /// The card's own *open* control. It carries `card.open`: measured on the device
@@ -279,6 +335,77 @@ final class ReadingSurfaceUITests: XCTestCase {
             "a summary is named as a summary, never as the article")
         XCTAssertTrue(byIdentifier(app, "reading.body").label.contains("Parágrafo 60"))
         attach(app, "reading-long-summary")
+    }
+
+    /// Browser-close regression: a nontrivial admitted history must return to the SAME card, not merely
+    /// to any card somewhere in the feed. The long local fixture keeps the scenario reproducible offline.
+    /// This is a UI proof: a session-level anchor assertion cannot detect a UIKit/SwiftUI scroll jump.
+    func testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory() throws {
+        let app = launched(shape: "shortSummary", itemsPerFeed: 95)
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 180), "the local fixture publishes a feed")
+        guard waitForAVisibleCard(app, within: 180), let firstID = visibleCard(app)?.identifier else {
+            return XCTFail("the fixture draws a first visible card")
+        }
+
+        // Move away from the opening position; a test that reopens the first card cannot exercise
+        // window growth or the restoration of a lazy cell that was scrolled into view.
+        // Eight real gestures, rather than stopping as soon as any other card is seen: the test
+        // must cross multiple viewport windows and exercise the long-history presentation.
+        for _ in 0..<8 { scroll.swipeUp(velocity: .fast) }
+        guard let settled = settledVisibleCard(app, within: 30) else {
+            attach(app, "browser-close-setup-not-settled")
+            return XCTFail("after eight flings, no hittable card had a stable frame")
+        }
+        guard settled.identity != firstID else {
+            attach(app, "browser-close-setup-did-not-advance")
+            return XCTFail("eight flings did not leave the initial visible card")
+        }
+        let identity = settled.identity
+        let card = byIdentifier(app, identity)
+        guard card.exists, card.isHittable else {
+            return XCTFail("the card stabilized after the flings must remain tappable")
+        }
+        let before = card.frame
+        XCTAssertEqual(before.minY, settled.frame.minY, accuracy: 1.0,
+            "the tracked card moved between settling and opening the browser")
+        XCTAssertTrue(before.intersects(scroll.frame), "the tracked card starts in the actual feed viewport")
+        let opener = openControl(card)
+        if opener.exists && opener.isHittable { opener.tap() } else { card.tap() }
+
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20),
+            "the card opens the site's in-app browser")
+        XCTAssertTrue(waitForAddress(app, showing: "example.test", within: 20),
+            "the browser navigated to the fixture card's original URL")
+        app.buttons["Close"].tap()
+        XCTAssertTrue(app.buttons["Close"].waitForNonExistence(timeout: 20),
+            "the browser must actually finish dismissal before measuring the underlying feed")
+
+        // No scroll, search or recovery gesture is allowed after closing. Let the native
+        // frame settle, but never scroll the missing card back into the viewport.
+        let returned = byIdentifier(app, identity)
+        guard let after = settledFrame(of: returned, within: 20) else {
+            attach(app, "browser-close-return-card-missing-or-moving")
+            return XCTFail("browser close did not restore a stable instance of the original card")
+        }
+        XCTAssertTrue(after.intersects(scroll.frame),
+            "the same card must still intersect the feed viewport without a recovery scroll")
+        XCTAssertEqual(after.minY, before.minY, accuracy: 1.0,
+            "browser close must preserve the card's vertical position")
+        XCTAssertEqual(after.maxY, before.maxY, accuracy: 1.0,
+            "browser close must preserve the card's height and trailing edge")
+        // Persist the numeric evidence for each CI repetition, not only screenshots
+        // and a pass/fail flag. The two A/B arms use byte-identical assertions.
+        let result = XCTAttachment(string: [
+            "cardUUID=\(identity)",
+            "beforeMinY=\(before.minY)", "afterMinY=\(after.minY)",
+            "beforeMaxY=\(before.maxY)", "afterMaxY=\(after.maxY)",
+            "deltaMinY=\(after.minY - before.minY)"
+        ].joined(separator: "\n"))
+        result.name = "browser-return-position-metrics"
+        result.lifetime = .keepAlways
+        add(result)
+        attach(app, "browser-close-deep-history-same-card")
     }
 
     func testATeaserOpensTheSiteWithNoIntermediateScreen() throws {
