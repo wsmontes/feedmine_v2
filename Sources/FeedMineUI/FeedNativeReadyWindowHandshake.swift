@@ -182,6 +182,7 @@ struct FeedNativeReadyWindowHandshake {
             ObjectIdentifier(scroll) == debt.originalScrollViewID,
             debt.originalInsets.matches(scroll.adjustedContentInset),
             restoredIDs == debt.originalIDs,
+            native.currentWindowIDs == debt.originalIDs,
             installed.cards.map(\.id) == debt.originalIDs,
             measured.cardID == debt.originalWitness.cardID,
             measured.cardHeight == debt.originalWitness.cardHeight,
