@@ -130,5 +130,7 @@ final class FeedVisualWindowPlanTests: XCTestCase {
         XCTAssertNil(FeedVisualWindowHandoff(from:x,to:z,before:unready,after:unready,gestureActive:false))
         XCTAssertNil(FeedVisualWindowHandoff(from:x,to:z,before:proof,after:resized,gestureActive:false))
         XCTAssertNil(FeedVisualWindowHandoff(from:x,to:z,before:nil,after:proof,gestureActive:false))
+        XCTAssertNil(FeedVisualWindowHandoff(from:x,to:z,before:proof,after:proof,gestureActive:false),
+            "A shared ready card cannot authorize flattening a plan with deferred gaps")
     }
 }
