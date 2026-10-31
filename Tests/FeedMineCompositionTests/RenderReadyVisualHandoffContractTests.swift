@@ -38,6 +38,17 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
             mediaMimeType: "image/png", renderLayout: "hero",
             renderMediaAspectRatio: 1.5, primaryActionKind: nil,
             primaryActionReference: nil)
+        let readyBefore = PublicationStore.CardRecord(
+            id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
+            sourceDisplayName: nil, providerDisplayName: nil,
+            contentEntityID: nil, contentClusterID: nil,
+            title: "Ready before", primaryText: "Ready even before the unavailable image",
+            timestampValue: nil, timestampKind: nil,
+            mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil,
+            mediaMimeType: nil, renderLayout: "textOnly",
+            renderMediaAspectRatio: nil, primaryActionKind: nil,
+            primaryActionReference: nil)
         let ready = PublicationStore.CardRecord(
             id: PublicationCardID(), originRecordID: OriginRecordID(),
             originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
@@ -53,8 +64,8 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
             edition,
             firstSegment: .init(id: FeedSegmentID(), editionID: edition.id,
                 ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1,
-                createdAt: Date(), cardIDs: [missing.id, ready.id]),
-            cards: [missing, ready],
+                createdAt: Date(), cardIDs: [readyBefore.id, missing.id, ready.id]),
+            cards: [readyBefore, missing, ready],
             initialCheckpoint: .init(editionID: edition.id, cardID: ready.id,
                 anchorPlacement: "top", updatedAt: Date()))
 
@@ -62,24 +73,40 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         let retained = try history.window(
             editionID: edition.id,
             around: .init(cardID: missing.id, placement: .center),
-            backwardCapacity: 0, forwardCapacity: 1)
-        XCTAssertEqual(retained.cards.map(\.id), [missing.id, ready.id],
+            backwardCapacity: 1, forwardCapacity: 1)
+        XCTAssertEqual(retained.cards.map(\.id), [readyBefore.id, missing.id, ready.id],
             "Not rendering a missing hero must not delete its publication identity")
 
         // No decoder: an image-bearing card is necessarily not render-ready.
         // The checkpoint itself is a legitimate ready text card.
         let session = FeedSession(publicationHistory: history)
         let result = try await session.admitPresentation(
-            .restore(.init(backwardCapacity: 1, forwardCapacity: 0)))
+            .restore(.init(backwardCapacity: 2, forwardCapacity: 0)))
         let snapshot = try XCTUnwrap(result)
         XCTAssertEqual(snapshot.window.anchor.cardID, ready.id)
 
         let screen = FeedScreenStore(onViewport: { _, _ in })
         try screen.install(FeedPresentationState(presentation: snapshot))
-        XCTAssertEqual(screen.renderedItems.map(\.id), [ready.id],
+        XCTAssertEqual(screen.renderedItems.map(\.id), [readyBefore.id, ready.id],
             "Only prepared cells cross the visual handoff; history remains retrievable")
         XCTAssertFalse(screen.renderedItems.contains {
             $0.isImageBearing && $0.image == nil
         }, "An image-bearing placeholder must not be treated as a rendered card")
+        XCTAssertEqual(screen.renderedItems.map(\.title), ["Ready before", "Ready text"],
+            "Neither a ready predecessor nor a ready successor may be blocked by missing media")
+
+        // A rejected historical observation must not erase the visible text
+        // siblings, change the anchor or advance the projection.
+        let attempted = ViewportObservation(anchor: .init(cardID: missing.id, placement: .center))
+        let beforeRejected = await session.currentPresentation()
+        _ = try await session.submitViewport(attempted)
+        let afterRejected = await session.currentPresentation()
+        XCTAssertEqual(afterRejected, beforeRejected,
+            "A missing-image target must be rejectable without mutating the reader")
+        if let afterRejected {
+            try screen.install(FeedPresentationState(presentation: afterRejected))
+        }
+        XCTAssertEqual(screen.renderedItems.map(\.id), [readyBefore.id, ready.id],
+            "A rejected image return cannot remove either ready sibling")
     }
 }
