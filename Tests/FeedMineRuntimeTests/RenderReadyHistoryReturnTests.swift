@@ -143,6 +143,37 @@ final class RenderReadyHistoryReturnTests: XCTestCase {
         XCTAssertEqual(returned.window.items.last?.id, last.id,
             "The already-ready text sibling must remain reachable")
 
+        // Real SHA-256 re-entry creates a continuous drawable run again,
+        // without replacing its frozen hero ID or erasing the reader's text.
+        let beforeReentry = try XCTUnwrap(FeedVisualWindowPlan(snapshot: away,
+            center: 2, backward: 1, forward: 0))
+        let afterReentry = try XCTUnwrap(FeedVisualWindowPlan(snapshot: returned,
+            center: 1, backward: 1, forward: 1))
+        XCTAssertEqual(beforeReentry.contiguousReadyCards?.map(\.id),
+            [middle.id, last.id])
+        XCTAssertEqual(afterReentry.contiguousReadyCards?.map(\.id), ids)
+        XCTAssertEqual(beforeReentry.visualAnchorID, last.id)
+        XCTAssertEqual(afterReentry.visualAnchorID, hero.id)
+        XCTAssertEqual(beforeReentry.logicalCount, afterReentry.logicalCount)
+        // Synthetic geometry tests handoff eligibility; actual pixel-offset
+        // correction remains the responsibility of Apple native UI tests.
+        let readerBefore = FeedVisualWindowWitness(cardID: last.id,
+            viewportTop: 180, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        let readerAfter = FeedVisualWindowWitness(cardID: last.id,
+            viewportTop: 420, contentOffset: 500,
+            cardHeight: 160, viewportHeight: 650)
+        XCTAssertNil(FeedVisualWindowHandoff(from: beforeReentry,
+            to: afterReentry, before: readerBefore, after: readerAfter,
+            gestureActive: true), "Do not replace the physical rail during a gesture")
+        let idle = try XCTUnwrap(FeedVisualWindowHandoff(from: beforeReentry,
+            to: afterReentry, before: readerBefore, after: readerAfter,
+            gestureActive: false))
+        XCTAssertEqual(idle.witnessID, last.id,
+            "The reader's already-visible sibling is the transfer witness")
+        XCTAssertEqual(idle.offsetAdjustment, 240, accuracy: 0.001)
+        XCTAssertEqual(idle.provenance, returned.provenance)
+
         let secondAwayResult = try await session.submitViewport(lastObservation)
         let secondAway = try XCTUnwrap(secondAwayResult)
         XCTAssertNil(secondAway.evidence(for: heroObservation, ordinal: 73),
