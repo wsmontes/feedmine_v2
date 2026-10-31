@@ -108,9 +108,9 @@ final class RenderReadyAdmissionContractTests: XCTestCase {
         let afterRejected = await session.currentPresentation()
         XCTAssertEqual(afterRejected?.window.anchor.cardID, ready.id,
             "An unreadable image cannot become the active reader position")
-        let exposure = try XCTUnwrap(PublicationStore(database: database)
-            .hiddenTail(editionID: edition.id))
-        XCTAssertEqual(exposure.highWaterCardID, ready.id,
-            "A rejected viewport must not advance durable seen high-water")
+        XCTAssertNil(try PublicationStore(database: database).hiddenTail(editionID: edition.id),
+            "Neither projection nor rejected viewport is proof of visual exposure")
+        XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, ready.id,
+            "A rejected unreadable image must not change the durable checkpoint")
     }
 }
