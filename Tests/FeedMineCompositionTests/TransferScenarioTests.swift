@@ -86,7 +86,11 @@ final class TransferScenarioTests: XCTestCase {
         // thing that can advance the reader.
         var observations = 0
         let store = FeedScreenStore { _, _ in observations += 1 }
-        XCTAssertEqual(observations, 0, "building a store with a presentation is not a user observation")
+        // The host can only acknowledge a physically installed ID; a fresh
+        // store with an empty LazyVStack must ignore synthetic observations.
+        try store.install(state)
+        XCTAssertTrue(store.renderedItems.contains(where: { $0.id == after[2].id }))
+        XCTAssertEqual(observations, 0, "installing a presentation is not a user observation")
         store.submitViewport(.init(anchor: PresentationAnchor(cardID: after[2].id, placement: .center)),
             activity: .forward)
         XCTAssertEqual(observations, 1, "the reader's own gesture is what the host hears")
