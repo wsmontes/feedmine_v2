@@ -453,8 +453,6 @@ public actor FeedSession {
                 : try publicationHistory.restore(backwardCapacity: bounds.backwardCapacity,
                     forwardCapacity: bounds.forwardCapacity, contextKey: bounds.contextKey)
             guard let restored else { return nil }
-            try publicationHistory.markSeen(editionID: restored.edition.id,
-                cardID: restored.cursor.anchor.cardID)
             var released: Set<PublicationCardID> = []
             let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
                 released: &released)
@@ -462,6 +460,15 @@ public actor FeedSession {
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
                 provenance: .init(sequenceID: sequenceID, position: next))
+            // The durable cursor identifies historical position, not proof of a
+            // rendered image. Prepare the full fallible projection first, then
+            // record exposure only when its anchor can actually be drawn.
+            // WarmStart and actor restore share this exact decision.
+            if let reader = window.items.first(where: { $0.id == restored.cursor.anchor.cardID }),
+                !reader.isImageBearing || reader.image != nil {
+                try publicationHistory.markSeen(editionID: restored.edition.id,
+                    cardID: restored.cursor.anchor.cardID)
+            }
             return FeedCheckpointProjection(
                 state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
                     presentation: snapshot, bounds: bounds),
