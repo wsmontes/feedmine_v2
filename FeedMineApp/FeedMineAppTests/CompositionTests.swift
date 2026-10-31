@@ -472,10 +472,20 @@ final class CompositionTests: XCTestCase {
     /// The activity is the discriminating input: `.explicitTailApproach` is the only one
     /// `RunwayActivity.admitsForwardContent` accepts, so `.forward` observes the position and never extends
     /// the admitted list. The anchor is the admitted tail, so the append lands after it.
-    private func produceAndAdmit(_ association: FeedAssociation) async throws {
+    private func produceAndAdmit(
+        _ association: FeedAssociation,
+        trace: (@MainActor (String, PublicationCardID?) -> Void)? = nil
+    ) async throws {
+        trace?("before driver.drive", nil)
         _ = try await association.driver.drive(resources: association.resources)
-        guard let anchor = association.store.state.presentation?.window.items.last else { return }
+        trace?("after driver.drive", nil)
+        guard let anchor = association.store.state.presentation?.window.items.last else {
+            trace?("no viewport target after driver.drive", nil)
+            return
+        }
+        trace?("before explicitTailApproach", anchor.id)
         await association.viewport(.init(anchor: .init(cardID: anchor.id, placement: .top)), activity: .explicitTailApproach)
+        trace?("after explicitTailApproach", anchor.id)
     }
 
     #if DEBUG
