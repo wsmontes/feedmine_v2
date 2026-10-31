@@ -230,7 +230,7 @@ extension PublicationStore {
         public let publishedOriginIDs: Set<OriginRecordID>
         /// Material keys (`materialKey`) of every occurrence of each requested published origin.
         public let publishedMaterialKeys: [OriginRecordID: Set<String>]
-        /// Requested origins with an occurrence positioned after the reader anchor (PD-1 rule 2).
+        /// Requested published origins not yet reached by confirmed visual seen high-water (PD-1 rule 2).
         public let unseenOriginIDs: Set<OriginRecordID>
     }
 
