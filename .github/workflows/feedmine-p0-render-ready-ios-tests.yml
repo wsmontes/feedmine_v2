@@ -5,13 +5,13 @@ name: FeedMine P0 ready-window iOS XCTest
 on:
   push:
     branches:
-      - fix/restore-projection-no-false-seen-20261030
+      - fix/durable-position-fence-20261030
 
 permissions:
   contents: read
 
 concurrency:
-  group: feedmine-restore-no-false-seen-apple-20261030
+  group: feedmine-durable-position-fence-apple-20261030
   cancel-in-progress: false
 
 jobs:
