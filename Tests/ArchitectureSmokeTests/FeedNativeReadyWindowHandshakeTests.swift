@@ -242,6 +242,31 @@ final class FeedNativeReadyWindowHandshakeTests: XCTestCase {
         XCTAssertEqual(handshake.pending?.snapshot,s2)
     }
 
+    func testJointMeasuredZeroDeltaCommitsWithoutAnyNativeOffsetWrite() throws {
+        let a=card(), b=card(), c=card(), edition=FeedEditionID(), sequence=UUID()
+        let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
+        let s2=try projection([a,b,c],anchor:b.id,edition:edition,sequence:sequence,ordinal:2)
+        let old=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s1,center:1,backward:1,forward:0))
+        let newer=try XCTUnwrap(FeedReadyVisualWindow(snapshot:s2,center:1,backward:1,forward:1))
+        let (native,scroll)=offset()
+        native.updateWindow([a.id,b.id])
+        _=native.observe(physical(b.id,top:180,offset:500))
+        let store=FeedScreenStore(onViewport:{ _,_ in })
+        var handshake=FeedNativeReadyWindowHandshake(owner:ObjectIdentifier(store),native:native)
+        XCTAssertTrue(handshake.installInitial(old))
+        XCTAssertTrue(handshake.stage(newer))
+        let measured=witness(b.id,top:180,offset:500)
+        let token=try XCTUnwrap(handshake.begin(before:measured)?.token)
+        native.updateWindow([a.id,b.id,c.id])
+        XCTAssertFalse(native.observe(physical(b.id,top:180,offset:500)))
+        XCTAssertTrue(handshake.commit(transaction:token,after:measured))
+        XCTAssertEqual(handshake.displayed?.snapshot,s2)
+        XCTAssertNil(handshake.rollbackRequired)
+        XCTAssertEqual(scroll.contentOffset.y,500,accuracy:0.01)
+        XCTAssertEqual(native.appliedCount,0,
+            "The zero-shift path must never write the native scroll offset")
+    }
+
     func testGesturePreemptsBothOwnersAndFencesOldToken() throws {
         let a=card(),b=card(),c=card(),edition=FeedEditionID(),sequence=UUID()
         let s1=try projection([a,b],anchor:b.id,edition:edition,sequence:sequence,ordinal:1)
