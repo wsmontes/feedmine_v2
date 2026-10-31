@@ -782,6 +782,70 @@ final class FeedViewportCaptureTests: XCTestCase {
     }
 
 #if os(macOS)
+    /// Issue #32 RED host acceptance: a non-prefix window must actually
+    /// replace SwiftUI's physical cells, not merely advance the semantic value.
+    /// The source of truth is the actual physical card IDs. A host's text line
+    /// limits can make even long content compact: do not assume a card's height.
+    /// This macOS-hosted RED does not yet validate iOS UIKit rollback.
+    func testNativeHostedNonPrefixTrimReplacesActualPhysicalIDs() async throws {
+        guard #available(macOS 15, *) else { return }
+        _ = NSApplication.shared
+        let ids = (0..<4).map { _ in PublicationCardID() }
+        let edition = FeedEditionID(), sequence = UUID()
+        let cards = ids.enumerated().map { index, id in
+            PresentationCard(id: id, title: "Physical card \(index)",
+                primaryText: "Ready local text \(index).",
+                timestamp: nil, sourceID: nil, sourceDisplayName: "Local",
+                providerDisplayName: nil, layout: .textOnly,
+                mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
+        }
+        func projection(_ range: Range<Int>, ordinal: UInt64) throws -> FeedPresentationSnapshot {
+            let window = try XCTUnwrap(FeedWindowSnapshot(
+                items: Array(cards[range]),
+                anchor: .init(cardID: ids[1], placement: .top)))
+            return FeedPresentationSnapshot(
+                contextKey: FeedContext(request: .main).key,
+                editionID: edition, window: window,
+                provenance: .init(sequenceID: sequence, position: ordinal))
+        }
+        let first = try projection(0..<3, ordinal: 1)
+        let trimmed = try projection(1..<4, ordinal: 2)
+        var readerEvents: [(ViewportObservation, RunwayActivity)] = []
+        let store = FeedScreenStore { readerEvents.append(($0, $1)) }
+        try store.install(.init(presentation: first))
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(ids[0..<3]))
+
+        let hosting = NSHostingView(rootView: FeedScreen(store: store)
+            .frame(width: 400, height: 340))
+        hosting.frame = CGRect(x: 0, y: 0, width: 400, height: 340)
+        let window = NSWindow(contentRect: hosting.frame,
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = hosting
+        func nativeScroll(_ root: NSView) -> NSScrollView? {
+            if let scroll = root as? NSScrollView { return scroll }
+            return root.subviews.lazy.compactMap { nativeScroll($0) }.first
+        }
+        for _ in 0..<30 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
+        let scroll = try XCTUnwrap(nativeScroll(hosting))
+        let originalHeight = try XCTUnwrap(scroll.documentView).frame.height
+        XCTAssertGreaterThan(originalHeight, 0, "The host must lay out real content")
+        let originalOffset = scroll.contentView.bounds.origin.y
+        XCTAssertTrue(readerEvents.isEmpty, "Host layout cannot manufacture viewport intent")
+
+        try store.install(.init(presentation: trimmed))
+        XCTAssertEqual(store.state.presentation?.window.items.map(\.id), Array(ids[1..<4]))
+        for _ in 0..<40 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
+        let trimmedHeight = try XCTUnwrap(scroll.documentView).frame.height
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(ids[1..<4]),
+            "The physical cells must eventually match the accepted ready rail")
+        XCTAssertGreaterThan(trimmedHeight, 0, "The candidate layout must not disappear")
+        XCTAssertEqual(scroll.contentView.bounds.origin.y, originalOffset, accuracy: 1,
+            "A swap must not move the native reader without an explicit gesture")
+        XCTAssertTrue(readerEvents.isEmpty,
+            "A physical rail handoff cannot synthesize a reader markSeen event")
+        withExtendedLifetime(window) {}
+    }
+
     /// T3: the transient visual position describes the reference card (and how much of it is above the
     /// viewport) without deciding anything about admission.
     func testTS3VisualPositionDescribesTheReferenceCardOnly() throws {

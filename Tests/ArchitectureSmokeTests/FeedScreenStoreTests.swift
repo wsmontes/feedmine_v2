@@ -182,6 +182,45 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(store.state.work, .idle)
     }
 
+    /// P2/#32 staging safety: a valid runtime trim is not append-only.
+    /// Without native before/after geometry there is no authority to replace the
+    /// physical list. The host integration must eventually commit a measured
+    /// handoff; this store-level test pins the safe interim behavior and the
+    /// semantic/physical divergence for that separate acceptance test.
+    func testS6bNonPrefixRuntimeTrimRemainsStagedUntilMeasuredHandoff() async throws {
+        let f = try fixture()
+        let store = FeedScreenStore { _, _ in XCTFail("A synthetic user viewport was not requested") }
+        let initialValue = try await f.session.admitPresentation(
+            .restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
+        let initial = try XCTUnwrap(initialValue)
+        try store.install(.init(presentation: initial))
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...1]))
+
+        let atB = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
+        _ = try await f.session.submitViewport(atB)
+        let firstGrowthValue = try await f.session.admitPresentation(.forwardScroll(atB))
+        let firstGrowth = try XCTUnwrap(firstGrowthValue)
+        try store.install(.init(presentation: firstGrowth))
+        XCTAssertEqual(firstGrowth.window.items.map(\.id), Array(f.cardIDs[0...2]))
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...2]),
+            "Prefix growth already has an automatic physical installation")
+
+        let atC = ViewportObservation(anchor: .init(cardID: f.cardIDs[2], placement: .center))
+        _ = try await f.session.submitViewport(atC)
+        let trimmedValue = try await f.session.admitPresentation(.forwardScroll(atC))
+        let trimmed = try XCTUnwrap(trimmedValue)
+        XCTAssertEqual(trimmed.window.items.map(\.id), Array(f.cardIDs[1...3]),
+            "The runtime has produced a real non-prefix ready window")
+        XCTAssertEqual(trimmed.window.anchor.cardID, f.cardIDs[2])
+        try store.install(.init(presentation: trimmed))
+        XCTAssertEqual(store.state.presentation, trimmed,
+            "Semantic history must retain its accepted projection")
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...2]),
+            "Without a native witness the store must not blindly swap [A,B,C] for [B,C,D]")
+        XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady),
+            "Retained physical cards must remain drawable while the transition is staged")
+    }
+
     func testS7HandoffRejectsAnotherEditionWithoutMutatingStore() async throws {
         let f = try fixture(), other = try fixture()
         let first = try await snapshot(f), replacement = try await snapshot(other)
