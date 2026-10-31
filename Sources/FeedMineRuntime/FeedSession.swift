@@ -257,13 +257,26 @@ public actor FeedSession {
             releasedIDs: leaving.map { items[$0].id }, restoredIDs: restored)
     }
 
-    private func boundedResidency(items: [PresentationCard], editionID: FeedEditionID,
-        around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds) throws -> ([PresentationCard], Bool) {
-        let staged = try proposeBoundedResidency(items: items, editionID: editionID,
-            around: anchorCardID, bounds: bounds)
+    /// All three history-extension admissions use the same commit boundary.
+    /// Neither pixel release markers nor the installed snapshot change if window
+    /// materialization fails or provenance cannot advance.
+    private func installExtendedWindow(items: [PresentationCard], anchor: PresentationAnchor,
+        current: FeedSessionState) throws -> FeedPresentationSnapshot {
+        let trimmed = boundedToTotalWindow(items, around: anchor.cardID, bounds: current.bounds)
+        let staged = try proposeBoundedResidency(items: trimmed,
+            editionID: current.presentation.editionID, around: anchor.cardID, bounds: current.bounds)
+        guard let window = FeedWindowSnapshot(items: staged.items, anchor: anchor) else {
+            return current.presentation
+        }
+        // projectWindow may throw on provenance overflow; marker changes follow
+        // only after its last throwing operation has succeeded.
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
         for id in staged.releasedIDs { releasedImageCards.insert(id) }
         for id in staged.restoredIDs { releasedImageCards.remove(id) }
-        return (staged.items, staged.changed)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID,
+            presentation: snapshot, bounds: current.bounds)
+        return snapshot
     }
 
     /// Extends the admitted prefix with already-published cards that follow the admitted tail.
@@ -291,18 +304,8 @@ public actor FeedSession {
         // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
         // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e
         // as cartas cortadas seguem alcançáveis — a admissão seguinte as relê do store.
-        let (bounded, _) = try boundedResidency(
-            items: boundedToTotalWindow(items + extensionCards, around: observation.anchor.cardID,
-                bounds: current.bounds),
-            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
-        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
-            return current.presentation
-        }
-        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
-            editionID: current.presentation.editionID, window: window)
-        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
-            bounds: current.bounds)
-        return snapshot
+        return try installExtendedWindow(items: items + extensionCards,
+            anchor: observation.anchor, current: current)
     }
 
     /// Keeps the admitted list bounded **around the anchor**: at most `backwardCapacity` cards before it and
@@ -353,18 +356,8 @@ public actor FeedSession {
             .suffix(allowed)
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
-        let (bounded, _) = try boundedResidency(
-            items: boundedToTotalWindow(extensionCards + items, around: observation.anchor.cardID,
-                bounds: current.bounds),
-            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
-        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
-            return current.presentation
-        }
-        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
-            editionID: current.presentation.editionID, window: window)
-        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
-            bounds: current.bounds)
-        return snapshot
+        return try installExtendedWindow(items: extensionCards + items,
+            anchor: observation.anchor, current: current)
     }
 
     /// Appends cards already published beyond the admitted tail, without any reader observation and
@@ -393,17 +386,8 @@ public actor FeedSession {
         guard !extensionCards.isEmpty else { return current.presentation }
         let anchor = current.presentation.window.anchor
         // Mesma regra do arquiteto, e agora num lugar só: o teto vale para a janela inteira nas duas direções.
-        let (bounded, _) = try boundedResidency(
-            items: boundedToTotalWindow(items + extensionCards, around: anchor.cardID, bounds: current.bounds),
-            editionID: current.presentation.editionID, around: anchor.cardID, bounds: current.bounds)
-        guard let window = FeedWindowSnapshot(items: bounded, anchor: anchor) else {
-            return current.presentation
-        }
-        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
-            editionID: current.presentation.editionID, window: window)
-        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
-            bounds: current.bounds)
-        return snapshot
+        return try installExtendedWindow(items: items + extensionCards,
+            anchor: anchor, current: current)
     }
 
     /// Rejects unusable structural bounds before any state is consulted, so a repeat admission
