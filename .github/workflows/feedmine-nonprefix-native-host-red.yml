@@ -1,0 +1,72 @@
+name: FeedMine native host non-prefix RED diagnostic
+
+on:
+  push:
+    branches: [ci/native-host-nonprefix-red-20261031]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feedmine-host-nonprefix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac-host:
+    name: Native SwiftUI physical-window host test (macOS)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Toolchain and package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "HEAD=$GITHUB_SHA"
+          xcodebuild -version
+          swift package describe
+          xcodebuild -list -json
+
+      - name: Run the hosted non-prefix XCTest (expect RED until physical handoff)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme FeedMine-Package \
+            -destination "platform=macOS" \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/FeedMineHostNonPrefix.xcresult" \
+            -only-testing:ArchitectureSmokeTests/FeedViewportCaptureTests/testNativeHostedNonPrefixTrimReplacesTheTallDiscardedCard \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Summarize actual XCTest execution even on failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun xcresulttool get test-results summary \
+            --path "$RUNNER_TEMP/FeedMineHostNonPrefix.xcresult" \
+            > "$RUNNER_TEMP/FeedMineHostNonPrefix-summary.json"
+          python3 - <<'PY'
+          import json, os
+          p = os.path.join(os.environ["RUNNER_TEMP"], "FeedMineHostNonPrefix-summary.json")
+          with open(p, encoding="utf8") as f: result = json.load(f)
+          print("XCTest:", result)
+          if result.get("totalTestCount", 0) != 1:
+              raise SystemExit("Expected exactly one host test: refuse false RED")
+          PY
+
+      - name: Preserve XCTest and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedmine-nonprefix-native-host-red-xcresult
+          path: |
+            ${{ runner.temp }}/FeedMineHostNonPrefix.xcresult
+            ${{ runner.temp }}/FeedMineHostNonPrefix-summary.json
+          if-no-files-found: warn
+          retention-days: 7
