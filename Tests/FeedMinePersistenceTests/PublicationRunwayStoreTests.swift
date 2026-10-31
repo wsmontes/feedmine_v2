@@ -244,7 +244,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
-                 "content-fingerprint-generation-v2","reader-source-identity-v1"])
+                 "content-fingerprint-generation-v2","reader-source-identity-v1",
+                  "publication-position-fence-v1"])
         }
     }
 
@@ -448,12 +449,27 @@ extension PublicationRunwayStoreTests {
                 "reader_source_identity_current:CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key)",
                 "sqlite_autoindex_reader_source_identity_1:"
             ]
+            // New additive fence is independent of the historical exposure index.
+            // Compare exact SQLite schema, including its implicit primary-key index.
+            let positionFenceObjects: Set<String> = [
+                """
+                edition_position_protection:CREATE TABLE edition_position_protection (
+                    edition_id TEXT PRIMARY KEY NOT NULL REFERENCES feed_editions(id),
+                    protected_card_id TEXT NOT NULL REFERENCES published_cards(id))
+                """,
+                "sqlite_autoindex_edition_position_protection_1:"
+            ]
+            XCTAssertEqual(try String.fetchAll(db,
+                sql: "SELECT name FROM pragma_table_info('edition_position_protection') ORDER BY cid"),
+                ["edition_id", "protected_card_id"])
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
+                    .union(positionFenceObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
+                    .union(positionFenceObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

@@ -15,7 +15,10 @@ public struct HiddenTailMaintenance: Sendable {
         prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication) async throws -> PublicationStore.TailSuccessionResult {
         let store = PublicationStore(database: database)
         guard let edition = try store.edition(id: lease.editionID), edition.editorialRevision == plan.revision else { return .ineligible }
-        let future = try store.cards(editionID: lease.editionID, around: lease.highWaterCardID,
+        // Maintenance can rewrite only beyond the lease's protected frontier,
+        // not merely beyond the last visually seen occurrence. A saved cursor
+        // may protect later cards whose content has never been marked viewed.
+        let future = try store.cards(editionID: lease.editionID, around: lease.protectedThroughCardID,
             backwardCapacity: 0, forwardCapacity: examinedCapacity + 1).dropFirst()
         guard !future.isEmpty, future.count <= examinedCapacity else { return .ineligible }
         let content = ContentStore(database: database)
@@ -23,7 +26,7 @@ public struct HiddenTailMaintenance: Sendable {
         let seen = try store.seenMaterial(lease: lease, originIDs: window.candidates.map(\.originRecordID))
         guard let exposure = SelectionExposureSnapshot(requestedOriginIDs: window.candidates.map(\.originRecordID),
             publishedOriginIDs: Set(seen.keys), publishedMaterialKeys: seen),
-            let boundary = try store.card(id: lease.highWaterCardID) else { return .ineligible }
+            let boundary = try store.card(id: lease.protectedThroughCardID) else { return .ineligible }
         var sources = Set(try content.memberships(originRecordID: boundary.originRecordID).map(\.sourceID))
         if let source = boundary.sourceID { sources.insert(source) }
         let selection = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: exposure,
