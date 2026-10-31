@@ -460,15 +460,11 @@ public actor FeedSession {
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
                 provenance: .init(sequenceID: sequenceID, position: next))
-            // The durable cursor identifies historical position, not proof of a
-            // rendered image. Prepare the full fallible projection first, then
-            // record exposure only when its anchor can actually be drawn.
-            // WarmStart and actor restore share this exact decision.
-            if let reader = window.items.first(where: { $0.id == restored.cursor.anchor.cardID }),
-                !reader.isImageBearing || reader.image != nil {
-                try publicationHistory.markSeen(editionID: restored.edition.id,
-                    cardID: restored.cursor.anchor.cardID)
-            }
+            // Restoring a durable cursor only prepares a logical window. Even
+            // a decoded image or text card has not necessarily appeared in the
+            // physical viewport. The host's observed viewport path, never a
+            // warm-start/read projection, is responsible for recording exposure.
+            // Preserve prior seen high-water and the saved checkpoint unchanged.
             return FeedCheckpointProjection(
                 state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
                     presentation: snapshot, bounds: bounds),
