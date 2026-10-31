@@ -80,7 +80,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertEqual(ownership.beginProvisionalHandoff(owner: owner,
             before: witness(b.id))?.snapshot, s2)
         let transition = try XCTUnwrap(ownership.commitProvisionalHandoff(owner: owner,
-            after: witness(b.id, top: 420)))
+            transaction: ownership.provisionalID ?? UUID(), after: witness(b.id, top: 420)))
         XCTAssertEqual(transition.witnessID, b.id)
         XCTAssertEqual(transition.offsetAdjustment, 240, accuracy: 0.001)
         XCTAssertEqual(ownership.displayed(owner: owner)?.cards.map(\.id), [a.id, b.id, c.id])
@@ -108,7 +108,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertNil(ownership.beginProvisionalHandoff(owner: stranger,
             before: witness(b.id)))
         XCTAssertNil(ownership.commitProvisionalHandoff(owner: stranger,
-            after: witness(b.id)))
+            transaction: UUID(), after: witness(b.id)))
         XCTAssertEqual(ownership.installed?.snapshot, original)
     }
 
@@ -160,7 +160,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         var ownership = FeedReadyWindowOwnership()
         XCTAssertTrue(ownership.installInitial(first, owner: owner))
         XCTAssertTrue(ownership.stage(candidate, owner: owner))
-        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner, after: witness(b.id)),
+        XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner, transaction: UUID(), after: witness(b.id)),
             "No post-layout witness is valid without a recorded provisional phase")
         XCTAssertNil(ownership.beginProvisionalHandoff(owner: owner,
             before: witness(b.id, top: 900)), "Offscreen pre-layout witness is not valid")
@@ -174,7 +174,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertFalse(ownership.stage(candidate, owner: owner),
             "A pending candidate cannot change underneath its physical measurement")
         XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
-            after: witness(a.id)), "A mismatched physical witness must fail")
+            transaction: ownership.provisionalID ?? UUID(), after: witness(a.id)), "A mismatched physical witness must fail")
         XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old,
             "Failure must roll the provisional display back to the old reader")
         XCTAssertEqual(ownership.installed?.snapshot, old)
@@ -183,7 +183,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertEqual(ownership.beginProvisionalHandoff(owner: owner,
             before: witness(b.id))?.snapshot, next)
         let proof = try XCTUnwrap(ownership.commitProvisionalHandoff(owner: owner,
-            after: witness(b.id, top: 420)))
+            transaction: ownership.provisionalID ?? UUID(), after: witness(b.id, top: 420)))
         XCTAssertEqual(proof.witnessID, b.id)
         XCTAssertEqual(proof.offsetAdjustment, 240, accuracy: 0.001)
         XCTAssertEqual(ownership.installed?.snapshot, next)
@@ -212,7 +212,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
             before: witness(b.id))?.snapshot, next)
         XCTAssertFalse(ownership.cancelProvisionalHandoff(owner: stranger))
         XCTAssertNil(ownership.commitProvisionalHandoff(owner: stranger,
-            after: witness(b.id)))
+            transaction: UUID(), after: witness(b.id)))
         XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, next)
         XCTAssertTrue(ownership.cancelProvisionalHandoff(owner: owner))
         XCTAssertEqual(ownership.displayed(owner: owner)?.snapshot, old)
@@ -254,7 +254,7 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertNil(ownership.pending)
         XCTAssertNil(ownership.displayed(owner: owner))
         XCTAssertNil(ownership.commitProvisionalHandoff(owner: owner,
-            after: witness(b.id, top: 420)),
+            transaction: ownership.provisionalID ?? UUID(), after: witness(b.id, top: 420)),
             "Old edition geometry must not commit after reset")
         let freshEdition = try snapshot([a, b], anchor: b.id,
             edition: FeedEditionID(), sequence: UUID(), position: 1)
