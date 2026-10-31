@@ -137,7 +137,7 @@ extension FeedPresentationSnapshot {
         // window has since released or trimmed during a gesture.
         guard ordinal > 0,
             let rendered = window.items.first(where: { $0.id == observation.anchor.cardID }),
-            !rendered.isImageBearing || rendered.image != nil else { return nil }
+            rendered.isRenderReady else { return nil }
         // Keep all historically admitted IDs in this frozen provenance envelope.
         // Reconciliation uses their membership to restrict rehydration, not to
         // claim every retained historical image was simultaneously visible.
