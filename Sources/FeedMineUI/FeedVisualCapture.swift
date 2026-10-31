@@ -104,6 +104,9 @@ final class FeedVisualMotion {
 struct FeedVisualCapture {
     #if canImport(UIKit)
     let nativeScrollOffset = FeedNativeScrollOffset()
+    /// One physical owner and one UIKit offset writer; staging does not
+    /// publish the candidate rail or manufacture viewport evidence.
+    var readyWindowHandshake: FeedNativeReadyWindowHandshake?
     #endif
     /// O movimento por frame vive na caixa acima: mutações dela **não** invalidam a view.
     let motion = FeedVisualMotion()
