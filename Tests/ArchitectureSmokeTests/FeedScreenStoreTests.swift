@@ -299,16 +299,16 @@ final class FeedScreenStoreTests: XCTestCase {
         let f = try fixture(), published = try await snapshot(f)
         let store = FeedScreenStore { _, _ in }
         try store.install(try FeedPresentationHandoff.receive(snapshot: published, into: store.state))
-        XCTAssertEqual(store.renderedItems.map(\.id),
-            FeedReadyVisualWindow.initial(snapshot: published)?.cards.map(\.id) ?? [])
+        XCTAssertEqual(store.renderedItems.map(\.id), published.window.items.map(\.id),
+            "This fixture is entirely ready: its physical run must match logical order")
         XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady))
         XCTAssertEqual(store.state.presentation?.window.items.map(\.id), published.window.items.map(\.id))
         XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
         XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
         XCTAssertEqual(store.work, store.state.work)
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
-        XCTAssertEqual(store.renderedItems.map(\.id),
-            FeedReadyVisualWindow.initial(snapshot: published)?.cards.map(\.id) ?? [])
+        XCTAssertEqual(store.renderedItems.map(\.id), published.window.items.map(\.id),
+            "This fixture is entirely ready: its physical run must match logical order")
         XCTAssertTrue(store.renderedItems.allSatisfy(\.isRenderReady))
         XCTAssertEqual(store.state.presentation?.window.items.map(\.id), published.window.items.map(\.id))
         XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
