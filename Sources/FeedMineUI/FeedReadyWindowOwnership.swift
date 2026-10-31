@@ -38,6 +38,8 @@ struct FeedReadyWindowOwnership {
     /// The candidate temporarily presented for a measured native layout transaction.
     /// This is neither a durable admission nor a committed reader position.
     private(set) var provisional: FeedReadyVisualWindow?
+    /// A unique token binds the post-layout callback to this exact attempt.
+    private(set) var provisionalID: UUID?
     private var beforeProvisional: FeedVisualWindowWitness?
     private var held: FeedReadyVisualWindow?
     private var owner: ObjectIdentifier?
@@ -97,6 +99,7 @@ struct FeedReadyWindowOwnership {
                 before: before, after: before, gestureActive: false) != nil
         else { return nil }
         provisional = pending
+        provisionalID = UUID()
         beforeProvisional = before
         return pending
     }
@@ -107,8 +110,10 @@ struct FeedReadyWindowOwnership {
     /// coordinate native offset adjustment before exposing the new frame.
     @discardableResult
     mutating func commitProvisionalHandoff(owner requester: ObjectIdentifier,
-        after: FeedVisualWindowWitness?) -> FeedVisualWindowHandoff? {
-        guard owner == requester, held == nil,
+        transaction: UUID, after: FeedVisualWindowWitness?) -> FeedVisualWindowHandoff? {
+        // Ignore stale/out-of-order native geometry without canceling the
+        // currently active provisional transaction.
+        guard owner == requester, held == nil, provisionalID == transaction,
             let installed, let pending, let provisional,
             let before = beforeProvisional else { return nil }
         guard provisional.snapshot == pending.snapshot,
@@ -116,12 +121,14 @@ struct FeedReadyWindowOwnership {
                 to: provisional.plan, before: before, after: after,
                 gestureActive: false) else {
             self.provisional = nil
+            provisionalID = nil
             beforeProvisional = nil
             return nil
         }
         self.installed = provisional
         self.pending = nil
         self.provisional = nil
+        provisionalID = nil
         beforeProvisional = nil
         return proof
     }
@@ -130,6 +137,7 @@ struct FeedReadyWindowOwnership {
     mutating func cancelProvisionalHandoff(owner requester: ObjectIdentifier) -> Bool {
         guard owner == requester, provisional != nil else { return false }
         provisional = nil
+        provisionalID = nil
         beforeProvisional = nil
         return true
     }
@@ -141,6 +149,7 @@ struct FeedReadyWindowOwnership {
         installed = nil
         pending = nil
         provisional = nil
+        provisionalID = nil
         beforeProvisional = nil
         held = nil
         owner = nil
