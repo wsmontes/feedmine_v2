@@ -190,14 +190,16 @@ final class FeedScreenStoreTests: XCTestCase {
     func testS6bTrimmedRuntimeWindowRequiresAnActualPhysicalHandoff() async throws {
         let f = try fixture()
         let store = FeedScreenStore { _, _ in XCTFail("A synthetic user viewport was not requested") }
-        let initial = try XCTUnwrap(try await f.session.admitPresentation(
-            .restore(.init(backwardCapacity: 1, forwardCapacity: 1))))
+        let initialValue = try await f.session.admitPresentation(
+            .restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
+        let initial = try XCTUnwrap(initialValue)
         try store.install(.init(presentation: initial))
         XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...1]))
 
         let atB = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
         _ = try await f.session.submitViewport(atB)
-        let firstGrowth = try XCTUnwrap(try await f.session.admitPresentation(.forwardScroll(atB)))
+        let firstGrowthValue = try await f.session.admitPresentation(.forwardScroll(atB))
+        let firstGrowth = try XCTUnwrap(firstGrowthValue)
         try store.install(.init(presentation: firstGrowth))
         XCTAssertEqual(firstGrowth.window.items.map(\.id), Array(f.cardIDs[0...2]))
         XCTAssertEqual(store.renderedItems.map(\.id), Array(f.cardIDs[0...2]),
@@ -205,7 +207,8 @@ final class FeedScreenStoreTests: XCTestCase {
 
         let atC = ViewportObservation(anchor: .init(cardID: f.cardIDs[2], placement: .center))
         _ = try await f.session.submitViewport(atC)
-        let trimmed = try XCTUnwrap(try await f.session.admitPresentation(.forwardScroll(atC)))
+        let trimmedValue = try await f.session.admitPresentation(.forwardScroll(atC))
+        let trimmed = try XCTUnwrap(trimmedValue)
         XCTAssertEqual(trimmed.window.items.map(\.id), Array(f.cardIDs[1...3]),
             "The runtime has produced a real non-prefix ready window")
         XCTAssertEqual(trimmed.window.anchor.cardID, f.cardIDs[2])
