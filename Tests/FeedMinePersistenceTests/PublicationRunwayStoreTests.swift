@@ -137,13 +137,13 @@ final class PublicationRunwayStoreTests: XCTestCase {
     }
 
     func testEditorialUnseenTracksOnlyConfirmedVisualHighWaterNotSavedPosition() throws {
-        let (_, store, edition, cards) = try fixture()
+        let (db, store, edition, cards) = try fixture()
         let requested = cards.map(\.originRecordID)
         let published = Set(requested)
         // A restored or prepared window cannot supply seen evidence.
         XCTAssertEqual(try store.exposure(editionID: edition.id,
             originIDs: requested).unseenOriginIDs, published)
-        let sessions = SessionStore(database: store.database)
+        let sessions = SessionStore(database: db)
         try sessions.saveCheckpoint(.init(editionID: edition.id, cardID: cards[2].id,
             anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 100)))
         XCTAssertEqual(try store.exposure(editionID: edition.id,
