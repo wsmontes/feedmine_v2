@@ -101,8 +101,14 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertEqual(decoded.cgImage.width, 32)
         XCTAssertEqual(decoded.cgImage.height, 24)
 
-        let screen = FeedScreenStore(onViewport: { _, _ in })
+        var observedReadyIDs: [PublicationCardID] = []
+        let screen = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { evidence, _ in observedReadyIDs.append(evidence.observation.anchor.cardID) })
         try screen.install(FeedPresentationState(presentation: snapshot))
+        screen.submitViewport(.init(anchor: .init(cardID: readyHero.id, placement: .center)),
+            activity: .stationary, rendered: snapshot)
+        XCTAssertEqual(observedReadyIDs, [readyHero.id],
+            "A decoded hero must still reach the semantic viewport consumer")
         XCTAssertEqual(screen.renderedItems.map(\.id), [readyHero.id, textSibling.id],
             "Visual readiness must not be implemented by dropping all images")
         XCTAssertEqual(screen.renderedItems.first?.layout, .hero)
@@ -205,8 +211,16 @@ final class RenderReadyVisualHandoffContractTests: XCTestCase {
         XCTAssertNotNil(snapshot.evidence(for: readyObservation, ordinal: 2),
             "The neighbouring ready text card must still generate viewport evidence")
 
-        let screen = FeedScreenStore(onViewport: { _, _ in })
+        var observedReadyIDs: [PublicationCardID] = []
+        let screen = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { evidence, _ in observedReadyIDs.append(evidence.observation.anchor.cardID) })
         try screen.install(FeedPresentationState(presentation: snapshot))
+        screen.submitViewport(missingObservation, activity: .stationary, rendered: snapshot)
+        XCTAssertTrue(observedReadyIDs.isEmpty,
+            "Missing historical pixels must never be forwarded as a rendered observation")
+        screen.submitViewport(readyObservation, activity: .stationary, rendered: snapshot)
+        XCTAssertEqual(observedReadyIDs, [ready.id],
+            "Withholding an image cannot suppress a ready text observation")
         XCTAssertEqual(screen.renderedItems.map(\.id), [readyBefore.id, ready.id],
             "Only prepared cells cross the visual handoff; history remains retrievable")
         XCTAssertFalse(screen.renderedItems.contains {
