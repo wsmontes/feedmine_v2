@@ -150,23 +150,26 @@ public final class FeedScreenStore {
         // missing saved anchor to another card.
         if presentationState.presentation != priorPresentation {
             let next = presentationState.presentation.flatMap {
-                FeedReadyVisualWindow.initial(snapshot: $0)?.cards
+                FeedReadyVisualWindow.initial(snapshot: $0)
             }
             let sameScope = renderedEditionID == presentationState.presentation?.editionID &&
                 renderedContextKey == presentationState.presentation?.contextKey
             if !sameScope || renderedItems.isEmpty {
-                // An explicit context/edition replacement may replace its old
-                // physical surface; there is no shared cursor to preserve.
-                renderedItems = next ?? []
+                // An explicit context/edition replacement has no old reader
+                // position to preserve. A deferred durable anchor gets no
+                // invented physical target or placeholder cell.
+                physicalWindow = next
+                renderedItems = next?.cards ?? []
             } else if let next {
                 let previousIDs = renderedItems.map(\.id)
-                let nextIDs = next.map(\.id)
-                // First vertical slice: identical IDs or append-only ready
-                // growth below the existing cells needs no physical rebase.
-                // Prepend/trim/gap crossings require the measured native
-                // handoff/rollback and must keep the old pixels until then.
-                if nextIDs.starts(with: previousIDs), next != renderedItems {
-                    renderedItems = next
+                let nextIDs = next.cards.map(\.id)
+                // Only append-only or same-ID changes can use the existing
+                // automatic native offset contract without a physical rebase.
+                // Retain the *old* ready snapshot as visual evidence whenever
+                // trim/prepend/re-entry requires a measured handoff.
+                if nextIDs.starts(with: previousIDs) {
+                    physicalWindow = next
+                    if next.cards != renderedItems { renderedItems = next.cards }
                 }
             }
         }
@@ -181,6 +184,12 @@ public final class FeedScreenStore {
 
     /// O que a lista desenha, publicado **apenas quando muda**. Nenhuma leitura daqui depende da posição do leitor.
     public private(set) var renderedItems: [PresentationCard] = []
+    /// One physical ownership snapshot, distinct from the authoritative
+    /// current semantic state. If a logical projection changes while its
+    /// corresponding cells cannot be swapped safely, this is the exact
+    /// causal provenance of the cells the user can still see and tap.
+    @ObservationIgnored private var physicalWindow: FeedReadyVisualWindow?
+    var displayedPresentation: FeedPresentationSnapshot? { physicalWindow?.snapshot }
     public private(set) var renderedEditionID: FeedEditionID?
     public private(set) var renderedContextKey: ContextKey?
     /// O trabalho que a superfície está relatando, publicado **apenas quando muda** — pela mesma razão: a view lê
