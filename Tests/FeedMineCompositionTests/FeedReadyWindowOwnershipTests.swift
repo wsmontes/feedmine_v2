@@ -64,8 +64,10 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         let store = FeedScreenStore(onViewport: { _, _ in })
         var ownership = FeedReadyWindowOwnership()
         let owner = ObjectIdentifier(store)
+        try store.install(FeedPresentationState(presentation: s1))
         XCTAssertTrue(ownership.installInitial(first, owner: owner))
         XCTAssertTrue(ownership.beginGesture(owner: owner))
+        try store.install(FeedPresentationState(presentation: s2))
         XCTAssertTrue(ownership.stage(second, owner: owner))
         XCTAssertEqual(ownership.displayed(owner: owner)?.cards.map(\.id), [a.id, b.id])
         XCTAssertNil(ownership.acknowledgeHandoff(owner: owner,
@@ -103,6 +105,38 @@ final class FeedReadyWindowOwnershipTests: XCTestCase {
         XCTAssertFalse(ownership.stage(installed, owner: stranger))
         XCTAssertNil(ownership.acknowledgeHandoff(owner: stranger,
             before: witness(b.id), after: witness(b.id)))
+        XCTAssertEqual(ownership.installed?.snapshot, original)
+    }
+
+    func testStagedCausalPositionCannotRegressOrReuseAnExistingOrdinal() throws {
+        let a = card(), b = card(), c = card()
+        let edition = FeedEditionID(), sequence = UUID()
+        let original = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 1)
+        let newer = try snapshot([a, b, c], anchor: b.id,
+            edition: edition, sequence: sequence, position: 3)
+        let stale = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 2)
+        let duplicateOrdinal = try snapshot([a, b], anchor: b.id,
+            edition: edition, sequence: sequence, position: 3)
+        let first = try XCTUnwrap(FeedReadyVisualWindow(snapshot: original,
+            center: 1, backward: 1, forward: 0))
+        let next = try XCTUnwrap(FeedReadyVisualWindow(snapshot: newer,
+            center: 1, backward: 1, forward: 1))
+        let obsolete = try XCTUnwrap(FeedReadyVisualWindow(snapshot: stale,
+            center: 1, backward: 1, forward: 0))
+        let duplicate = try XCTUnwrap(FeedReadyVisualWindow(snapshot: duplicateOrdinal,
+            center: 1, backward: 1, forward: 0))
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let owner = ObjectIdentifier(store)
+        var ownership = FeedReadyWindowOwnership()
+        XCTAssertTrue(ownership.installInitial(first, owner: owner))
+        XCTAssertTrue(ownership.stage(next, owner: owner))
+        XCTAssertFalse(ownership.stage(obsolete, owner: owner),
+            "A stale result cannot supersede a newer staged physical run")
+        XCTAssertFalse(ownership.stage(duplicate, owner: owner),
+            "One projection ordinal cannot authorize competing visible content")
+        XCTAssertEqual(ownership.pending?.snapshot, newer)
         XCTAssertEqual(ownership.installed?.snapshot, original)
     }
 
