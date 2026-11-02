@@ -117,8 +117,10 @@ public final class FeedScreenStore {
     // MARK: - Reader chrome (T5)
 
     public func toggleSearch() {
-        isSearching.toggle()
-        if !isSearching { searchQuery = "" }
+        // Closing from the header's own control is the same act as "Cancelar": it used to only flip the flag, so
+        // the old results came back under an empty field and the host never restored the origin it remembered.
+        guard !isSearching else { cancelSearch(); return }
+        isSearching = true
     }
 
     /// One explicit search submission. The host decides what a term means; UI starts no work.
