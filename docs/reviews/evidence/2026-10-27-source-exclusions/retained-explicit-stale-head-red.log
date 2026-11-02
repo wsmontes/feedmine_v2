@@ -1,0 +1,31 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version-3CD7052B146186F2.txt
+[1/3] Write sources
+[3/4] Emitting module FeedMinePersistenceTests
+[4/5] Compiling FeedMinePersistenceTests ReaderHistoryBindingStoreTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (2.84s)
+Test Suite 'Selected tests' started at 2026-10-30 10:23:12.512.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-30 10:23:12.513.
+Test Suite 'ReaderHistoryBindingStoreTests' started at 2026-10-30 10:23:12.513.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' passed (0.084 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation]' started.
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:96: error: -[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation] : XCTAssertThrowsError failed: did not throw an error
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:97: error: -[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation] : XCTAssertTrue failed: threw error "staleHistoryBinding"
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:98: error: -[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation] : XCTAssertNil failed: "Record(id: 5B431DE0-B680-4F2C-9B50-0F551ECDF26B, logicalKey: FeedMineDomain.ContextKey(identitySchemaVersion: 1, request: FeedMineDomain.FeedContextRequest.main, preset: FeedMineDomain.ReaderPresetID.everything, filter: FeedMineDomain.ReaderFilter(regionIDs: Set([]), taxonomyNodeIDs: Set([]), languages: Set([]), contentType: FeedMineDomain.ReaderContentType.all, mediaTypes: Set([]), mood: FeedMineDomain.ReaderMood.all, exclusions: FeedMineDomain.ReaderContentExclusions(isEnabled: false, rules: [])), searchScope: nil), runtimeNamespace: "v1|main|preset=everything|filter=regions=;taxonomy=;languages=;type=All;mood=All;exclusions=-", activeEditionID: nil)"
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation]' failed (0.342 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' passed (0.053 seconds).
+Test Suite 'ReaderHistoryBindingStoreTests' failed at 2026-10-30 10:23:12.992.
+	 Executed 3 tests, with 3 failures (1 unexpected) in 0.478 (0.479) seconds
+Test Suite 'FeedMinePackageTests.xctest' failed at 2026-10-30 10:23:12.992.
+	 Executed 3 tests, with 3 failures (1 unexpected) in 0.478 (0.479) seconds
+Test Suite 'Selected tests' failed at 2026-10-30 10:23:12.992.
+	 Executed 3 tests, with 3 failures (1 unexpected) in 0.478 (0.480) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

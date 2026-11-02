@@ -1,0 +1,74 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version-3CD7052B146186F2.txt
+[3/5] Compiling FeedMineUI FeedScreen.swift
+[4/5] Emitting module FeedMineUI
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (5.55s)
+Test Suite 'Selected tests' started at 2026-11-02 08:14:49.795.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-11-02 08:14:49.797.
+Test Suite 'FeedScreenRenderingTests' started at 2026-11-02 08:14:49.797.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testCardAdaptsToNarrowAvailableWidth]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testCardAdaptsToNarrowAvailableWidth]' passed (0.716 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testDeferredWorkStatesTheWaitWithoutClaimingASearch]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testDeferredWorkStatesTheWaitWithoutClaimingASearch]' passed (0.614 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testEndOfContentBlockRendersAfterTheLastCardWithTheRatifiedActions]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testEndOfContentBlockRendersAfterTheLastCardWithTheRatifiedActions]' passed (1.350 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleRecoveryDoesNotAddAChangingFooterToPublishedHistory]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleRecoveryDoesNotAddAChangingFooterToPublishedHistory]' passed (0.426 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleSourceRestrictionsOfferRecoveryWithoutInventingSearchOrFinalExhaustion]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleSourceRestrictionsOfferRecoveryWithoutInventingSearchOrFinalExhaustion]' passed (0.222 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testImportedSourceRemainsVisibleWhenTheCatalogueIsUnavailable]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testImportedSourceRemainsVisibleWhenTheCatalogueIsUnavailable]' passed (0.356 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testNativeHostingObservesStoreWithoutReplacingView]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testNativeHostingObservesStoreWithoutReplacingView]' passed (0.755 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testProvisionalAbsenceWithSourceRulesAlsoOffersRecovery]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testProvisionalAbsenceWithSourceRulesAlsoOffersRecovery]' passed (1.392 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testRecoveryUsesChromeWithoutAConditionalFooterAtEndOfHistory]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testRecoveryUsesChromeWithoutAConditionalFooterAtEndOfHistory]' passed (0.700 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory]' passed (0.192 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testStoredReadingsMenuDoesNotReplaceAnActiveFeedsLoadingOrFailureSurface]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testStoredReadingsMenuDoesNotReplaceAnActiveFeedsLoadingOrFailureSurface]' passed (0.945 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testTimestampMeaningIsNotChangedToAuthorship]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testTimestampMeaningIsNotChangedToAuthorship]' passed (0.364 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU10AllNonPresentationFactsRemainDistinctAndNonterminal]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU10AllNonPresentationFactsRemainDistinctAndNonterminal]' passed (1.548 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU11NewSameEditionWindowRendersExactReceivedSequence]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU11NewSameEditionWindowRendersExactReceivedSequence]' passed (0.409 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU12DeferredViewportCaptureEmitsNoFabricatedObservation]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU12DeferredViewportCaptureEmitsNoFabricatedObservation]' passed (0.334 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU13RenderingPerformsNoDurableWorkOrIntentEmission]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU13RenderingPerformsNoDurableWorkOrIntentEmission]' passed (0.317 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU14UIBoundaryHasNoProductionImportsOrHiddenEffects]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU14UIBoundaryHasNoProductionImportsOrHiddenEffects]' passed (0.089 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU1TextOnlyCardActuallyRendersLocalFields]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU1TextOnlyCardActuallyRendersLocalFields]' passed (0.109 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU2AbsentOptionalContentRendersWithoutInventedText]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU2AbsentOptionalContentRendersWithoutInventedText]' passed (0.042 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU3HeroAndThumbnailWithoutExposedAssetRemainTextual]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU3HeroAndThumbnailWithoutExposedAssetRemainTextual]' passed (0.132 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU4RealViewSequenceUsesPublishedOccurrenceIDs]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU4RealViewSequenceUsesPublishedOccurrenceIDs]' passed (0.259 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU5PublishedOrderIsRenderedRatherThanTitleSorting]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU5PublishedOrderIsRenderedRatherThanTitleSorting]' passed (0.267 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU6ImmediateLocalPresentationHasNoRemotePrerequisite]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU6ImmediateLocalPresentationHasNoRemotePrerequisite]' passed (0.201 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU7PendingKeepsRenderedCardsWithoutLoadingSurface]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU7PendingKeepsRenderedCardsWithoutLoadingSurface]' passed (0.197 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU8FailureAndOtherWorkFactsKeepRenderedCards]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU8FailureAndOtherWorkFactsKeepRenderedCards]' passed (0.547 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU9InitialPendingRendersOnlyFactualPreparation]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU9InitialPendingRendersOnlyFactualPreparation]' passed (0.195 seconds).
+Test Suite 'FeedScreenRenderingTests' passed at 2026-11-02 08:15:02.478.
+	 Executed 26 tests, with 0 failures (0 unexpected) in 12.678 (12.681) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-11-02 08:15:02.478.
+	 Executed 26 tests, with 0 failures (0 unexpected) in 12.678 (12.681) seconds
+Test Suite 'Selected tests' passed at 2026-11-02 08:15:02.478.
+	 Executed 26 tests, with 0 failures (0 unexpected) in 12.678 (12.684) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

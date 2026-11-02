@@ -1,0 +1,87 @@
+Command line invocation:
+    /Applications/Xcode-26.6.0.app/Contents/Developer/usr/bin/xcodebuild test-without-building -xctestrun /Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineR4UnitProbe_iphonesimulator26.5-arm64.xctestrun -destination "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -enableCodeCoverage NO -resultBundlePath /Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/retained-native-selection-tests.xcresult "-only-testing:FeedMineAppTests/ContentFilterTests/testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor" -collect-test-diagnostics never
+
+2026-10-30 10:27:53.075 xcodebuild[3009:26458328]  DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+2026-10-30 10:27:53.093 xcodebuild[3009:26458308] [MT] DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+2026-10-30 10:27:53.220 xcodebuild[3009:26458308] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+Writing result bundle at path:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/retained-native-selection-tests.xcresult
+
+2026-10-30 10:27:53.223 xcodebuild[3009:26458308] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:27:53.440 xcodebuild[3009:26458308] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:27:54.150 xcodebuild[3009:26458308] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:27:54.339 xcodebuild[3009:26458308] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:28:10.708468-0700 FeedMine[3216:26460166] [plugin] AddInstanceForFactory: No factory registered for id <CFUUID 0x1052056e0> F8BB1C28-BAE8-11D6-9C31-00039315CD46
+2026-10-30 10:28:11.877982-0700 FeedMine[3216:26460166] [composition] cold bootstrap started
+2026-10-30 10:28:11.981341-0700 FeedMine[3216:26460166] [composition] cold bootstrap settled
+Test Suite 'Selected tests' started at 2026-10-30 10:28:12.208.
+Test Suite 'FeedMineAppTests.xctest' started at 2026-10-30 10:28:12.208.
+Test Suite 'ContentFilterTests' started at 2026-10-30 10:28:12.208.
+Test Case '-[FeedMineAppTests.ContentFilterTests testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor]' started.
+2026-10-30 10:28:12.495803-0700 FeedMine[3216:26460166] [composition] cold bootstrap started
+2026-10-30 10:28:12.641970-0700 FeedMine[3216:26460166] [composition] installed cards=1 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=1
+2026-10-30 10:28:12.643354-0700 FeedMine[3216:26460166] [composition] installed cards=1 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=1
+2026-10-30 10:28:12.645291-0700 FeedMine[3216:26460166] [composition] published growth: admitted 1 -> 1
+2026-10-30 10:28:12.688466-0700 FeedMine[3216:26460166] [composition] publication concluded edition=A224E742-9AEF-4948-A177-D1A7B39801F1 segment=5D09431A-1DE2-431F-AE46-AB2260A266F5 ordinal=1
+2026-10-30 10:28:12.699002-0700 FeedMine[3216:26460166] [composition] published growth: admitted 1 -> 9
+2026-10-30 10:28:12.699293-0700 FeedMine[3216:26460166] [composition] installed cards=9 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=2
+2026-10-30 10:28:12.762148-0700 FeedMine[3216:26460166] [composition] publication concluded edition=A224E742-9AEF-4948-A177-D1A7B39801F1 segment=B738901E-6D0E-42C8-84FF-8D7E45C293DD ordinal=2
+2026-10-30 10:28:12.774877-0700 FeedMine[3216:26460166] [composition] published growth: admitted 9 -> 17
+2026-10-30 10:28:12.775113-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=3
+2026-10-30 10:28:12.827373-0700 FeedMine[3216:26460166] [composition] publication concluded edition=A224E742-9AEF-4948-A177-D1A7B39801F1 segment=35FADD92-04C3-4F89-9D88-DBB4255DE60A ordinal=3
+2026-10-30 10:28:12.830408-0700 FeedMine[3216:26460166] [composition] published growth: admitted 17 -> 17
+2026-10-30 10:28:12.831790-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=3
+2026-10-30 10:28:12.835418-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=3
+2026-10-30 10:28:12.835751-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=3
+2026-10-30 10:28:12.835799-0700 FeedMine[3216:26460166] [composition] cold bootstrap settled
+2026-10-30 10:28:12.842613-0700 FeedMine[3216:26460166] [composition] published growth: admitted 17 -> 17
+2026-10-30 10:28:12.871013-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=671CE865-1B8B-4DBE-9A3F-57175E01CE0C order=3
+2026-10-30 10:28:12.876205-0700 FeedMine[3216:26460166] [composition] cold bootstrap started
+2026-10-30 10:28:12.912250-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=43087000-C993-485E-9D6E-6B44D108CBC1 sequence=6F88C469-6D9B-441B-BAFF-BD1B17A6CFD1 order=1
+2026-10-30 10:28:12.912326-0700 FeedMine[3216:26460166] [composition] cold bootstrap settled
+2026-10-30 10:28:12.916425-0700 FeedMine[3216:26460166] [composition] published growth: admitted 17 -> 17
+2026-10-30 10:28:12.962862-0700 FeedMine[3216:26460166] [composition] publication concluded edition=43087000-C993-485E-9D6E-6B44D108CBC1 segment=DF5F75E3-3998-4E51-AF47-C59A6E35EE00 ordinal=1
+2026-10-30 10:28:12.965305-0700 FeedMine[3216:26460166] [composition] published growth: admitted 17 -> 17
+2026-10-30 10:28:12.989049-0700 FeedMine[3216:26460166] feedmine frames=40 late=1 bad=0 severe=2 worst_ms=289.6 budget_ms=16.67
+2026-10-30 10:28:13.023881-0700 FeedMine[3216:26460166] [composition] publication concluded edition=43087000-C993-485E-9D6E-6B44D108CBC1 segment=6FA1CE68-3EEE-45B9-B053-000F3F9D1452 ordinal=2
+2026-10-30 10:28:13.028725-0700 FeedMine[3216:26460166] [composition] published growth: admitted 17 -> 17
+2026-10-30 10:28:13.076262-0700 FeedMine[3216:26460166] [composition] publication concluded edition=43087000-C993-485E-9D6E-6B44D108CBC1 segment=0291A2AE-63CB-45CB-B56F-E140B9CC1F4D ordinal=3
+2026-10-30 10:28:13.077852-0700 FeedMine[3216:26460166] [composition] published growth: admitted 17 -> 17
+2026-10-30 10:28:13.079875-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=43087000-C993-485E-9D6E-6B44D108CBC1 sequence=6F88C469-6D9B-441B-BAFF-BD1B17A6CFD1 order=1
+2026-10-30 10:28:13.180470-0700 FeedMine[3216:26460166] [composition] restore: the reader's card 9D9F1F61-D047-4438-B093-58E531BFDF3B is published; the window starts there
+2026-10-30 10:28:13.189271-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=7E4B1BE4-70B2-4884-B3A1-659C6A01264E order=1
+2026-10-30 10:28:13.198495-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=7E4B1BE4-70B2-4884-B3A1-659C6A01264E order=1
+2026-10-30 10:28:13.198624-0700 FeedMine[3216:26460166] [composition] local restore before HTTP
+2026-10-30 10:28:13.200311-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=7E4B1BE4-70B2-4884-B3A1-659C6A01264E order=1
+2026-10-30 10:28:13.215079-0700 FeedMine[3216:26460166] [composition] restore: the reader's card C5F570F2-4CE2-4B35-95C6-EFBE93CB189D is published; the window starts there
+2026-10-30 10:28:13.223525-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=43087000-C993-485E-9D6E-6B44D108CBC1 sequence=B1E60D65-7A0E-4D10-82C1-B2A96760BCB7 order=1
+2026-10-30 10:28:13.225450-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=43087000-C993-485E-9D6E-6B44D108CBC1 sequence=B1E60D65-7A0E-4D10-82C1-B2A96760BCB7 order=1
+2026-10-30 10:28:13.225582-0700 FeedMine[3216:26460166] [composition] local restore before HTTP
+2026-10-30 10:28:13.227278-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=43087000-C993-485E-9D6E-6B44D108CBC1 sequence=B1E60D65-7A0E-4D10-82C1-B2A96760BCB7 order=1
+2026-10-30 10:28:13.243210-0700 FeedMine[3216:26460166] [composition] restore: the reader's card 9D9F1F61-D047-4438-B093-58E531BFDF3B is published; the window starts there
+2026-10-30 10:28:13.251700-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=2F1B21FE-54B8-4957-AEAA-CDB6C4B301F1 order=1
+2026-10-30 10:28:13.252618-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=2F1B21FE-54B8-4957-AEAA-CDB6C4B301F1 order=1
+2026-10-30 10:28:13.252709-0700 FeedMine[3216:26460166] [composition] local restore before HTTP
+2026-10-30 10:28:13.254311-0700 FeedMine[3216:26460166] [composition] installed cards=17 edition=A224E742-9AEF-4948-A177-D1A7B39801F1 sequence=2F1B21FE-54B8-4957-AEAA-CDB6C4B301F1 order=1
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift:93: error: -[FeedMineAppTests.ContentFilterTests testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor] : XCTAssertEqual failed: ("nil") is not equal to ("Optional(9D9F1F61-D047-4438-B093-58E531BFDF3B)")
+Test Case '-[FeedMineAppTests.ContentFilterTests testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor]' failed (1.338 seconds).
+Test Suite 'ContentFilterTests' failed at 2026-10-30 10:28:13.547.
+	 Executed 1 test, with 1 failure (0 unexpected) in 1.338 (1.339) seconds
+Test Suite 'FeedMineAppTests.xctest' failed at 2026-10-30 10:28:13.548.
+	 Executed 1 test, with 1 failure (0 unexpected) in 1.338 (1.340) seconds
+Test Suite 'Selected tests' failed at 2026-10-30 10:28:13.548.
+	 Executed 1 test, with 1 failure (0 unexpected) in 1.338 (1.340) seconds
+2026-10-30 10:28:13.548228-0700 FeedMine[3216:26460166] feedmine frames=39 late=2 bad=0 severe=2 worst_ms=269.5 budget_ms=16.67
+2026-10-30 10:28:13.858 xcodebuild[3009:26458308] [MT] IDETestOperationsObserverDebug: 20.416 elapsed -- Testing started completed.
+2026-10-30 10:28:13.858 xcodebuild[3009:26458308] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-30 10:28:13.858 xcodebuild[3009:26458308] [MT] IDETestOperationsObserverDebug: 20.416 sec, +20.416 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/retained-native-selection-tests.xcresult
+
+Failing tests:
+	ContentFilterTests.testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor()
+
+** TEST EXECUTE FAILED **
+
+Testing started

@@ -1,0 +1,451 @@
+Command line invocation:
+    /Applications/Xcode-26.6.0.app/Contents/Developer/usr/bin/xcodebuild test-without-building -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Debug -destination "platform=iOS Simulator,id=8E541C9E-FDD2-40D4-BE44-3E0814A49A8C" -derivedDataPath .build/product-media-current-derived -parallel-testing-enabled NO -testLanguage pt-BR -testRegion BR "-only-testing:FeedMineUITests/PortabilityJourneyUITests/testAddFeedPasteAndPreviewAndCollectionResult" "-only-testing:FeedMineUITests/VideoCardJourneyUITests" -resultBundlePath .build/product-first-window-host-native-20261102.xcresult
+
+2026-11-02 09:35:09.687 xcodebuild[21206:249779]  DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+2026-11-02 09:35:09.820 xcodebuild[21206:249706] [MT] DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+Resolve Package Graph
+
+
+Resolved source packages:
+  FeedMine: /Users/wagnersilvamontes/Documents/GitHub/feedmine_v2 @ local
+  GRDB: https://github.com/groue/GRDB.swift @ 7.11.1
+  FeedKit: https://github.com/nmdias/FeedKit @ 10.9.4
+
+Writing result bundle at path:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/product-first-window-host-native-20261102.xcresult
+
+2026-11-02 09:36:08.541725-0700 FeedMineUITests-Runner[21653:253493] [Default] Running tests...
+Test Suite 'Selected tests' started at 2026-11-02 09:36:10.085.
+Test Suite 'FeedMineUITests.xctest' started at 2026-11-02 09:36:10.090.
+Test Suite 'PortabilityJourneyUITests' started at 2026-11-02 09:36:10.096.
+Test Case '-[FeedMineUITests.PortabilityJourneyUITests testAddFeedPasteAndPreviewAndCollectionResult]' started.
+    t =     0.06s Start Test at 2026-11-02 09:36:10.154
+    t =     0.58s Set Up
+    t =     0.64s Open com.feedmine.development
+    t =     0.64s     Launch com.feedmine.development
+2026-11-02 09:36:11.177 xcodebuild[21206:249706] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:36:11.177 xcodebuild[21206:249706] [MT] IDELaunchParametersSnapshot: no debugger version
+objc[21653]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x10b698310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x109f60398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =     8.42s         Setting up automation session
+    t =     8.51s         Wait for com.feedmine.development to idle
+    t =    10.27s Waiting 90.0s for "more-menu" Button to exist
+    t =    11.35s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =    11.35s         Checking existence of `"more-menu" Button`
+    t =    11.43s Waiting 20.0s for "more-menu" Button to exist
+    t =    12.47s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =    12.47s         Checking existence of `"more-menu" Button`
+    t =    12.50s Tap "more-menu" Button
+    t =    12.50s     Wait for com.feedmine.development to idle
+    t =    12.51s     Find the "more-menu" Button
+    t =    12.53s     Check for interrupting elements affecting "more-menu" Button
+    t =    12.59s     Synthesize event
+    t =    13.00s     Wait for com.feedmine.development to idle
+    t =    13.16s Waiting 5.0s for "Adicionar feed" Button to exist
+    t =    14.26s     Checking `Expect predicate `existsNoRetry == 1` for object "Adicionar feed" Button`
+    t =    14.26s         Checking existence of `"Adicionar feed" Button`
+    t =    14.37s Tap "Adicionar feed" Button
+    t =    14.37s     Wait for com.feedmine.development to idle
+    t =    14.39s     Find the "Adicionar feed" Button
+    t =    14.43s     Check for interrupting elements affecting "plus.circle" Button
+    t =    14.49s     Synthesize event
+    t =    14.85s     Wait for com.feedmine.development to idle
+    t =    16.80s Waiting 20.0s for "Adicionar fontes" NavigationBar to exist
+    t =    17.90s     Checking `Expect predicate `existsNoRetry == 1` for object "Adicionar fontes" NavigationBar`
+    t =    17.91s         Checking existence of `"Adicionar fontes" NavigationBar`
+    t =    18.07s Waiting 15.0s for "add-feed-input" TextField to exist
+    t =    19.13s     Checking `Expect predicate `existsNoRetry == 1` for object "add-feed-input" TextField`
+    t =    19.14s         Checking existence of `"add-feed-input" TextField`
+    t =    19.21s Tap "add-feed-input" TextField
+    t =    19.21s     Wait for com.feedmine.development to idle
+    t =    19.22s     Find the "add-feed-input" TextField
+    t =    19.30s     Check for interrupting elements affecting "add-feed-input" TextField
+    t =    19.39s     Synthesize event
+    t =    19.69s     Wait for com.feedmine.development to idle
+    t =    19.71s Type 'https://site.feedm...' into "add-feed-input" TextField
+    t =    19.71s     Wait for com.feedmine.development to idle
+    t =    19.83s     Find the "add-feed-input" TextField
+    t =    19.97s     Check for interrupting elements affecting "add-feed-input" TextField
+    t =    20.05s     Synthesize event
+    t =    20.70s     Wait for com.feedmine.development to idle
+    t =    20.71s Find the "add-feed-add" Button
+    t =    20.80s Tap "add-feed-add" Button
+    t =    20.80s     Wait for com.feedmine.development to idle
+    t =    20.82s     Find the "add-feed-add" Button
+    t =    20.93s     Check for interrupting elements affecting "add-feed-add" Button
+    t =    21.09s     Synthesize event
+    t =    21.49s     Wait for com.feedmine.development to idle
+    t =    22.20s Waiting 120.0s for "add-feed-result-added" StaticText to exist
+    t =    23.22s     Checking `Expect predicate `existsNoRetry == 1` for object "add-feed-result-added" StaticText`
+    t =    23.22s         Checking existence of `"add-feed-result-added" StaticText`
+    t =    23.31s Tap "add-feed-input" TextField
+    t =    23.31s     Wait for com.feedmine.development to idle
+    t =    23.31s     Find the "add-feed-input" TextField
+    t =    23.40s     Check for interrupting elements affecting "add-feed-input" TextField
+    t =    23.48s     Synthesize event
+    t =    23.79s     Wait for com.feedmine.development to idle
+    t =    24.25s Type 'https://site.feedm...' into "add-feed-input" TextField
+    t =    24.26s     Wait for com.feedmine.development to idle
+    t =    24.27s     Find the "add-feed-input" TextField
+    t =    24.35s     Check for interrupting elements affecting "add-feed-input" TextField
+    t =    24.42s     Synthesize event
+    t =    25.08s     Wait for com.feedmine.development to idle
+    t =    25.08s Tap "add-feed-add" Button
+    t =    25.08s     Wait for com.feedmine.development to idle
+    t =    25.09s     Find the "add-feed-add" Button
+    t =    25.16s     Check for interrupting elements affecting "add-feed-add" Button
+    t =    25.24s     Synthesize event
+    t =    25.57s     Wait for com.feedmine.development to idle
+    t =    26.27s Waiting 120.0s for StaticText (First Match) to exist
+    t =    27.35s     Checking `Expect predicate `existsNoRetry == 1` for object StaticText (First Match)`
+    t =    27.35s         Checking existence of `StaticText (First Match)`
+    t =    27.51s Checking existence of `"add-feed-result-added" StaticText`
+    t =    27.58s Tap "add-feed-cancel" Button
+    t =    27.58s     Wait for com.feedmine.development to idle
+    t =    27.59s     Find the "add-feed-cancel" Button
+    t =    27.66s     Check for interrupting elements affecting "add-feed-cancel" Button
+    t =    27.73s     Synthesize event
+    t =    28.06s     Wait for com.feedmine.development to idle
+    t =    28.68s Waiting 120.0s for "card.open" Any to exist
+    t =    29.75s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    29.75s         Checking existence of `"card.open" Any`
+    t =    29.80s         Capturing element debug description
+    t =    30.77s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    30.77s         Checking existence of `"card.open" Any`
+    t =    30.83s         Capturing element debug description
+    t =    31.68s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    31.68s         Checking existence of `"card.open" Any`
+    t =    31.74s         Capturing element debug description
+    t =    32.71s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    32.71s         Checking existence of `"card.open" Any`
+    t =    32.76s         Capturing element debug description
+    t =    33.72s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    33.72s         Checking existence of `"card.open" Any`
+    t =    33.81s         Capturing element debug description
+    t =    34.68s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    34.68s         Checking existence of `"card.open" Any`
+    t =    34.74s         Capturing element debug description
+    t =    35.71s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    35.71s         Checking existence of `"card.open" Any`
+    t =    35.76s         Capturing element debug description
+    t =    36.72s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    36.72s         Checking existence of `"card.open" Any`
+    t =    36.78s         Capturing element debug description
+    t =    37.73s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    37.74s         Checking existence of `"card.open" Any`
+    t =    37.78s         Capturing element debug description
+    t =    38.75s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    38.75s         Checking existence of `"card.open" Any`
+    t =    38.80s         Capturing element debug description
+    t =    39.76s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    39.77s         Checking existence of `"card.open" Any`
+    t =    39.82s         Capturing element debug description
+    t =    40.68s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    40.68s         Checking existence of `"card.open" Any`
+    t =    40.73s         Capturing element debug description
+    t =    41.70s     Checking `Expect predicate `existsNoRetry == 1` for object "card.open" Any`
+    t =    41.70s         Checking existence of `"card.open" Any`
+    t =    41.76s Tear Down
+Test Case '-[FeedMineUITests.PortabilityJourneyUITests testAddFeedPasteAndPreviewAndCollectionResult]' passed (42.026 seconds).
+Test Suite 'PortabilityJourneyUITests' passed at 2026-11-02 09:36:52.180.
+	 Executed 1 test, with 0 failures (0 unexpected) in 42.026 (42.083) seconds
+Test Suite 'VideoCardJourneyUITests' started at 2026-11-02 09:36:52.181.
+Test Case '-[FeedMineUITests.VideoCardJourneyUITests testTheVideoCardOpensItsOriginAndReturningKeepsTheReadingPosition]' started.
+    t =     0.00s Start Test at 2026-11-02 09:36:52.182
+    t =     0.04s Set Up
+    t =     0.04s Open com.feedmine.development
+    t =     0.04s     Launch com.feedmine.development
+    t =     0.05s         Terminate com.feedmine.development:21695
+2026-11-02 09:36:53.256 xcodebuild[21206:249706] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:36:53.256 xcodebuild[21206:249706] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     1.34s         Setting up automation session
+    t =     2.75s         Wait for com.feedmine.development to idle
+VIDEO_CARD_JOURNEY t=4s launch
+    t =     4.45s Find the Target Application 'com.feedmine.development'
+    t =     4.67s Added attachment named '0-lancamento'
+    t =     4.67s Waiting 90.0s for "feed-empty-title" StaticText to exist
+    t =     5.76s     Checking `Expect predicate `existsNoRetry == 1` for object "feed-empty-title" StaticText`
+    t =     5.76s         Checking existence of `"feed-empty-title" StaticText`
+VIDEO_CARD_JOURNEY t=6s empty-state
+    t =     5.79s Waiting 30.0s for "more-menu" Button to exist
+    t =     6.86s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =     6.86s         Checking existence of `"more-menu" Button`
+    t =     6.90s Tap "more-menu" Button
+    t =     6.91s     Wait for com.feedmine.development to idle
+    t =     6.94s     Find the "more-menu" Button
+    t =     6.98s     Check for interrupting elements affecting "more-menu" Button
+    t =     7.04s     Synthesize event
+    t =     7.39s     Wait for com.feedmine.development to idle
+    t =     8.75s Waiting 15.0s for Button (First Match) to exist
+    t =     9.79s     Checking `Expect predicate `existsNoRetry == 1` for object Button (First Match)`
+    t =     9.79s         Checking existence of `Button (First Match)`
+    t =     9.84s Tap Button (First Match)
+    t =     9.84s     Wait for com.feedmine.development to idle
+    t =     9.84s     Find the Button (First Match)
+    t =     9.88s     Check for interrupting elements affecting "plus.circle" Button
+    t =     9.91s     Synthesize event
+    t =    10.23s     Wait for com.feedmine.development to idle
+    t =    12.05s Waiting 20.0s for Any (First Match) to exist
+    t =    13.10s     Checking `Expect predicate `existsNoRetry == 1` for object Any (First Match)`
+    t =    13.10s         Checking existence of `Any (First Match)`
+    t =    13.22s Tap Any (First Match)
+    t =    13.22s     Wait for com.feedmine.development to idle
+    t =    13.22s     Find the Any (First Match)
+    t =    13.32s     Check for interrupting elements affecting "add-feed-input" TextField
+    t =    13.42s     Synthesize event
+    t =    13.72s     Wait for com.feedmine.development to idle
+    t =    13.72s Type 'https://feeds.twit...' into "add-feed-input" TextField
+    t =    13.72s     Wait for com.feedmine.development to idle
+    t =    13.72s     Find the "add-feed-input" TextField
+    t =    13.90s     Check for interrupting elements affecting "add-feed-input" TextField
+    t =    14.00s     Synthesize event
+    t =    14.86s     Wait for com.feedmine.development to idle
+    t =    14.87s Find the "add-feed-input" TextField
+    t =    14.97s Checking existence of `"add-feed-add" Button`
+    t =    15.04s Find the "add-feed-add" Button
+    t =    15.11s Tap "add-feed-add" Button
+    t =    15.11s     Wait for com.feedmine.development to idle
+    t =    15.12s     Find the "add-feed-add" Button
+    t =    15.19s     Check for interrupting elements affecting "add-feed-add" Button
+    t =    15.25s     Synthesize event
+    t =    15.56s     Wait for com.feedmine.development to idle
+    t =    16.27s Waiting 180.0s for Any (First Match) to exist
+    t =    17.33s     Checking `Expect predicate `existsNoRetry == 1` for object Any (First Match)`
+    t =    17.33s         Checking existence of `Any (First Match)`
+    t =    17.45s Find the Any (First Match)
+    t =    17.56s Checking existence of `"add-feed-error" StaticText`
+VIDEO_CARD_JOURNEY t=18s feed-added result=Selecionado sheetError='-'
+    t =    17.63s Find the Target Application 'com.feedmine.development'
+    t =    17.81s Added attachment named '1-adicionado'
+    t =    17.81s Tap "add-feed-cancel" Button
+    t =    17.81s     Wait for com.feedmine.development to idle
+    t =    17.82s     Find the "add-feed-cancel" Button
+    t =    17.90s     Check for interrupting elements affecting "add-feed-cancel" Button
+    t =    17.98s     Synthesize event
+    t =    18.29s     Wait for com.feedmine.development to idle
+    t =    18.93s Checking existence of `ScrollView (First Match)`
+    t =    19.00s Find the Window (First Match)
+    t =    19.02s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    20.06s Checking existence of `ScrollView (First Match)`
+    t =    20.09s Find the Window (First Match)
+    t =    20.09s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    21.12s Checking existence of `ScrollView (First Match)`
+    t =    21.15s Find the Window (First Match)
+    t =    21.16s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    22.18s Checking existence of `ScrollView (First Match)`
+    t =    22.21s Find the Window (First Match)
+    t =    22.22s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    23.24s Checking existence of `ScrollView (First Match)`
+    t =    23.26s Find the Window (First Match)
+    t =    23.27s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    24.30s Checking existence of `ScrollView (First Match)`
+    t =    24.32s Find the ScrollView (First Match)
+    t =    24.34s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    25.36s Checking existence of `ScrollView (First Match)`
+    t =    25.37s Find the ScrollView (First Match)
+    t =    25.39s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    26.41s Checking existence of `ScrollView (First Match)`
+    t =    26.43s Find the ScrollView (First Match)
+    t =    26.44s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    27.46s Checking existence of `ScrollView (First Match)`
+    t =    27.48s Find the ScrollView (First Match)
+    t =    27.50s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    28.51s Checking existence of `ScrollView (First Match)`
+    t =    28.53s Find the ScrollView (First Match)
+    t =    28.54s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    29.57s Checking existence of `ScrollView (First Match)`
+    t =    29.58s Find the ScrollView (First Match)
+    t =    29.60s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    30.62s Checking existence of `ScrollView (First Match)`
+    t =    30.64s Find the ScrollView (First Match)
+    t =    30.65s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    31.67s Checking existence of `ScrollView (First Match)`
+    t =    31.69s Find the ScrollView (First Match)
+    t =    31.70s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    32.72s Checking existence of `ScrollView (First Match)`
+    t =    32.74s Find the ScrollView (First Match)
+    t =    32.76s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    33.78s Checking existence of `ScrollView (First Match)`
+    t =    33.80s Find the ScrollView (First Match)
+    t =    33.81s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    34.83s Checking existence of `ScrollView (First Match)`
+    t =    34.85s Find the ScrollView (First Match)
+    t =    34.87s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    35.89s Checking existence of `ScrollView (First Match)`
+    t =    35.91s Find the ScrollView (First Match)
+    t =    35.92s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    36.94s Checking existence of `ScrollView (First Match)`
+    t =    36.96s Find the ScrollView (First Match)
+    t =    36.98s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    37.00s Checking existence of `Any (Element at index 0)`
+    t =    37.01s Find the Any (Element at index 0)
+    t =    38.04s Checking existence of `ScrollView (First Match)`
+    t =    38.07s Find the ScrollView (First Match)
+    t =    38.09s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    38.10s Checking existence of `Any (Element at index 0)`
+    t =    38.12s Find the Any (Element at index 0)
+    t =    39.15s Checking existence of `ScrollView (First Match)`
+    t =    39.16s Find the ScrollView (First Match)
+    t =    39.17s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    39.19s Checking existence of `Any (Element at index 0)`
+    t =    39.20s Find the Any (Element at index 0)
+VIDEO_CARD_JOURNEY t=39s cards=1
+    t =    39.22s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    39.24s Get all elements bound by index for: Elements matching predicate '"card.title" IN identifiers'
+    t =    39.26s Checking existence of `"card.title" StaticText`
+    t =    39.29s Find the "card.title" StaticText
+    t =    39.32s Find the "card.title" StaticText
+    t =    39.35s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    39.37s Get all elements bound by index for: Elements matching predicate 'label IN {"Vídeo", "Video"}'
+    t =    39.39s Checking existence of `StaticText (Element at index 0)`
+    t =    39.44s Find the StaticText (Element at index 0)
+    t =    39.48s Find the "Vídeo" StaticText
+    t =    39.53s Find the Target Application 'com.feedmine.development'
+    t =    39.71s Added attachment named '2-feed'
+    t =    39.71s Checking existence of `ScrollView (First Match)`
+    t =    39.74s Find the ScrollView (First Match)
+    t =    39.75s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    39.77s Checking existence of `Any (Element at index 0)`
+    t =    39.80s Find the Any (Element at index 0)
+    t =    39.83s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    39.85s Get all elements bound by index for: Elements matching predicate 'label IN {"Vídeo", "Video"}'
+    t =    39.87s Checking existence of `StaticText (Element at index 0)`
+    t =    39.90s Find the StaticText (Element at index 0)
+    t =    39.94s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    39.96s Checking existence of `Any (First Match)`
+    t =    39.99s Find the Any (First Match)
+    t =    40.01s Find the Window (First Match)
+    t =    40.02s Checking existence of `ScrollView (First Match)`
+    t =    40.03s Find the ScrollView (First Match)
+    t =    40.05s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    40.07s Find the Any (First Match)
+    t =    40.10s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    40.12s Get all elements bound by index for: Elements matching predicate '"card.title" IN identifiers'
+    t =    40.16s Checking existence of `"card.title" StaticText`
+    t =    40.18s Find the "card.title" StaticText
+    t =    40.22s Find the "card.title" StaticText
+    t =    40.25s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+VIDEO_CARD_JOURNEY t=40s video-card 'TWiT 1108: Bad AI Vibes - Why Tech Leaders Miss the Mark on AI's Real Impact'
+    t =    40.28s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    40.30s Get all elements bound by index for: Elements matching predicate 'label IN {"Vídeo", "Video"}'
+    t =    40.34s Checking existence of `StaticText (Element at index 0)`
+    t =    40.37s Find the StaticText (Element at index 0)
+    t =    40.42s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    40.44s Get all elements bound by index for: Elements matching predicate '"card.play" IN identifiers'
+    t =    40.47s Get all elements bound by index for: Elements matching predicate 'label BEGINSWITH "Tocar" OR label BEGINSWITH "Play"'
+    t =    40.50s Checking existence of `"Mídia indisponível nesta compilação" StaticText`
+    t =    40.52s Checking existence of `"Media unavailable in this build" StaticText`
+    t =    40.54s Find the "Vídeo" StaticText
+VIDEO_CARD_JOURNEY t=41s identity badge=Vídeo play=false tocar=-
+    t =    40.57s Find the Target Application 'com.feedmine.development'
+    t =    40.73s Added attachment named '3-carta-de-video'
+    t =    40.83s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    40.85s Checking existence of `Any (First Match)`
+    t =    40.88s Find the Any (First Match)
+    t =    40.91s Find the Window (First Match)
+    t =    40.92s Checking existence of `ScrollView (First Match)`
+    t =    40.93s Find the ScrollView (First Match)
+    t =    40.96s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    40.98s Checking existence of `"card.open" Button`
+    t =    41.01s Find the "card.open" Button
+    t =    41.05s Checking existence of `"card.open" Button`
+    t =    41.08s Find the "card.open" Button
+    t =    41.13s Tap "card.open" Button
+    t =    41.13s     Wait for com.feedmine.development to idle
+    t =    41.13s     Find the "card.open" Button
+    t =    41.16s     Check for interrupting elements affecting "card.open" Button
+    t =    41.21s     Synthesize event
+    t =    41.52s     Wait for com.feedmine.development to idle
+    t =    41.56s Checking existence of `"reading.headline" StaticText`
+    t =    41.62s Find the "reading.headline" StaticText
+    t =    41.68s Find the "reading.headline" StaticText
+    t =    41.73s Checking existence of `"URL" Button`
+    t =    41.79s Checking existence of `WebView (First Match)`
+    t =    41.87s Checking existence of `"Abrir no site" Button`
+    t =    41.90s Find the "Abrir no site" Button
+    t =    41.97s Tap "reading.open-site" Button
+    t =    41.97s     Wait for com.feedmine.development to idle
+    t =    42.04s     Find the "reading.open-site" Button
+    t =    42.06s     Check for interrupting elements affecting "reading.open-site" Button
+    t =    42.10s     Synthesize event
+    t =    42.46s     Wait for com.feedmine.development to idle
+    t =    42.83s Checking existence of `"URL" Button`
+    t =    43.37s Checking existence of `"URL" Button`
+    t =    43.90s Checking existence of `"URL" Button`
+    t =    45.45s Checking existence of `"URL" Button`
+    t =    46.09s Checking existence of `"URL" Button`
+    t =    46.23s Find the "URL" Button
+    t =    46.49s Requesting snapshot of accessibility hierarchy for app with pid 21775
+    t =    47.02s Requesting snapshot of accessibility hierarchy for app with pid 21775
+    t =    47.09s Added attachment named '4-arvore-do-navegador'
+VIDEO_CARD_JOURNEY t=47s destination=Optional(‎twit.tv)
+    t =    47.09s Find the Target Application 'com.feedmine.development'
+    t =    47.30s Added attachment named '4-origem'
+    t =    47.30s Get number of matches for: Elements matching predicate 'label CONTAINS[c] "TWiT 1108: Bad AI "'
+    t =    47.37s Get number of matches for: Descendants matching type WebView
+    t =    47.42s Checking existence of `Any (First Match)`
+    t =    47.48s Find the Any (First Match)
+    t =    47.54s Get number of matches for: Elements matching predicate 'label CONTAINS[c] "TWiT 1108: Bad AI "'
+    t =    48.60s Checking existence of `"BrowserView?IsPageLoaded=false&WebViewProcessID=21857" Other`
+    t =    48.86s Find the "BrowserView?IsPageLoaded=false&WebViewProcessID=21857" Other
+    t =    49.31s Get number of matches for: Elements matching predicate 'label CONTAINS[c] "TWiT 1108: Bad AI "'
+    t =    50.08s Checking existence of `"BrowserView?IsPageLoaded=true&WebViewProcessID=21857" Other`
+    t =    50.36s Find the "BrowserView?IsPageLoaded=true&WebViewProcessID=21857" Other
+    t =    50.52s Checking existence of `"Fechar" Button`
+    t =    50.73s Checking existence of `"Close" Button`
+    t =    50.94s Find the "Close" Button
+    t =    51.18s Tap Target Application 'com.feedmine.development'[0.00, 0.00] -> (38.0, 84.0)
+    t =    51.18s     Wait for com.feedmine.development to idle
+    t =    51.19s     Find the Target Application 'com.feedmine.development'
+    t =    51.30s     Check for interrupting elements affecting "FeedMine" Application
+    t =    51.42s     Synthesize event
+    t =    51.44s         Find the Target Application 'com.feedmine.development'
+    t =    51.55s         Find the Target Application 'com.feedmine.development'
+    t =    51.66s         Find the Target Application 'com.feedmine.development'
+    t =    52.10s     Wait for com.feedmine.development to idle
+    t =    52.49s Checking existence of `"URL" Button`
+    t =    52.57s Checking existence of `"reading.headline" StaticText`
+    t =    53.14s Checking existence of `"reading.headline" StaticText`
+    t =    53.17s Checking existence of `WebView (First Match)`
+    t =    54.42s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    54.43s Checking existence of `Any (First Match)`
+    t =    54.45s Find the Any (First Match)
+    t =    54.89s Checking existence of `Any (First Match)`
+    t =    54.92s Find the Any (First Match)
+    t =    54.95s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    55.00s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+    t =    55.04s Find the "C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E" Other
+VIDEO_CARD_JOURNEY t=55s return restored=true
+    t =    55.06s Find the Target Application 'com.feedmine.development'
+    t =    55.24s Added attachment named '6-volta'
+VIDEO_CARD_JOURNEY result=PASS elapsed=55s
+VIDEO_CARD_JOURNEY note add feed: result=Selecionado sheetError='-'
+VIDEO_CARD_JOURNEY note published cards visible=1 first='TWiT 1108: Bad AI Vibes - Why Tech Leaders Miss the Mark on AI's Real Impact' badges=["Vídeo"]
+VIDEO_CARD_JOURNEY note video card id=C6F1CDC6-1205-4BA4-98D2-8555FDC0BF7E title='TWiT 1108: Bad AI Vibes - Why Tech Leaders Miss the Mark on AI's Real Impact' frame=(-0.25, 121.75, 408.5, 398.8333740234375)
+VIDEO_CARD_JOURNEY note feed items=20 links=20 enclosures=20
+VIDEO_CARD_JOURNEY note card title matched feed item='TWiT 1108: Bad AI Vibes - Why Tech Leaders Miss the Mark on AI's Real Impact' link='https://twit.tv/shows/this-week-in-tech/episodes/1108'
+VIDEO_CARD_JOURNEY note reader headline='TWiT 1108: Bad AI Vibes - Why Tech Leaders Miss the Mark on AI's Real Impact' reachedOrigin=true
+VIDEO_CARD_JOURNEY note destination=Optional(‎twit.tv)
+VIDEO_CARD_JOURNEY note destination verdict=matched(host)
+VIDEO_CARD_JOURNEY note destination precision=host
+VIDEO_CARD_JOURNEY note item content: readerHeadline=true browserTitle=false webViews=3 probe='TWiT 1108: Bad AI '
+VIDEO_CARD_JOURNEY note browser page loaded=true itemTitleOnPage=false probe='TWiT 1108: Bad AI ' browser='BrowserView?IsPageLoaded=true&WebViewProcessID=21857'
+    t =    55.25s Added attachment named 'VIDEO_CARD_JOURNEY summary'
+VIDEO_CARD_JOURNEY PASS
+    t =    55.25s Tear Down
+Test Case '-[FeedMineUITests.VideoCardJourneyUITests testTheVideoCardOpensItsOriginAndReturningKeepsTheReadingPosition]' passed (55.635 seconds).
+Test Suite 'VideoCardJourneyUITests' passed at 2026-11-02 09:37:47.817.
+	 Executed 1 test, with 0 failures (0 unexpected) in 55.635 (55.636) seconds
+Test Suite 'FeedMineUITests.xctest' passed at 2026-11-02 09:37:47.818.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 97.661 (97.728) seconds
+Test Suite 'Selected tests' passed at 2026-11-02 09:37:47.821.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 97.661 (97.736) seconds
+2026-11-02 09:37:48.321 xcodebuild[21206:249706] [MT] IDETestOperationsObserverDebug: 151.493 elapsed -- Testing started completed.
+2026-11-02 09:37:48.321 xcodebuild[21206:249706] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-02 09:37:48.321 xcodebuild[21206:249706] [MT] IDETestOperationsObserverDebug: 151.493 sec, +151.493 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/product-first-window-host-native-20261102.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started

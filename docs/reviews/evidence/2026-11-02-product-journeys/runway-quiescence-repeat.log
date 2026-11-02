@@ -1,0 +1,16 @@
+[0/1] Planning build
+Test Suite 'Selected tests' started at 2026-11-02 08:36:01.702.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-11-02 08:36:01.703.
+Test Suite 'FeedRunwayDriverTests' started at 2026-11-02 08:36:01.703.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test24SingleTailOpportunityReachesQuiescence]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test24SingleTailOpportunityReachesQuiescence]' passed (0.164 seconds).
+Test Suite 'FeedRunwayDriverTests' passed at 2026-11-02 08:36:01.867.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.164 (0.164) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-11-02 08:36:01.867.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.164 (0.164) seconds
+Test Suite 'Selected tests' passed at 2026-11-02 08:36:01.867.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.164 (0.165) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

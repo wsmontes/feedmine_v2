@@ -1,0 +1,221 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version-3CD7052B146186F2.txt
+[1/3] Write sources
+[3/4] Emitting module FeedMinePersistence
+[4/6] Compiling FeedMinePersistence ReaderHistoryBindingStore+RetainedReadings.swift
+[5/6] Compiling FeedMinePersistence SessionStore+HistoryPreparation.swift
+[6/7] Compiling FeedMinePersistence ReaderHistoryBindingStore.swift
+[7/8] Emitting module FeedMineEditorial
+[8/9] Emitting module FeedMinePublication
+[9/10] Emitting module FeedMineEditorialTests
+[10/11] Emitting module FeedMineRuntime
+[11/12] Emitting module FeedMinePublicationTests
+[12/13] Emitting module FeedMineRuntimeTests
+[13/14] Emitting module FeedMinePersistenceTests
+[14/16] Compiling FeedMinePersistenceTests ReaderHistoryBindingStoreTests.swift
+[15/16] Compiling FeedMinePersistenceTests ReaderHistoryPreparationTests.swift
+[16/17] Emitting module FeedMineComposition
+[17/18] Emitting module FeedMineCompositionTests
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:80:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+  78 |     }
+  79 | }
+  80 | private final class ColdURLProtocol: URLProtocol, @unchecked Sendable {
+     |                     |                                        `- warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+     |                     `- note: 'ColdURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+  81 |     // Intercept every request; an unregistered endpoint fails locally instead of reaching the internet.
+  82 |     override class func canInit(with request: URLRequest) -> Bool { true }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:468:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+466 |     }
+467 | }
+468 | private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'HandoffURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+469 |     override class func canInit(with request: URLRequest) -> Bool { true }
+470 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:1755:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+1753 |     }
+1754 | }
+1755 | private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
+     |                     |                                          `- warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+     |                     `- note: 'DriverURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+1756 |     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
+1757 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/MediaHTTPFetcherReasonTests.swift:12:55: warning: conformance of 'MediaHTTPFetcherReasonTests.Stub' to protocol 'Sendable' is already unavailable
+ 10 | /// unchanged; the reason is the added fact.
+ 11 | final class MediaHTTPFetcherReasonTests: XCTestCase {
+ 12 |     private final class Stub: URLProtocol, @unchecked Sendable {
+    |                         |                             `- warning: conformance of 'MediaHTTPFetcherReasonTests.Stub' to protocol 'Sendable' is already unavailable
+    |                         `- note: 'MediaHTTPFetcherReasonTests.Stub' inherits conformance to protocol 'Sendable' from superclass here
+ 13 |         nonisolated(unsafe) static var status = 200
+ 14 |         nonisolated(unsafe) static var headers: [String: String] = ["Content-Type": "image/png"]
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:912:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+910 | }
+911 | 
+912 | private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                        `- warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ProgressiveDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+913 |     override class func canInit(with request: URLRequest) -> Bool { true }
+914 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:927:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+925 | }
+926 | 
+927 | private final class OfflineDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                    `- warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'OfflineDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+928 |     override class func canInit(with request: URLRequest) -> Bool { true }
+929 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:553:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+551 |     }
+552 | }
+553 | private final class BridgeHTTPProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'BridgeHTTPProtocol' inherits conformance to protocol 'Sendable' from superclass here
+554 |     override class func canInit(with request:URLRequest) -> Bool { BridgeHTTPResponse.find(request.url) != nil }
+555 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+[18/19] Emitting module ArchitectureSmokeTests
+[18/20] Write Objects.LinkFileList
+[19/20] Linking FeedMinePackageTests
+Build complete! (8.05s)
+Test Suite 'Selected tests' started at 2026-10-30 10:23:34.801.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-30 10:23:34.802.
+Test Suite 'PublicationRunwayStoreTests' started at 2026-10-30 10:23:34.802.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests test3R5MeasureOriginExposureOnExistingIndexes]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests test3R5MeasureOriginExposureOnExistingIndexes]' passed (5.326 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testAppendProducesNewSnapshotWithoutChangingOldFact]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testAppendProducesNewSnapshotWithoutChangingOldFact]' passed (0.044 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testExpectedTailStaleRefusesBeforeOrdinalAcceptanceAndLeavesWinnerIntact]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testExpectedTailStaleRefusesBeforeOrdinalAcceptanceAndLeavesWinnerIntact]' passed (0.037 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testExposureTailIsObservedEvenForEmptyRequestAndOldFactsStayImmutable]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testExposureTailIsObservedEvenForEmptyRequestAndOldFactsStayImmutable]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testExposureUsesExactOriginAndEdition]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testExposureUsesExactOriginAndEdition]' passed (0.038 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testForwardDirectionAndBoundedExactDistance]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testForwardDirectionAndBoundedExactDistance]' passed (0.038 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testInvalidBoundsMembershipAndMissingEditionAreErrors]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testInvalidBoundsMembershipAndMissingEditionAreErrors]' passed (0.036 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testLargeHistoryUsesOrderingRangeSeeksAndRevisionProbesWithoutTemporarySort]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testLargeHistoryUsesOrderingRangeSeeksAndRevisionProbesWithoutTemporarySort]' passed (1.551 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testMigrationPreservesBaseDataAndAddsOnlyTheNarrowIndex]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testMigrationPreservesBaseDataAndAddsOnlyTheNarrowIndex]' passed (0.057 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testNewRevisionOfPublishedOriginRemainsExposed]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testNewRevisionOfPublishedOriginRemainsExposed]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testReadyAheadExcludesAnchorAndUsesWitnessAcrossSegments]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testReadyAheadExcludesAnchorAndUsesWitnessAcrossSegments]' passed (0.043 seconds).
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testReadyOnlyValidatesAnchorAndTailSchemaRatherThanAuditingOldSegments]' started.
+Test Case '-[FeedMinePersistenceTests.PublicationRunwayStoreTests testReadyOnlyValidatesAnchorAndTailSchemaRatherThanAuditingOldSegments]' passed (0.035 seconds).
+Test Suite 'PublicationRunwayStoreTests' passed at 2026-10-30 10:23:42.085.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 7.282 (7.283) seconds
+Test Suite 'ReaderHistoryBindingStoreTests' started at 2026-10-30 10:23:42.085.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testChoosingCurrentCriteriaRetainsDistinctActiveAndContextLegacyStatements]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testChoosingCurrentCriteriaRetainsDistinctActiveAndContextLegacyStatements]' passed (0.155 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testCurrentCriteriaRetainsLegacyPointAfterSameContextReaderWritesANewCheckpoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testCurrentCriteriaRetainsLegacyPointAfterSameContextReaderWritesANewCheckpoint]' passed (0.041 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExactAdoptionPreservesFrozenHistorySaveAndCheckpoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExactAdoptionPreservesFrozenHistorySaveAndCheckpoint]' passed (0.038 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitCurrentCriteriaKeepsUnownedLegacyNamespaceAndRejectsStaleChoice]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitCurrentCriteriaKeepsUnownedLegacyNamespaceAndRejectsStaleChoice]' passed (0.036 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyAdoptionRetainsDamagedUnknownAndArchivedStatements]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyAdoptionRetainsDamagedUnknownAndArchivedStatements]' passed (0.086 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCannotInventOffsetOrUnknownAnchor]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCannotInventOffsetOrUnknownAnchor]' passed (0.067 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCanUseRetainedContextWithoutChangingActiveReader]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCanUseRetainedContextWithoutChangingActiveReader]' passed (0.038 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointRejectsStaleAndForeignCardEvidenceAtomically]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointRejectsStaleAndForeignCardEvidenceAtomically]' passed (0.067 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointUsesDurableCardEditionAndPreservesOriginalStatement]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointUsesDurableCardEditionAndPreservesOriginalStatement]' passed (0.040 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' passed (0.040 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation]' passed (0.037 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' passed (0.044 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testFreshBindingIsStableAcrossConnectionsAndHasNoBorrowedEdition]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testFreshBindingIsStableAcrossConnectionsAndHasNoBorrowedEdition]' passed (0.032 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyAdoptionUsesKnownForwardUnionAndKeepsFrozenWords]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyAdoptionUsesKnownForwardUnionAndKeepsFrozenWords]' passed (0.037 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryFindsRetainedCardDespiteWrongContextProjection]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryFindsRetainedCardDespiteWrongContextProjection]' passed (0.037 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryKeepsAllExactAndForwardCandidatesWithoutMutation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryKeepsAllExactAndForwardCandidatesWithoutMutation]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryRejectsStaleOrWrongContextPolicyWithoutGuessingWordOrigin]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryRejectsStaleOrWrongContextPolicyWithoutGuessingWordOrigin]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryResolvesActiveCardBeforeAdoptionAndExcludesOwnedEditions]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryResolvesActiveCardBeforeAdoptionAndExcludesOwnedEditions]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacySingletonDoesNotOverwriteSavedLocalPositionWhenAnotherChoiceIsPromoted]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacySingletonDoesNotOverwriteSavedLocalPositionWhenAnotherChoiceIsPromoted]' passed (0.114 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyUnionCollisionDoesNotShareEditionOrRuntimeNamespace]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyUnionCollisionDoesNotShareEditionOrRuntimeNamespace]' passed (0.041 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMisfiledLegacySingletonCannotOverwriteAnotherEditionsOwnedPosition]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMisfiledLegacySingletonCannotOverwriteAnotherEditionsOwnedPosition]' passed (0.113 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMissingEditionAndActiveReplacementDoNotMutateOwnership]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMissingEditionAndActiveReplacementDoNotMutateOwnership]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCarriesExplicitLocalPositionWithoutReplacingOriginalValidationEvidence]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCarriesExplicitLocalPositionWithoutReplacingOriginalValidationEvidence]' passed (0.041 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCommitsIntentAndAdoptionTogetherAndPromotionRechecksLegacyPoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCommitsIntentAndAdoptionTogetherAndPromotionRechecksLegacyPoint]' passed (0.042 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedCardAuthoritativeEvidenceSurvivesUnknownCardAndRepeatedPreservation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedCardAuthoritativeEvidenceSurvivesUnknownCardAndRepeatedPreservation]' passed (0.042 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedReadingsInventoryIncludesOwnedAndUnownedSiblingsWithoutASingletonOrAuthorityChanges]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedReadingsInventoryIncludesOwnedAndUnownedSiblingsWithoutASingletonOrAuthorityChanges]' passed (0.048 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testUnknownWordOriginAndStalePolicyCannotClaimHistory]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testUnknownWordOriginAndStalePolicyCannotClaimHistory]' passed (0.038 seconds).
+Test Suite 'ReaderHistoryBindingStoreTests' passed at 2026-10-30 10:23:43.515.
+	 Executed 27 tests, with 0 failures (0 unexpected) in 1.427 (1.429) seconds
+Test Suite 'ReaderHistoryPreparationTests' started at 2026-10-30 10:23:43.515.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testConsumedPreparationDoesNotRewindALaterCurrentRollover]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testConsumedPreparationDoesNotRewindALaterCurrentRollover]' passed (0.043 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testCurrentRolloverSupersedesPreparedCandidateOfTheSameBinding]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testCurrentRolloverSupersedesPreparedCandidateOfTheSameBinding]' passed (0.086 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testExplicitOwnedSiblingSelectionPreparesWithoutMovingCurrentReaderAndReturnsToItsFinalPoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testExplicitOwnedSiblingSelectionPreparesWithoutMovingCurrentReaderAndReturnsToItsFinalPoint]' passed (0.051 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testImmediateActivationRevokesPreparationWithoutBorrowingItsCheckpoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testImmediateActivationRevokesPreparationWithoutBorrowingItsCheckpoint]' passed (0.040 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testOwnedSelectionRejectsUnownedHiddenStaleCheckpointTokenAndOwnerSnapshotWithoutRevokingPreparation]' started.
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryPreparationTests.swift:48: error: -[FeedMinePersistenceTests.ReaderHistoryPreparationTests testOwnedSelectionRejectsUnownedHiddenStaleCheckpointTokenAndOwnerSnapshotWithoutRevokingPreparation] : XCTAssertEqual failed: ("nil") is not equal to ("Optional(FeedMinePersistence.SessionStoreError.invalidMembership)")
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testOwnedSelectionRejectsUnownedHiddenStaleCheckpointTokenAndOwnerSnapshotWithoutRevokingPreparation]' failed (0.296 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testPreparedAppendKeepsVisiblePositionAndRejectsAfterCancellation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testPreparedAppendKeepsVisiblePositionAndRejectsAfterCancellation]' passed (0.048 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testPreparedPublicationRetainsCurrentReaderUntilAtomicPromotion]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testPreparedPublicationRetainsCurrentReaderUntilAtomicPromotion]' passed (0.044 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testPromotionFailureRollsBackAndKeepsBothCurrentAndPreparedHandles]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testPromotionFailureRollsBackAndKeepsBothCurrentAndPreparedHandles]' passed (0.043 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testRetainedInventoryRejectsACheckpointWhoseCardBelongsToAnotherOwner]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testRetainedInventoryRejectsACheckpointWhoseCardBelongsToAnotherOwner]' passed (0.042 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testRetainedInventorySeparatesActiveAndPreparedSiblingEditionsOfOneLogicalBinding]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testRetainedInventorySeparatesActiveAndPreparedSiblingEditionsOfOneLogicalBinding]' passed (0.046 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testRetargetingPreparationCannotReviveAnOlderCandidateCallback]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testRetargetingPreparationCannotReviveAnOlderCandidateCallback]' passed (0.046 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testSameBindingRolloverDoesNotRetirePresentedEditionBeforePromotion]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testSameBindingRolloverDoesNotRetirePresentedEditionBeforePromotion]' passed (0.047 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testSupersessionAndCancellationRevokeOnlyCandidateAuthorityAndRetainRetry]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryPreparationTests testSupersessionAndCancellationRevokeOnlyCandidateAuthorityAndRetainRetry]' passed (0.046 seconds).
+Test Suite 'ReaderHistoryPreparationTests' failed at 2026-10-30 10:23:44.394.
+	 Executed 13 tests, with 1 failure (0 unexpected) in 0.878 (0.879) seconds
+Test Suite 'FeedMinePackageTests.xctest' failed at 2026-10-30 10:23:44.394.
+	 Executed 52 tests, with 1 failure (0 unexpected) in 9.586 (9.592) seconds
+Test Suite 'Selected tests' failed at 2026-10-30 10:23:44.394.
+	 Executed 52 tests, with 1 failure (0 unexpected) in 9.586 (9.592) seconds
+3R5 BEFORE: ["SEARCH s USING INDEX sqlite_autoindex_feed_segments_2 (edition_id=?)", "SEARCH c USING INDEX sqlite_autoindex_published_cards_2 (segment_id=?)", "USE TEMP B-TREE FOR DISTINCT"]
+3R5 AFTER: ["SEARCH c USING COVERING INDEX published_cards_origin_record_segment (origin_record_id=?)", "SEARCH s USING INDEX sqlite_autoindex_feed_segments_1 (id=?)"]
+3R5 measurement: candidates=3 editionCards=10000 editionSegments=100 returnedOrigins=2
+3R5 origin query plan: ["SEARCH c USING COVERING INDEX published_cards_origin_record_segment (origin_record_id=?)", "SEARCH s USING INDEX sqlite_autoindex_feed_segments_1 (id=?)"]
+3R5 existing indexes: ["sqlite_autoindex_feed_segments_1: autoindex", "sqlite_autoindex_feed_segments_2: autoindex", "sqlite_autoindex_published_cards_1: autoindex", "sqlite_autoindex_published_cards_2: autoindex", "published_cards_origin_revision_segment: CREATE INDEX published_cards_origin_revision_segment\nON published_cards (origin_revision_id, segment_id)", "published_cards_origin_record_segment: CREATE INDEX published_cards_origin_record_segment\nON published_cards (origin_record_id, segment_id)"]
+3R5 origin query bytecode: ["0 Init 0 40 0 ", "1 Null 1 9 0 ", "2 OpenRead 3 983 0 k(3,,,)", "3 OpenRead 0 6 0 2", "4 OpenRead 4 7 0 k(1,)", "5 Explain 5 0 69 SEARCH c USING COVERING INDEX published_cards_origin_record_segment (origin_record_id=?)", "6 BeginSubrtn 0 2 0 ", "7 Once 0 19 0 ", "8 OpenEphemeral 5 1 0 k(1,B)", "9 Variable 2 3 0 ", "10 MakeRecord 3 1 4 B", "11 IdxInsert 5 4 3 1", "12 Variable 3 3 0 ", "13 MakeRecord 3 1 4 B", "14 IdxInsert 5 4 3 1", "15 Variable 4 3 0 ", "16 MakeRecord 3 1 4 B", "17 IdxInsert 5 4 3 1", "18 NullRow 5 0 0 ", "19 Return 2 7 1 ", "20 Rewind 5 39 0 ", "21 Column 5 0 1 ", "22 IsNull 1 38 0 ", "23 Affinity 1 1 0 B", "24 SeekGE 3 38 1 1", "25 IdxGT 3 38 1 1", "26 Explain 26 0 47 SEARCH s USING INDEX sqlite_autoindex_feed_segments_1 (id=?)", "27 Column 3 1 5 ", "28 SeekGE 4 37 5 1", "29 IdxGT 4 37 5 1", "30 DeferredSeek 4 0 0 ", "31 Column 0 1 6 ", "32 Ne 7 37 6 BINARY-8", "33 Column 3 0 8 ", "34 Eq 8 37 9 BINARY-8", "35 Copy 8 9 0 ", "36 ResultRow 8 1 0 ", "37 Next 3 25 0 ", "38 Next 5 21 0 ", "39 Halt 0 0 0 ", "40 Transaction 0 0 86 0", "41 Variable 1 7 0 ", "42 Goto 0 1 0 "]
+3K1 query plan: ["SEARCH published_cards USING INDEX sqlite_autoindex_published_cards_2 (segment_id=? AND ordinal>? AND ordinal<?)"]
+3K1 query plan: ["SEARCH feed_segments USING INDEX sqlite_autoindex_feed_segments_2 (edition_id=? AND ordinal>? AND ordinal<?)"]
+3K1 query plan: ["SEARCH feed_segments USING INDEX sqlite_autoindex_feed_segments_2 (edition_id=?)"]
+3K1 query plan: ["SEARCH published_cards USING INDEX sqlite_autoindex_published_cards_2 (segment_id=?)"]
+3K1 query plan: ["SEARCH c USING COVERING INDEX published_cards_origin_revision_segment (origin_revision_id=?)", "SEARCH s USING INDEX sqlite_autoindex_feed_segments_1 (id=?)"]
+3K1 pre-index GRDB SQLite plan: ["SEARCH s USING INDEX sqlite_autoindex_feed_segments_2 (edition_id=?)", "SEARCH c USING INDEX sqlite_autoindex_published_cards_2 (segment_id=?)"]
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

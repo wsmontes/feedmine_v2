@@ -1,0 +1,138 @@
+Command line invocation:
+    /Applications/Xcode-26.6.0.app/Contents/Developer/usr/bin/xcodebuild test-without-building -xctestrun /Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/Build/Products/FeedMineRecoveryUIProbe_iphonesimulator26.5-arm64.xctestrun -destination "platform=iOS Simulator,id=220FD546-698A-4DFE-A9E6-DD40135DED72" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -enableCodeCoverage NO -resultBundlePath /Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/retained-picker-red-tests.xcresult "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch" -collect-test-diagnostics never
+
+2026-10-30 10:30:28.241 xcodebuild[3574:26463659]  DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+2026-10-30 10:30:28.260 xcodebuild[3574:26463636] [MT] DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+2026-10-30 10:30:28.387 xcodebuild[3574:26463636] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+Writing result bundle at path:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/retained-picker-red-tests.xcresult
+
+2026-10-30 10:30:28.391 xcodebuild[3574:26463636] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:30:28.606 xcodebuild[3574:26463636] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:30:29.289 xcodebuild[3574:26463636] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:30:29.490 xcodebuild[3574:26463636] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-30 10:30:44.667759-0700 FeedMineUITests-Runner[3779:26465454] [Default] Running tests...
+objc[3779]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x109fc0310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x109ec0398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-10-30 10:30:50.838.
+Test Suite 'FeedMineUITests.xctest' started at 2026-10-30 10:30:50.838.
+Test Suite 'SourceExclusionJourneyUITests' started at 2026-10-30 10:30:50.838.
+Test Case '-[FeedMineUITests.SourceExclusionJourneyUITests testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch]' started.
+    t =     0.00s Start Test at 2026-10-30 10:30:50.839
+    t =     0.26s Set Up
+    t =     0.27s Open com.feedmine.development
+    t =     0.27s     Launch com.feedmine.development
+2026-10-30 10:30:51.324 xcodebuild[3574:26463636] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-10-30 10:30:51.324 xcodebuild[3574:26463636] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     2.39s         Setting up automation session
+    t =     3.93s         Wait for com.feedmine.development to idle
+    t =     5.50s Waiting 60.0s for ScrollView (First Match) to exist
+    t =     6.53s     Checking `Expect predicate `existsNoRetry == 1` for object ScrollView (First Match)`
+    t =     6.53s         Checking existence of `ScrollView (First Match)`
+    t =     6.59s Waiting 20.0s for "more-menu" Button to exist
+    t =     7.66s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =     7.66s         Checking existence of `"more-menu" Button`
+    t =     7.73s Find the "feed-window-proof" StaticText
+    t =     7.78s Tap "more-menu" Button
+    t =     7.78s     Wait for com.feedmine.development to idle
+    t =     7.78s     Find the "more-menu" Button
+    t =     7.83s     Check for interrupting elements affecting "more-menu" Button
+    t =     7.87s     Synthesize event
+    t =     8.28s     Wait for com.feedmine.development to idle
+    t =     9.55s Tap "history-recovery-action" Button
+    t =     9.55s     Wait for com.feedmine.development to idle
+    t =     9.55s     Find the "history-recovery-action" Button
+    t =     9.64s     Check for interrupting elements affecting "history-recovery-action" Button
+    t =     9.67s     Synthesize event
+    t =     9.96s     Wait for com.feedmine.development to idle
+    t =    11.38s Tap "history-recovery-current" Button
+    t =    11.38s     Wait for com.feedmine.development to idle
+    t =    11.38s     Find the "history-recovery-current" Button
+    t =    11.49s     Check for interrupting elements affecting "history-recovery-current" Button
+    t =    11.54s     Synthesize event
+    t =    11.94s     Wait for com.feedmine.development to idle
+    t =    13.68s Checking `Expect predicate `exists == 0` for object "history-recovery-current" Button`
+    t =    13.68s     Checking existence of `"history-recovery-current" Button`
+    t =    13.77s Waiting 20.0s for "feed-window-proof" StaticText to exist
+    t =    14.84s     Checking `Expect predicate `existsNoRetry == 1` for object "feed-window-proof" StaticText`
+    t =    14.85s         Checking existence of `"feed-window-proof" StaticText`
+    t =    14.93s Find the "feed-window-proof" StaticText
+    t =    14.98s Tap "more-menu" Button
+    t =    14.98s     Wait for com.feedmine.development to idle
+    t =    14.98s     Find the "more-menu" Button
+    t =    15.03s     Check for interrupting elements affecting "more-menu" Button
+    t =    15.06s     Synthesize event
+    t =    15.36s     Wait for com.feedmine.development to idle
+    t =    16.56s Tap "history-recovery-action" Button
+    t =    16.56s     Wait for com.feedmine.development to idle
+    t =    16.57s     Find the "history-recovery-action" Button
+    t =    17.66s         Find the "history-recovery-action" Button (retry 1)
+    t =    18.77s         Find the "history-recovery-action" Button (retry 2)
+    t =    18.86s Requesting snapshot of accessibility hierarchy for app with pid 3839
+<unknown>:0: error: -[FeedMineUITests.SourceExclusionJourneyUITests testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch] : Failed to tap "history-recovery-action" Button: No matches found for Elements matching predicate '"history-recovery-action" IN identifiers' from input {(
+    Button, identifier: 'wand.and.stars', label: 'Criar feed curado',
+    Button, identifier: 'plus.circle', label: 'Adicionar feed',
+    Button, identifier: 'square.and.arrow.up', label: 'Exportar',
+    Button, identifier: 'rectangle.stack.fill', label: 'Coleções de fontes',
+    Button, identifier: 'bookmark', label: 'Salvos',
+    Button, identifier: 'antenna.radiowaves.left.and.right', label: 'Fontes',
+    Button, identifier: 'gearshape', label: 'Ajustes',
+    Button, identifier: 'reader-contexts', label: 'Feedmine, · ',
+    Button, identifier: 'search-button', label: 'Buscar',
+    Button, identifier: 'bookmark-boxes-button', label: 'Abrir salvos',
+    Button, identifier: 'filter-button', label: 'Filtros',
+    Button, identifier: 'more-menu', label: 'Mais',
+    Button,
+    Button,
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC Science story 6, Fixture summary 6 for BBC Science., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC World story 2, Fixture summary 2 for BBC World., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC Science story 3, Fixture summary 3 for BBC Science., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC World story 6, Fixture summary 6 for BBC World., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC Science story 1, Fixture summary 1 for BBC Science., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC World story 1, Fixture summary 1 for BBC World., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC Science story 4, Fixture summary 4 for BBC Science., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC World story 4, Fixture summary 4 for BBC World., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC Science story 5, Fixture summary 5 for BBC Science., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC World story 5, Fixture summary 5 for BBC World., 05/10/2026',
+    Button, identifier: 'card.bookmark', label: 'Salvar artigo', value: não salvo,
+    Button, identifier: 'card.open', label: 'BBC Science story 2, Fixture summary 2 for BBC Science., 05/10/2026'
+)}
+Possibly caused by runtime issues:
+Automation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {
+    "XC_kAXXCAttributeAutomationType" = 14;
+    "XC_kAXXCAttributeElementBaseType" = UIResponder;
+    "XC_kAXXCAttributeElementType" = "SwiftUI.AccessibilityNode";
+    "XC_kAXXCAttributeTraits" = 1245540515841;
+}
+See test report attachments for more detail.
+    t =    19.17s Tear Down
+Test Case '-[FeedMineUITests.SourceExclusionJourneyUITests testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch]' failed (19.454 seconds).
+Test Suite 'SourceExclusionJourneyUITests' failed at 2026-10-30 10:31:10.294.
+	 Executed 1 test, with 1 failure (0 unexpected) in 19.454 (19.456) seconds
+Test Suite 'FeedMineUITests.xctest' failed at 2026-10-30 10:31:10.295.
+	 Executed 1 test, with 1 failure (0 unexpected) in 19.454 (19.457) seconds
+Test Suite 'Selected tests' failed at 2026-10-30 10:31:10.296.
+	 Executed 1 test, with 1 failure (0 unexpected) in 19.454 (19.458) seconds
+2026-10-30 10:31:10.761 xcodebuild[3574:26463636] [MT] IDETestOperationsObserverDebug: 42.154 elapsed -- Testing started completed.
+2026-10-30 10:31:10.761 xcodebuild[3574:26463636] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-30 10:31:10.761 xcodebuild[3574:26463636] [MT] IDETestOperationsObserverDebug: 42.154 sec, +42.154 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/f13-ios-tests/retained-picker-red-tests.xcresult
+
+Failing tests:
+	SourceExclusionJourneyUITests.testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch()
+
+** TEST EXECUTE FAILED **
+
+Testing started

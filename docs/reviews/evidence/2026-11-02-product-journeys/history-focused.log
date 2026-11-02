@@ -1,0 +1,78 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version-3CD7052B146186F2.txt
+[3/5] Compiling FeedMinePersistenceTests ReaderHistoryBindingStoreTests.swift
+[4/5] Emitting module FeedMinePersistenceTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (4.89s)
+Test Suite 'Selected tests' started at 2026-11-02 07:48:37.124.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-11-02 07:48:37.125.
+Test Suite 'ReaderHistoryBindingStoreTests' started at 2026-11-02 07:48:37.125.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testChoosingCurrentCriteriaRetainsDistinctActiveAndContextLegacyStatements]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testChoosingCurrentCriteriaRetainsDistinctActiveAndContextLegacyStatements]' passed (0.179 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testCurrentCriteriaRetainsLegacyPointAfterSameContextReaderWritesANewCheckpoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testCurrentCriteriaRetainsLegacyPointAfterSameContextReaderWritesANewCheckpoint]' passed (0.045 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExactAdoptionPreservesFrozenHistorySaveAndCheckpoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExactAdoptionPreservesFrozenHistorySaveAndCheckpoint]' passed (0.040 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitCurrentCriteriaKeepsUnownedLegacyNamespaceAndRejectsStaleChoice]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitCurrentCriteriaKeepsUnownedLegacyNamespaceAndRejectsStaleChoice]' passed (0.037 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyAdoptionRetainsDamagedUnknownAndArchivedStatements]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyAdoptionRetainsDamagedUnknownAndArchivedStatements]' passed (0.077 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCannotInventOffsetOrUnknownAnchor]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCannotInventOffsetOrUnknownAnchor]' passed (0.062 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCanUseRetainedContextWithoutChangingActiveReader]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointCanUseRetainedContextWithoutChangingActiveReader]' passed (0.037 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointRejectsStaleAndForeignCardEvidenceAtomically]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointRejectsStaleAndForeignCardEvidenceAtomically]' passed (0.054 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointUsesDurableCardEditionAndPreservesOriginalStatement]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitLegacyPointUsesDurableCardEditionAndPreservesOriginalStatement]' passed (0.032 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedNamespaceCollisionAndPreferenceFailureRemainAtomic]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedNamespaceCollisionAndPreferenceFailureRemainAtomic]' passed (0.043 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' passed (0.064 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation]' passed (0.032 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' passed (0.038 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testFreshBindingIsStableAcrossConnectionsAndHasNoBorrowedEdition]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testFreshBindingIsStableAcrossConnectionsAndHasNoBorrowedEdition]' passed (0.024 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyAdoptionUsesKnownForwardUnionAndKeepsFrozenWords]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyAdoptionUsesKnownForwardUnionAndKeepsFrozenWords]' passed (0.030 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryFindsRetainedCardDespiteWrongContextProjection]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryFindsRetainedCardDespiteWrongContextProjection]' passed (0.031 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryKeepsAllExactAndForwardCandidatesWithoutMutation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryKeepsAllExactAndForwardCandidatesWithoutMutation]' passed (0.031 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryRejectsStaleOrWrongContextPolicyWithoutGuessingWordOrigin]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryRejectsStaleOrWrongContextPolicyWithoutGuessingWordOrigin]' passed (0.029 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryResolvesActiveCardBeforeAdoptionAndExcludesOwnedEditions]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyInventoryResolvesActiveCardBeforeAdoptionAndExcludesOwnedEditions]' passed (0.031 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacySingletonDoesNotOverwriteSavedLocalPositionWhenAnotherChoiceIsPromoted]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacySingletonDoesNotOverwriteSavedLocalPositionWhenAnotherChoiceIsPromoted]' passed (0.092 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyUnionCollisionDoesNotShareEditionOrRuntimeNamespace]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testLegacyUnionCollisionDoesNotShareEditionOrRuntimeNamespace]' passed (0.032 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMisfiledLegacySingletonCannotOverwriteAnotherEditionsOwnedPosition]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMisfiledLegacySingletonCannotOverwriteAnotherEditionsOwnedPosition]' passed (0.087 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMissingEditionAndActiveReplacementDoNotMutateOwnership]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testMissingEditionAndActiveReplacementDoNotMutateOwnership]' passed (0.029 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCarriesExplicitLocalPositionWithoutReplacingOriginalValidationEvidence]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCarriesExplicitLocalPositionWithoutReplacingOriginalValidationEvidence]' passed (0.031 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCommitsIntentAndAdoptionTogetherAndPromotionRechecksLegacyPoint]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRecoveryChoiceCommitsIntentAndAdoptionTogetherAndPromotionRechecksLegacyPoint]' passed (0.033 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedCardAuthoritativeEvidenceSurvivesUnknownCardAndRepeatedPreservation]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedCardAuthoritativeEvidenceSurvivesUnknownCardAndRepeatedPreservation]' passed (0.031 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedReadingsInventoryIncludesOwnedAndUnownedSiblingsWithoutASingletonOrAuthorityChanges]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testRetainedReadingsInventoryIncludesOwnedAndUnownedSiblingsWithoutASingletonOrAuthorityChanges]' passed (0.039 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testUnknownWordOriginAndStalePolicyCannotClaimHistory]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testUnknownWordOriginAndStalePolicyCannotClaimHistory]' passed (0.029 seconds).
+Test Suite 'ReaderHistoryBindingStoreTests' passed at 2026-11-02 07:48:38.448.
+	 Executed 28 tests, with 0 failures (0 unexpected) in 1.319 (1.323) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-11-02 07:48:38.448.
+	 Executed 28 tests, with 0 failures (0 unexpected) in 1.319 (1.323) seconds
+Test Suite 'Selected tests' passed at 2026-11-02 07:48:38.448.
+	 Executed 28 tests, with 0 failures (0 unexpected) in 1.319 (1.324) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

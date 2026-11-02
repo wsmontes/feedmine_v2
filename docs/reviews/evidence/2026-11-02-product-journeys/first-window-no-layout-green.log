@@ -1,0 +1,180 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version-3CD7052B146186F2.txt
+[3/5] Emitting module FeedMineUI
+[4/5] Compiling FeedMineUI FeedScreenStore.swift
+[5/6] Compiling FeedMineUI FeedScreen.swift
+[6/9] Emitting module ArchitectureSmokeTests
+[7/9] Emitting module FeedMineCompositionTests
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:80:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+  78 |     }
+  79 | }
+  80 | private final class ColdURLProtocol: URLProtocol, @unchecked Sendable {
+     |                     |                                        `- warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+     |                     `- note: 'ColdURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+  81 |     // Intercept every request; an unregistered endpoint fails locally instead of reaching the internet.
+  82 |     override class func canInit(with request: URLRequest) -> Bool { true }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:468:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+466 |     }
+467 | }
+468 | private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'HandoffURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+469 |     override class func canInit(with request: URLRequest) -> Bool { true }
+470 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:1755:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+1753 |     }
+1754 | }
+1755 | private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
+     |                     |                                          `- warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+     |                     `- note: 'DriverURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+1756 |     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
+1757 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/MediaHTTPFetcherReasonTests.swift:12:55: warning: conformance of 'MediaHTTPFetcherReasonTests.Stub' to protocol 'Sendable' is already unavailable
+ 10 | /// unchanged; the reason is the added fact.
+ 11 | final class MediaHTTPFetcherReasonTests: XCTestCase {
+ 12 |     private final class Stub: URLProtocol, @unchecked Sendable {
+    |                         |                             `- warning: conformance of 'MediaHTTPFetcherReasonTests.Stub' to protocol 'Sendable' is already unavailable
+    |                         `- note: 'MediaHTTPFetcherReasonTests.Stub' inherits conformance to protocol 'Sendable' from superclass here
+ 13 |         nonisolated(unsafe) static var status = 200
+ 14 |         nonisolated(unsafe) static var headers: [String: String] = ["Content-Type": "image/png"]
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:912:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+910 | }
+911 | 
+912 | private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                        `- warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ProgressiveDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+913 |     override class func canInit(with request: URLRequest) -> Bool { true }
+914 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:927:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+925 | }
+926 | 
+927 | private final class OfflineDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                    `- warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'OfflineDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+928 |     override class func canInit(with request: URLRequest) -> Bool { true }
+929 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:553:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+551 |     }
+552 | }
+553 | private final class BridgeHTTPProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'BridgeHTTPProtocol' inherits conformance to protocol 'Sendable' from superclass here
+554 |     override class func canInit(with request:URLRequest) -> Bool { BridgeHTTPResponse.find(request.url) != nil }
+555 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+[8/9] Compiling FeedMineCompositionTests FirstScreenPresentationTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FirstScreenPresentationTests.swift:241:13: warning: variable 'now' was never mutated; consider changing to 'let' constant
+239 |     @MainActor
+240 |     func testTheStallClockResetsOnlyOnARealHighWaterAdvance() {
+241 |         var now = 10.0
+    |             `- warning: variable 'now' was never mutated; consider changing to 'let' constant
+242 |         let hold = FeedFirstScreenHold(clock: { now })
+243 |         let card = PublicationCardID(), above = PublicationCardID(), lower = PublicationCardID()
+[8/10] Write Objects.LinkFileList
+[9/10] Linking FeedMinePackageTests
+Build complete! (6.57s)
+Test Suite 'Selected tests' started at 2026-11-02 08:26:23.681.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-11-02 08:26:23.682.
+Test Suite 'FeedScreenRenderingTests' started at 2026-11-02 08:26:23.682.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testCardAdaptsToNarrowAvailableWidth]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testCardAdaptsToNarrowAvailableWidth]' passed (1.735 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testDeferredWorkStatesTheWaitWithoutClaimingASearch]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testDeferredWorkStatesTheWaitWithoutClaimingASearch]' passed (0.339 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testEndOfContentBlockRendersAfterTheLastCardWithTheRatifiedActions]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testEndOfContentBlockRendersAfterTheLastCardWithTheRatifiedActions]' passed (0.932 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testFirstWindowCannotWaitForeverWhenNoLayoutCallbackArrives]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testFirstWindowCannotWaitForeverWhenNoLayoutCallbackArrives]' passed (0.102 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleRecoveryDoesNotAddAChangingFooterToPublishedHistory]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleRecoveryDoesNotAddAChangingFooterToPublishedHistory]' passed (0.458 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleSourceRestrictionsOfferRecoveryWithoutInventingSearchOrFinalExhaustion]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testIdleSourceRestrictionsOfferRecoveryWithoutInventingSearchOrFinalExhaustion]' passed (0.198 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testImportedSourceRemainsVisibleWhenTheCatalogueIsUnavailable]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testImportedSourceRemainsVisibleWhenTheCatalogueIsUnavailable]' passed (0.344 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testNativeHostingObservesStoreWithoutReplacingView]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testNativeHostingObservesStoreWithoutReplacingView]' passed (0.734 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testProvisionalAbsenceWithSourceRulesAlsoOffersRecovery]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testProvisionalAbsenceWithSourceRulesAlsoOffersRecovery]' passed (0.757 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testRecoveryUsesChromeWithoutAConditionalFooterAtEndOfHistory]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testRecoveryUsesChromeWithoutAConditionalFooterAtEndOfHistory]' passed (0.709 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory]' passed (0.207 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testStoredReadingsMenuDoesNotReplaceAnActiveFeedsLoadingOrFailureSurface]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testStoredReadingsMenuDoesNotReplaceAnActiveFeedsLoadingOrFailureSurface]' passed (0.856 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testTimestampMeaningIsNotChangedToAuthorship]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testTimestampMeaningIsNotChangedToAuthorship]' passed (0.319 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU10AllNonPresentationFactsRemainDistinctAndNonterminal]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU10AllNonPresentationFactsRemainDistinctAndNonterminal]' passed (1.505 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU11NewSameEditionWindowRendersExactReceivedSequence]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU11NewSameEditionWindowRendersExactReceivedSequence]' passed (0.404 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU12DeferredViewportCaptureEmitsNoFabricatedObservation]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU12DeferredViewportCaptureEmitsNoFabricatedObservation]' passed (0.211 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU13RenderingPerformsNoDurableWorkOrIntentEmission]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU13RenderingPerformsNoDurableWorkOrIntentEmission]' passed (0.279 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU14UIBoundaryHasNoProductionImportsOrHiddenEffects]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU14UIBoundaryHasNoProductionImportsOrHiddenEffects]' passed (0.084 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU1TextOnlyCardActuallyRendersLocalFields]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU1TextOnlyCardActuallyRendersLocalFields]' passed (0.110 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU2AbsentOptionalContentRendersWithoutInventedText]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU2AbsentOptionalContentRendersWithoutInventedText]' passed (0.039 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU3HeroAndThumbnailWithoutExposedAssetRemainTextual]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU3HeroAndThumbnailWithoutExposedAssetRemainTextual]' passed (0.129 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU4RealViewSequenceUsesPublishedOccurrenceIDs]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU4RealViewSequenceUsesPublishedOccurrenceIDs]' passed (0.221 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU5PublishedOrderIsRenderedRatherThanTitleSorting]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU5PublishedOrderIsRenderedRatherThanTitleSorting]' passed (0.236 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU6ImmediateLocalPresentationHasNoRemotePrerequisite]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU6ImmediateLocalPresentationHasNoRemotePrerequisite]' passed (0.208 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU7PendingKeepsRenderedCardsWithoutLoadingSurface]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU7PendingKeepsRenderedCardsWithoutLoadingSurface]' passed (0.235 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU8FailureAndOtherWorkFactsKeepRenderedCards]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU8FailureAndOtherWorkFactsKeepRenderedCards]' passed (0.581 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU9InitialPendingRendersOnlyFactualPreparation]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU9InitialPendingRendersOnlyFactualPreparation]' passed (0.156 seconds).
+Test Suite 'FeedScreenRenderingTests' passed at 2026-11-02 08:26:35.771.
+	 Executed 27 tests, with 0 failures (0 unexpected) in 12.086 (12.089) seconds
+Test Suite 'FirstScreenPresentationTests' started at 2026-11-02 08:26:35.771.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testADeeperLayoutThanTheViewportStillCoversIt]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testADeeperLayoutThanTheViewportStillCoversIt]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testARestoreIsShownAtOnceBecauseNothingWasPrepared]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testARestoreIsShownAtOnceBecauseNothingWasPrepared]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testCoverageRejectsMeasurementsThatAreNotLayout]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testCoverageRejectsMeasurementsThatAreNotLayout]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testEmptySelectionAndSearchAreNotWaits]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testEmptySelectionAndSearchAreNotWaits]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testNoCardsDrawTheExistingSurfaceForEveryWorkState]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testNoCardsDrawTheExistingSurfaceForEveryWorkState]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testOfferExhaustedShowsWhatExists]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testOfferExhaustedShowsWhatExists]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testOfflineAndFailureShowWhatExists]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testOfflineAndFailureShowWhatExists]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheDecisionIsTheLayoutAndNeverACardCount]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheDecisionIsTheLayoutAndNeverACardCount]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheFirstExposureHappensOnlyWhenTheCarriedLayoutCoversTheViewport]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheFirstExposureHappensOnlyWhenTheCarriedLayoutCoversTheViewport]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheReadingSurfaceIsNeverTakenBack]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheReadingSurfaceIsNeverTakenBack]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheRecordedOneCardFirstScreenIsNotExposed]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheRecordedOneCardFirstScreenIsNotExposed]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheStallBoundEndsThePreparationWithRealCards]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheStallBoundEndsThePreparationWithRealCards]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheStallClockResetsOnlyOnARealHighWaterAdvance]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheStallClockResetsOnlyOnARealHighWaterAdvance]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheTransitionHappensAtTheViewportBottomWithinTheProjectsTolerance]' started.
+Test Case '-[FeedMineCompositionTests.FirstScreenPresentationTests testTheTransitionHappensAtTheViewportBottomWithinTheProjectsTolerance]' passed (0.000 seconds).
+Test Suite 'FirstScreenPresentationTests' passed at 2026-11-02 08:26:35.774.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-11-02 08:26:35.774.
+	 Executed 41 tests, with 0 failures (0 unexpected) in 12.088 (12.092) seconds
+Test Suite 'Selected tests' passed at 2026-11-02 08:26:35.774.
+	 Executed 41 tests, with 0 failures (0 unexpected) in 12.088 (12.093) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

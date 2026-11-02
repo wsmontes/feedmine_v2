@@ -1,0 +1,1493 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version-3CD7052B146186F2.txt
+[1/3] Write sources
+[3/4] Emitting module FeedMinePersistence
+[4/7] Compiling FeedMinePersistence PublicationStore+Presentation.swift
+[5/7] Compiling FeedMinePersistence ReaderHistoryBindingStore.swift
+[6/7] Compiling FeedMinePersistence SessionStore+HistoryPreparation.swift
+[7/13] Compiling FeedMinePersistence PublicationStore+Writing.swift
+[8/13] Compiling FeedMinePersistence ReaderHistoryBindingStore+LegacyCandidates.swift
+[9/13] Compiling FeedMinePersistence ReaderHistoryBindingStore+RetainedLegacy.swift
+[10/13] Compiling FeedMinePersistence ReaderHistoryBindingStore+RetainedReadings.swift
+[11/13] Compiling FeedMinePersistence SessionStore+HistoryBinding.swift
+[12/13] Compiling FeedMinePersistence SessionStore.swift
+[13/14] Emitting module FeedMineEditorial
+[14/15] Emitting module FeedMinePublication
+[15/17] Compiling FeedMinePublication PublicationCoordinator.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:187:17: warning: no calls to throwing functions occur within 'try' expression
+185 |         }
+186 |         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+187 |         return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
+    |                 `- warning: no calls to throwing functions occur within 'try' expression
+188 |     }
+189 | 
+[16/17] Compiling FeedMinePublication PublicationHistory.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:187:17: warning: no calls to throwing functions occur within 'try' expression
+185 |         }
+186 |         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+187 |         return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
+    |                 `- warning: no calls to throwing functions occur within 'try' expression
+188 |     }
+189 | 
+[17/18] Emitting module FeedMineEditorialTests
+[18/19] Compiling FeedMineEditorialTests CandidateProviderTests.swift
+[19/20] Emitting module FeedMineRuntime
+[20/22] Compiling FeedMineRuntime MediaTidy.swift
+[21/22] Compiling FeedMineRuntime PreparedReserve.swift
+[22/23] Emitting module FeedMinePublicationTests
+[23/27] Compiling FeedMinePublicationTests OfflineRestorePersistenceTests.swift
+[24/27] Compiling FeedMinePublicationTests PublicationCoordinatorTests.swift
+[25/27] Compiling FeedMinePublicationTests PublicationHistoryTests.swift
+[26/27] Compiling FeedMinePublicationTests PublicationOwnedHistoryTests.swift
+[27/28] Emitting module FeedMineRuntimeTests
+[28/33] Compiling FeedMineRuntimeTests DurableAnchorRestoreTests.swift
+[29/33] Compiling FeedMineRuntimeTests InitialProductionSliceTests.swift
+[30/33] Compiling FeedMineRuntimeTests LocalProductionSliceTests.swift
+[31/33] Compiling FeedMineRuntimeTests MediaTidyFactsTests.swift
+[32/33] Compiling FeedMineRuntimeTests PublicationPreparationTests.swift
+[33/34] Emitting module FeedMinePersistenceTests
+[34/50] Compiling FeedMinePersistenceTests AcquisitionAdmissionStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[35/50] Compiling FeedMinePersistenceTests ContextIdentityPersistenceTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[36/50] Compiling FeedMinePersistenceTests InitialPublicationAtomicityTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[37/50] Compiling FeedMinePersistenceTests PublicationMediaIdentityPersistenceTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[38/50] Compiling FeedMinePersistenceTests PublicationMediaUseTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[39/50] Compiling FeedMinePersistenceTests PublicationRunwayStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[40/50] Compiling FeedMinePersistenceTests PublicationSchemaTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[41/50] Compiling FeedMinePersistenceTests PublicationSourceExclusionTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[42/50] Compiling FeedMinePersistenceTests PublicationStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[43/50] Compiling FeedMinePersistenceTests PublicationWordExclusionTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[44/50] Compiling FeedMinePersistenceTests ReaderHistoryBindingStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[45/50] Compiling FeedMinePersistenceTests ReaderHistoryCheckpointTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[46/50] Compiling FeedMinePersistenceTests ReaderHistoryPreparationTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[47/50] Compiling FeedMinePersistenceTests ReaderLibraryStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[48/50] Compiling FeedMinePersistenceTests SavedMediaAvailabilityStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[49/50] Compiling FeedMinePersistenceTests SessionStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:71:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 69 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 70 |         // columns, and its SQL text is not part of this comparison.
+ 71 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 72 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 73 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+[50/51] Emitting module FeedMineComposition
+[51/54] Compiling FeedMineComposition ReaderActionCoordinator.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Sources/FeedMineComposition/SavedMediaCoordinator.swift:116:9: warning: result of 'try?' is unused [#no-usage]
+114 |     /// behind; a card still in another box keeps its state.
+115 |     public func forgetUnsaved() {
+116 |         try? availability.clearUnsaved()
+    |         `- warning: result of 'try?' is unused [#no-usage]
+117 |     }
+118 | 
+[52/54] Compiling FeedMineComposition ReaderImportExportCoordinator.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Sources/FeedMineComposition/SavedMediaCoordinator.swift:116:9: warning: result of 'try?' is unused [#no-usage]
+114 |     /// behind; a card still in another box keeps its state.
+115 |     public func forgetUnsaved() {
+116 |         try? availability.clearUnsaved()
+    |         `- warning: result of 'try?' is unused [#no-usage]
+117 |     }
+118 | 
+[53/54] Compiling FeedMineComposition SavedMediaCoordinator.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Sources/FeedMineComposition/SavedMediaCoordinator.swift:116:9: warning: result of 'try?' is unused [#no-usage]
+114 |     /// behind; a card still in another box keeps its state.
+115 |     public func forgetUnsaved() {
+116 |         try? availability.clearUnsaved()
+    |         `- warning: result of 'try?' is unused [#no-usage]
+117 |     }
+118 | 
+[54/55] Emitting module FeedMineCompositionTests
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:80:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+  78 |     }
+  79 | }
+  80 | private final class ColdURLProtocol: URLProtocol, @unchecked Sendable {
+     |                     |                                        `- warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+     |                     `- note: 'ColdURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+  81 |     // Intercept every request; an unregistered endpoint fails locally instead of reaching the internet.
+  82 |     override class func canInit(with request: URLRequest) -> Bool { true }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:468:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+466 |     }
+467 | }
+468 | private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'HandoffURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+469 |     override class func canInit(with request: URLRequest) -> Bool { true }
+470 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:1755:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+1753 |     }
+1754 | }
+1755 | private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
+     |                     |                                          `- warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+     |                     `- note: 'DriverURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+1756 |     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
+1757 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/MediaHTTPFetcherReasonTests.swift:12:55: warning: conformance of 'MediaHTTPFetcherReasonTests.Stub' to protocol 'Sendable' is already unavailable
+ 10 | /// unchanged; the reason is the added fact.
+ 11 | final class MediaHTTPFetcherReasonTests: XCTestCase {
+ 12 |     private final class Stub: URLProtocol, @unchecked Sendable {
+    |                         |                             `- warning: conformance of 'MediaHTTPFetcherReasonTests.Stub' to protocol 'Sendable' is already unavailable
+    |                         `- note: 'MediaHTTPFetcherReasonTests.Stub' inherits conformance to protocol 'Sendable' from superclass here
+ 13 |         nonisolated(unsafe) static var status = 200
+ 14 |         nonisolated(unsafe) static var headers: [String: String] = ["Content-Type": "image/png"]
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:912:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+910 | }
+911 | 
+912 | private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                        `- warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ProgressiveDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+913 |     override class func canInit(with request: URLRequest) -> Bool { true }
+914 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:927:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+925 | }
+926 | 
+927 | private final class OfflineDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                    `- warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'OfflineDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+928 |     override class func canInit(with request: URLRequest) -> Bool { true }
+929 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:553:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+551 |     }
+552 | }
+553 | private final class BridgeHTTPProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'BridgeHTTPProtocol' inherits conformance to protocol 'Sendable' from superclass here
+554 |     override class func canInit(with request:URLRequest) -> Bool { BridgeHTTPResponse.find(request.url) != nil }
+555 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+[55/65] Compiling FeedMineCompositionTests ColdFeedBootstrapTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[56/65] Compiling FeedMineCompositionTests FeedPresentationHandoffTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[57/65] Compiling FeedMineCompositionTests FeedRunwayDriverTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[58/65] Compiling FeedMineCompositionTests PipelineHeadroomTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[59/65] Compiling FeedMineCompositionTests ReaderActionCoordinatorTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[60/65] Compiling FeedMineCompositionTests ReaderDiscoveryPoolTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[61/65] Compiling FeedMineCompositionTests RunwayAcquisitionCycleTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[62/65] Compiling FeedMineCompositionTests SavedMediaCoordinatorTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[63/65] Compiling FeedMineCompositionTests SelectedSourceCoverageTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[64/65] Compiling FeedMineCompositionTests SourceExclusionProductionTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+248 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:245:21: warning: no calls to throwing functions occur within 'try' expression
+243 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+244 |         let suspended = startSuspendedTarget(f)
+245 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+246 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+247 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:271:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+273 |         await driver.suspendForBackground()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:270:21: warning: no calls to throwing functions occur within 'try' expression
+268 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+269 |         let suspended = startSuspendedTarget(f)
+270 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+271 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+272 |         _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:302:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+304 |         let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:315:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+313 |             returned.fulfill()
+314 |         }
+315 |         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+316 |     }
+317 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:301:21: warning: no calls to throwing functions occur within 'try' expression
+299 |         let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+300 |         let suspended = startSuspendedTarget(f)
+301 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+302 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+303 |         _ = try await driver.activateCurrentPresentation(resources: resources())
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:384:21: warning: no calls to throwing functions occur within 'try' expression
+382 |         })
+383 |         let suspended = startSuspendedTarget(f)
+384 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+385 |         let scopeValue = await f.session.currentRunwayScope()
+386 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:443:21: warning: no calls to throwing functions occur within 'try' expression
+441 |         })
+442 |         let suspended = startSuspendedTarget(f)
+443 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+444 |         let scopeValue = await f.session.currentRunwayScope()
+445 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:508:21: warning: no calls to throwing functions occur within 'try' expression
+506 |             })
+507 |         let suspended = startSuspendedTarget(f)
+508 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+509 |         let scopeValue = await f.session.currentRunwayScope()
+510 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:572:21: warning: no calls to throwing functions occur within 'try' expression
+570 |             })
+571 |         let suspended = startSuspendedTarget(f)
+572 |         defer { _ = try? suspended }
+    |                     `- warning: no calls to throwing functions occur within 'try' expression
+573 |         let scopeValue = await f.session.currentRunwayScope()
+574 |         let scope = try XCTUnwrap(scopeValue)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:681:25: warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+679 |         })
+680 |         let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+681 |         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+    |                         `- warning: result of call to 'fulfillment(of:timeout:enforceOrder:)' is unused [#no-usage]
+682 |         let pulls = f.journal.pulls.count
+683 | 
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:675:32: warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+673 |         let gate = CoverageGate { entered.fulfill() }
+674 |         defer { gate.release() }
+675 |         let f = try fixture(), first = try await cold(f)
+    |                                `- warning: immutable value 'first' was never used; consider replacing with '_' or removing it [#no-usage]
+676 |         let (driver, _) = try driver(f, makeMediaOpportunity: {
+677 |             await gate.wait()
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:812:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+810 |         let entered = expectation(description: "Coverage connector entered")
+811 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+812 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+813 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+814 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:818:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+816 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+817 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+818 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+819 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+820 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[65/66] Emitting module ArchitectureSmokeTests
+[66/72] Compiling ArchitectureSmokeTests EditedArticleRecurrenceTests.swift
+[67/72] Compiling ArchitectureSmokeTests FeedPresentationStateTests.swift
+[68/72] Compiling ArchitectureSmokeTests FeedScreenRenderingTests.swift
+[69/72] Compiling ArchitectureSmokeTests FeedScreenStoreTests.swift
+[70/72] Compiling ArchitectureSmokeTests OriginExposureIntegrationTests.swift
+[71/72] Compiling ArchitectureSmokeTests ReadablePublishedTextIntegrationTests.swift
+[71/73] Write Objects.LinkFileList
+[72/73] Linking FeedMinePackageTests
+Build complete! (22.67s)
+Test Suite 'Selected tests' started at 2026-10-30 10:22:18.049.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-30 10:22:18.049.
+Test Suite 'ReaderHistoryBindingStoreTests' started at 2026-10-30 10:22:18.049.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' started.
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence]' passed (0.045 seconds).
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' started.
+<unknown>:0: error: -[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading] : failed: caught error: "staleHistoryBinding"
+Test Case '-[FeedMinePersistenceTests.ReaderHistoryBindingStoreTests testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading]' failed (0.286 seconds).
+Test Suite 'ReaderHistoryBindingStoreTests' failed at 2026-10-30 10:22:18.380.
+	 Executed 2 tests, with 1 failure (1 unexpected) in 0.330 (0.330) seconds
+Test Suite 'FeedMinePackageTests.xctest' failed at 2026-10-30 10:22:18.380.
+	 Executed 2 tests, with 1 failure (1 unexpected) in 0.330 (0.331) seconds
+Test Suite 'Selected tests' failed at 2026-10-30 10:22:18.380.
+	 Executed 2 tests, with 1 failure (1 unexpected) in 0.330 (0.331) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

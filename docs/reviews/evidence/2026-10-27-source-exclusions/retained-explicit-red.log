@@ -1,0 +1,54 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version-3CD7052B146186F2.txt
+[1/3] Write sources
+[3/4] Emitting module FeedMinePersistenceTests
+[4/5] Compiling FeedMinePersistenceTests ReaderHistoryBindingStoreTests.swift
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:69:81: error: 'nil' is not compatible with expected argument type 'SessionStore.CheckpointRecord'
+ 67 |         let reading = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == edition.id })
+ 68 |         XCTAssertTrue(reading.checkpoints.isEmpty)
+ 69 |         let prepared = try sessions.prepareRetainedReading(reading, checkpoint: nil, replacing: nil)
+    |                                                                                 `- error: 'nil' is not compatible with expected argument type 'SessionStore.CheckpointRecord'
+ 70 |         XCTAssertNil(try sessions.checkpoint())
+ 71 |         XCTAssertEqual(try sessions.checkpoint(bindingActivation: prepared)?.cardID, card.id)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:69:97: error: 'nil' is not compatible with expected argument type 'SessionStore.BindingActivation'
+ 67 |         let reading = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == edition.id })
+ 68 |         XCTAssertTrue(reading.checkpoints.isEmpty)
+ 69 |         let prepared = try sessions.prepareRetainedReading(reading, checkpoint: nil, replacing: nil)
+    |                                                                                                 `- error: 'nil' is not compatible with expected argument type 'SessionStore.BindingActivation'
+ 70 |         XCTAssertNil(try sessions.checkpoint())
+ 71 |         XCTAssertEqual(try sessions.checkpoint(bindingActivation: prepared)?.cardID, card.id)
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:76:65: error: incorrect argument label in call (have '_:expectingNoLegacyCheckpoint:', expected '_:expectedLegacyCheckpoint:')
+ 74 |                 arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), PersistenceValueCoding.uuid(card.id.rawValue), "top", 1234])
+ 75 |         }
+ 76 |         XCTAssertThrowsError(try sessions.promotePreparedBinding(prepared, expectingNoLegacyCheckpoint: true))
+    |                                                                 `- error: incorrect argument label in call (have '_:expectingNoLegacyCheckpoint:', expected '_:expectedLegacyCheckpoint:')
+ 77 |         XCTAssertTrue(try sessions.isPreparedBinding(prepared))
+ 78 |         try db.write { try $0.execute(sql: "DELETE FROM session_checkpoint") }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:76:105: error: cannot convert value of type 'Bool' to expected argument type 'SessionStore.CheckpointRecord'
+ 74 |                 arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), PersistenceValueCoding.uuid(card.id.rawValue), "top", 1234])
+ 75 |         }
+ 76 |         XCTAssertThrowsError(try sessions.promotePreparedBinding(prepared, expectingNoLegacyCheckpoint: true))
+    |                                                                                                         `- error: cannot convert value of type 'Bool' to expected argument type 'SessionStore.CheckpointRecord'
+ 77 |         XCTAssertTrue(try sessions.isPreparedBinding(prepared))
+ 78 |         try db.write { try $0.execute(sql: "DELETE FROM session_checkpoint") }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:79:44: error: incorrect argument label in call (have '_:expectingNoLegacyCheckpoint:', expected '_:expectedLegacyCheckpoint:')
+ 77 |         XCTAssertTrue(try sessions.isPreparedBinding(prepared))
+ 78 |         try db.write { try $0.execute(sql: "DELETE FROM session_checkpoint") }
+ 79 |         try sessions.promotePreparedBinding(prepared, expectingNoLegacyCheckpoint: true)
+    |                                            `- error: incorrect argument label in call (have '_:expectingNoLegacyCheckpoint:', expected '_:expectedLegacyCheckpoint:')
+ 80 |         XCTAssertEqual(try sessions.checkpoint()?.cardID, card.id)
+ 81 |     }
+
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/Tests/FeedMinePersistenceTests/ReaderHistoryBindingStoreTests.swift:79:84: error: cannot convert value of type 'Bool' to expected argument type 'SessionStore.CheckpointRecord'
+ 77 |         XCTAssertTrue(try sessions.isPreparedBinding(prepared))
+ 78 |         try db.write { try $0.execute(sql: "DELETE FROM session_checkpoint") }
+ 79 |         try sessions.promotePreparedBinding(prepared, expectingNoLegacyCheckpoint: true)
+    |                                                                                    `- error: cannot convert value of type 'Bool' to expected argument type 'SessionStore.CheckpointRecord'
+ 80 |         XCTAssertEqual(try sessions.checkpoint()?.cardID, card.id)
+ 81 |     }
+error: fatalError

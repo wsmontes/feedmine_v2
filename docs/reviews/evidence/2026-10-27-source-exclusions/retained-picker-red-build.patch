@@ -1,0 +1,489 @@
+diff --git a/FeedMineApp/FeedMineApp/AppComposition.swift b/FeedMineApp/FeedMineApp/AppComposition.swift
+index 3b5f0add..26436f07 100644
+--- a/FeedMineApp/FeedMineApp/AppComposition.swift
++++ b/FeedMineApp/FeedMineApp/AppComposition.swift
+@@ -2210,7 +2210,7 @@ final class AppComposition {
+     /// — and therefore how much of discovery exists when it is built.
+     private func makeAssociation(contextKey: ContextKey, profile: ReaderDiscoveryProfile,
+         read: DiscoveryRead?, warmLaunch: Bool, allowsSourceOutsideSelection: Bool = false,
+-        preparingReplacement: Bool = false) throws -> FeedAssociation {
++        preparingReplacement: Bool = false, preparedHistory: SessionStore.BindingActivation? = nil) throws -> FeedAssociation {
+         let session = try sessionState(for: contextKey,
+             allowsSourceOutsideSelection: allowsSourceOutsideSelection)
+         if session.key != contextKey {
+@@ -2221,7 +2221,8 @@ final class AppComposition {
+         let (scoring, version) = scoring(for: session.key)
+         let binding = try resolveHistoryBinding(session.key, database: database, scoringVersion: version)
+         let checkpoints = SessionStore(database: database), publication = PublicationStore(database: database)
+-        var handle = try checkpoints.prepareBinding(binding.id)
++        guard preparedHistory == nil || preparedHistory?.bindingID == binding.id else { throw SessionStoreError.staleHistoryBinding }
++        var handle = try preparedHistory ?? checkpoints.prepareBinding(binding.id)
+         var built: FeedAssociation?
+         do {
+             var editionID = try checkpoints.editionID(bindingActivation: handle)
+@@ -2230,6 +2231,7 @@ final class AppComposition {
+                 let point = try checkpoints.checkpoint(bindingActivation: handle)
+                 if !FeedAssociation.mayShow(existing.editorialRevision, for: existing.editorialRevision.contextKey,
+                     scoringVersion: version) || point == nil {
++                    guard preparedHistory == nil else { throw ReaderHistoryRecoveryError.unavailable }
+                     handle = try checkpoints.resetPreparedBinding(handle, editionID: nil)
+                     editionID = nil
+                     frozen = nil
+@@ -2312,6 +2314,68 @@ final class AppComposition {
+         return try bindings.resolve(logicalKey: raw)
+     }
+ 
++    func retainedReadings() throws -> [ReaderHistoryBindingStore.RetainedReading] {
++        guard let database = libraryDatabase() else { throw ReaderHistoryRecoveryError.unavailable }
++        return try ReaderHistoryBindingStore(database: database).retainedReadings()
++    }
++
++    /// A user-selected Edition is never replaced by automatic history resolution or a fresh publication.
++    func selectRetainedReading(_ reading: ReaderHistoryBindingStore.RetainedReading,
++        checkpoint: SessionStore.CheckpointRecord?) async throws {
++        guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
++        guard let database = libraryDatabase(), let preferences else { throw ReaderHistoryRecoveryError.unavailable }
++        let previous = association, recovery = historyRecovery
++        if previous?.store.state.presentation?.editionID == reading.edition.id { return }
++        let expected = currentContextKey
++        let selected = reading.owner?.logicalKey ?? reading.edition.editorialRevision.contextKey
++        replacingSession = true
++        defer {
++            replacingSession = false
++            if association === previous { previous?.resumeViewportAfterFailedHandoff() }
++            if historyRecovery === recovery { recovery?.resumeViewportAfterFailedChoice() }
++        }
++        if let recovery { await recovery.freezeViewportForChoice() }
++        guard association === previous, historyRecovery === recovery, currentContextKey == expected else {
++            throw ReaderHistoryRecoveryError.staleChoice
++        }
++        let sessions = SessionStore(database: database)
++        let legacy = previous == nil ? try sessions.checkpoint() : nil
++        let prepared = try sessions.prepareRetainedReading(reading, checkpoint: checkpoint,
++            replacing: previous?.bindingActivation, expectedLegacyCheckpoint: legacy, expectedContext: expected)
++        currentContextKey = selected
++        recovery?.recordSelection(selected)
++        var candidate: FeedAssociation?
++        do {
++            let next = try makeAssociation(contextKey: selected, profile: discoveryProfile(for: selected), read: nil,
++                warmLaunch: true, allowsSourceOutsideSelection: allowsSourceOutsideSelection(selected),
++                preparingReplacement: true, preparedHistory: prepared)
++            candidate = next
++            try await next.launch()
++            guard association === previous, historyRecovery === recovery, currentContextKey == selected,
++                try preferences.load()?.activeContextKey == selected,
++                next.store.state.presentation?.editionID == reading.edition.id else { throw ReaderHistoryRecoveryError.staleChoice }
++            if let previous {
++                await previous.freezeViewportForHandoff()
++                _ = try await previous.session.checkpointCurrentPosition(at: Date())
++                if previous.bindingActivation?.bindingID == prepared.bindingID { try await next.refreshPreparedPosition() }
++            }
++            guard association === previous, historyRecovery === recovery, currentContextKey == selected,
++                try preferences.load()?.activeContextKey == selected else { throw ReaderHistoryRecoveryError.staleChoice }
++            try next.promotePreparedHistory(expectedLegacyCheckpoint: legacy,
++                expectingNoLegacyCheckpoint: previous == nil && legacy == nil)
++            recovery?.retire()
++            association = next
++            historyRecovery = nil
++            startupFailure = nil
++            startupFailureDetail = nil
++            await previous?.close()
++        } catch {
++            _ = try? sessions.cancelPreparedBinding(prepared)
++            await candidate?.close()
++            throw ReaderHistoryRecoveryError.selectionStoredNotActivated
++        }
++    }
++
+     /// Saves an explicit choice first; a failed activation keeps that intent and the local preview for retry.
+     func recoverHistory(_ choice: ReaderHistoryRecoveryChoice, from recovery: ReaderHistoryRecovery) async throws {
+         guard historyRecovery === recovery, !recovery.isRetired, association == nil,
+@@ -5195,10 +5259,11 @@ final class FeedAssociation {
+         }
+     }
+ 
+-    func promotePreparedHistory(expectedLegacyCheckpoint: SessionStore.CheckpointRecord? = nil) throws {
++    func promotePreparedHistory(expectedLegacyCheckpoint: SessionStore.CheckpointRecord? = nil,
++        expectingNoLegacyCheckpoint: Bool = false) throws {
+         guard let bindingActivation else { return }
+         try SessionStore(database: database).promotePreparedBinding(bindingActivation,
+-            expectedLegacyCheckpoint: expectedLegacyCheckpoint)
++            expectedLegacyCheckpoint: expectedLegacyCheckpoint, expectingNoLegacyCheckpoint: expectingNoLegacyCheckpoint)
+     }
+ 
+     func close() async {
+diff --git a/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift b/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
+index b78da720..495613df 100644
+--- a/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
++++ b/FeedMineApp/FeedMineAppTests/ContentFilterTests.swift
+@@ -52,6 +52,49 @@ final class ContentFilterTests: XCTestCase {
+         (association?.store.state.presentation?.window.items ?? []).compactMap(\.title)
+     }
+ 
++    func testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor() async throws {
++        let directory = directory(), seed = root(directory: directory)
++        let configuration = URLSessionConfiguration.ephemeral
++        configuration.protocolClasses = [FixtureTransport.self]
++        configuration.timeoutIntervalForRequest = 5
++        let database = try RuntimeDatabase(location: .init(directory: directory))
++        let raw = seed.currentContextKey
++        let frozen = ContextKey(request: .main, filter: ReaderFilter(exclusions: .init(isEnabled: true, rules: ["retained criteria"])))
++        let a = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
++            configuration: configuration, database: database, contextKey: raw,
++            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
++        try await a.launch()
++        let aID = try XCTUnwrap(a.store.state.presentation?.editionID)
++        await a.close()
++        let b = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
++            configuration: configuration, database: database, contextKey: frozen,
++            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
++        try await b.launch()
++        let bID = try XCTUnwrap(b.store.state.presentation?.editionID)
++        await b.close()
++        try SessionStore(database: database).activateContext(raw)
++        let opened = root(directory: directory)
++        await opened.launch()
++        let live = try XCTUnwrap(opened.association)
++        XCTAssertEqual(live.store.state.presentation?.editionID, aID)
++        let store = ReaderHistoryBindingStore(database: database)
++        let selected = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == bID })
++        XCTAssertNil(selected.owner)
++        let point = try XCTUnwrap(selected.checkpoints.first).point
++        try await opened.selectRetainedReading(selected, checkpoint: point)
++        XCTAssertEqual(opened.currentContextKey, frozen)
++        XCTAssertEqual(opened.association?.store.state.presentation?.editionID, bID)
++        XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.activeContextKey, frozen)
++        let back = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == aID })
++        let owner = try XCTUnwrap(back.owner)
++        let saved = try XCTUnwrap(SessionStore(database: database).checkpoint(bindingID: owner.id))
++        try await opened.selectRetainedReading(back, checkpoint: saved)
++        XCTAssertEqual(opened.association?.store.state.presentation?.editionID, aID)
++        XCTAssertEqual(opened.association?.store.state.presentation?.window.anchor.cardID, saved.cardID)
++        XCTAssertThrowsError(try SessionStore(database: database).validateBinding(try XCTUnwrap(live.bindingActivation), editionID: aID))
++        await opened.association?.close()
++    }
++
+     func testGlobalWordEditDoesNotCreateAPendingContextHandoff() async throws {
+         let directory = directory(), root = root(directory: directory)
+         await root.launch()
+diff --git a/FeedMineApp/FeedMineAppTests/SourceExclusionJourneyUITests.swift b/FeedMineApp/FeedMineAppTests/SourceExclusionJourneyUITests.swift
+index a716bca9..12490ec5 100644
+--- a/FeedMineApp/FeedMineAppTests/SourceExclusionJourneyUITests.swift
++++ b/FeedMineApp/FeedMineAppTests/SourceExclusionJourneyUITests.swift
+@@ -17,6 +17,40 @@ final class SourceExclusionJourneyUITests: XCTestCase {
+         try legacyRecovery(previous: false, english: true)
+     }
+ 
++    @MainActor
++    func testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch() throws {
++        let app = SurfaceTest.launchFixture(["FEEDMINE_RECOVERY_LEGACY_FIXTURE": "1",
++            "FEEDMINE_DISABLE_CATALOGUE_SYNC": "1", "FEEDMINE_FIXTURE_ITEMS": "6", "FEEDMINE_TRACE_CAPTURE": "1"],
++            arguments: ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"])
++        defer { app.terminate() }
++        let proof = app.staticTexts["feed-window-proof"]
++        let oldIDs = String(proof.label.split(separator: ";")[0])
++        let oldCard = try XCTUnwrap(oldIDs.dropFirst(4).split(separator: ",").first).description
++        app.buttons["more-menu"].tap()
++        app.buttons["history-recovery-action"].tap()
++        app.buttons["history-recovery-current"].tap()
++        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["history-recovery-current"], timeout: 40))
++        XCTAssertTrue(proof.waitForExistence(timeout: 20))
++        let currentIDs = String(proof.label.split(separator: ";")[0])
++        let currentCard = try XCTUnwrap(currentIDs.dropFirst(4).split(separator: ",").first).description
++        XCTAssertNotEqual(currentIDs, oldIDs)
++        for (card, expected) in [(oldCard, oldIDs), (currentCard, currentIDs)] {
++            app.buttons["more-menu"].tap()
++            app.buttons["history-recovery-action"].tap()
++            XCTAssertTrue(app.staticTexts["Leituras guardadas"].waitForExistence(timeout: 10))
++            let choice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'retained-open-' AND identifier ENDSWITH %@", card)).firstMatch
++            XCTAssertTrue(SurfaceTest.scrollIntoView(choice, in: app, timeout: 15))
++            choice.tap()
++            XCTAssertTrue(SurfaceTest.waitForAbsence(app.staticTexts["Leituras guardadas"], timeout: 40))
++            XCTAssertEqual(String(proof.label.split(separator: ";")[0]), expected)
++            app.terminate()
++            app.launch()
++            XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 30))
++            XCTAssertTrue(proof.waitForExistence(timeout: 30))
++            XCTAssertEqual(String(proof.label.split(separator: ";")[0]), expected)
++        }
++    }
++
+     @MainActor
+     private func legacyRecovery(previous: Bool, english: Bool) throws {
+         var arguments = ["-AppleLanguages", english ? "(en)" : "(pt-BR)", "-AppleLocale", english ? "en_US" : "pt_BR"]
+diff --git a/Sources/FeedMinePersistence/PublicationStore+Presentation.swift b/Sources/FeedMinePersistence/PublicationStore+Presentation.swift
+index 6c633291..41afbb7c 100644
+--- a/Sources/FeedMinePersistence/PublicationStore+Presentation.swift
++++ b/Sources/FeedMinePersistence/PublicationStore+Presentation.swift
+@@ -321,7 +321,7 @@ extension PublicationStore {
+         }
+     }
+ 
+-    private static func firstCard(editionKey: String, in db: Database) throws -> PublicationCardID? {
++    static func firstCard(editionKey: String, in db: Database) throws -> PublicationCardID? {
+         guard let row = try Row.fetchOne(db, sql: """
+             SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+             WHERE s.edition_id = ? ORDER BY s.ordinal ASC, c.ordinal ASC LIMIT 1
+diff --git a/Sources/FeedMinePersistence/ReaderHistoryBindingStore+RetainedReadings.swift b/Sources/FeedMinePersistence/ReaderHistoryBindingStore+RetainedReadings.swift
+index b4deacb7..b156db6b 100644
+--- a/Sources/FeedMinePersistence/ReaderHistoryBindingStore+RetainedReadings.swift
++++ b/Sources/FeedMinePersistence/ReaderHistoryBindingStore+RetainedReadings.swift
+@@ -15,65 +15,67 @@ extension ReaderHistoryBindingStore {
+     /// All committed reading histories in one read snapshot, independent of current criteria/policy.
+     /// This does not select, adopt, activate or rank histories by recency.
+     public func retainedReadings() throws -> [RetainedReading] {
+-        try database.read { db in
+-            let editions = try Row.fetchAll(db, sql: "SELECT * FROM feed_editions ORDER BY id COLLATE BINARY")
+-                .map(PublicationStore.decodeEdition)
+-            let bindings = try Row.fetchAll(db, sql: "SELECT * FROM reader_history_bindings")
+-                .map(Self.decodeRecord)
+-            var bindingByID: [UUID: Record] = [:]
+-            for binding in bindings {
+-                guard bindingByID.updateValue(binding, forKey: binding.id) == nil else { throw Failure.corruption }
+-            }
+-            var ownerByEdition: [FeedEditionID: Record] = [:]
+-            for row in try Row.fetchAll(db, sql: "SELECT binding_id, edition_id FROM reader_history_editions") {
+-                let fields = PublicationRecordFields(row)
+-                guard let owner = try bindingByID[fields.uuid("binding_id")] else { throw Failure.corruption }
+-                ownerByEdition[FeedEditionID(rawValue: try fields.uuid("edition_id"))] = owner
+-            }
+-            let physical = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1")
+-                .map(SessionStore.checkpoint)
+-            let active: SessionStore.CheckpointRecord?
+-            if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_reader_binding WHERE singleton_id = 1") {
+-                let fields = PublicationRecordFields(row)
+-                if try fields.integer("checkpoint_present") == 1 {
+-                    guard let point = try SessionStore.ownedCheckpoint(bindingID: fields.uuid("binding_id"), in: db)
+-                    else { throw Failure.corruption }
+-                    active = point
+-                } else { active = nil }
+-            } else { active = physical }
+-            let owned = try Row.fetchAll(db, sql: "SELECT * FROM reader_history_checkpoints ORDER BY binding_id COLLATE BINARY, edition_id COLLATE BINARY")
+-            var ownedByPoint: [SessionStore.CheckpointRecord: Set<UUID>] = [:]
+-            for row in owned {
+-                ownedByPoint[try SessionStore.checkpoint(row), default: []]
+-                    .insert(try PublicationRecordFields(row).uuid("binding_id"))
+-            }
+-            let legacy = try Row.fetchAll(db, sql: "SELECT * FROM context_checkpoints ORDER BY context_identity COLLATE BINARY")
+-                .map(SessionStore.checkpoint)
+-            let preserved = try Self.retainedLegacyStatements(in: db)
+-            let known = Dictionary(grouping: preserved, by: \.point)
+-            let points = (active.map { [$0] } ?? []) + (physical.map { [$0] } ?? [])
+-                + (try owned.map(SessionStore.checkpoint)) + legacy + preserved.map(\.point)
+-            var seen = Set<SessionStore.CheckpointRecord>()
+-            var checkpoints: [FeedEditionID: [LegacyCheckpoint]] = [:]
+-            for point in points where seen.insert(point).inserted {
+-                let editionID: FeedEditionID
+-                if let located = try PublicationStore.location(ofCard: point.cardID, in: db) { editionID = located.editionID }
+-                else if let evidence = known[point] {
+-                    let resolved = Set(evidence.map(\.resolvedEditionID))
+-                    guard resolved.count == 1, let recorded = resolved.first else { throw Failure.corruption }
+-                    editionID = recorded
+-                } else { editionID = point.editionID }
+-                if let expectedOwners = ownedByPoint[point] {
+-                    guard let owner = ownerByEdition[editionID], expectedOwners == [owner.id] else { throw Failure.corruption }
+-                }
+-                checkpoints[editionID, default: []].append(.init(point: point, isActive: point == active))
+-            }
+-            let selected = try Row.fetchAll(db, sql: "SELECT edition_id FROM reader_history_preparations WHERE selected = 1 AND edition_id IS NOT NULL")
+-            let preparedIDs = try Set(selected.map { FeedEditionID(rawValue: try PublicationRecordFields($0).uuid("edition_id")) })
+-            return editions.map { edition in
+-                RetainedReading(edition: edition, owner: ownerByEdition[edition.id],
+-                    checkpoints: checkpoints[edition.id] ?? [], isSelectedPreparation: preparedIDs.contains(edition.id))
++        try database.read { try Self.retainedReadings(in: $0) }
++    }
++
++    static func retainedReadings(in db: Database) throws -> [RetainedReading] {
++        let editions = try Row.fetchAll(db, sql: "SELECT * FROM feed_editions ORDER BY id COLLATE BINARY")
++            .map(PublicationStore.decodeEdition)
++        let bindings = try Row.fetchAll(db, sql: "SELECT * FROM reader_history_bindings")
++            .map(Self.decodeRecord)
++        var bindingByID: [UUID: Record] = [:]
++        for binding in bindings {
++            guard bindingByID.updateValue(binding, forKey: binding.id) == nil else { throw Failure.corruption }
++        }
++        var ownerByEdition: [FeedEditionID: Record] = [:]
++        for row in try Row.fetchAll(db, sql: "SELECT binding_id, edition_id FROM reader_history_editions") {
++            let fields = PublicationRecordFields(row)
++            guard let owner = try bindingByID[fields.uuid("binding_id")] else { throw Failure.corruption }
++            ownerByEdition[FeedEditionID(rawValue: try fields.uuid("edition_id"))] = owner
++        }
++        let physical = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1")
++            .map(SessionStore.checkpoint)
++        let active: SessionStore.CheckpointRecord?
++        if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_reader_binding WHERE singleton_id = 1") {
++            let fields = PublicationRecordFields(row)
++            if try fields.integer("checkpoint_present") == 1 {
++                guard let point = try SessionStore.ownedCheckpoint(bindingID: fields.uuid("binding_id"), in: db)
++                else { throw Failure.corruption }
++                active = point
++            } else { active = nil }
++        } else { active = physical }
++        let owned = try Row.fetchAll(db, sql: "SELECT * FROM reader_history_checkpoints ORDER BY binding_id COLLATE BINARY, edition_id COLLATE BINARY")
++        var ownedByPoint: [SessionStore.CheckpointRecord: Set<UUID>] = [:]
++        for row in owned {
++            ownedByPoint[try SessionStore.checkpoint(row), default: []]
++                .insert(try PublicationRecordFields(row).uuid("binding_id"))
++        }
++        let legacy = try Row.fetchAll(db, sql: "SELECT * FROM context_checkpoints ORDER BY context_identity COLLATE BINARY")
++            .map(SessionStore.checkpoint)
++        let preserved = try Self.retainedLegacyStatements(in: db)
++        let known = Dictionary(grouping: preserved, by: \.point)
++        let points = (active.map { [$0] } ?? []) + (physical.map { [$0] } ?? [])
++            + (try owned.map(SessionStore.checkpoint)) + legacy + preserved.map(\.point)
++        var seen = Set<SessionStore.CheckpointRecord>()
++        var checkpoints: [FeedEditionID: [LegacyCheckpoint]] = [:]
++        for point in points where seen.insert(point).inserted {
++            let editionID: FeedEditionID
++            if let located = try PublicationStore.location(ofCard: point.cardID, in: db) { editionID = located.editionID }
++            else if let evidence = known[point] {
++                let resolved = Set(evidence.map(\.resolvedEditionID))
++                guard resolved.count == 1, let recorded = resolved.first else { throw Failure.corruption }
++                editionID = recorded
++            } else { editionID = point.editionID }
++            if let expectedOwners = ownedByPoint[point] {
++                guard let owner = ownerByEdition[editionID], expectedOwners == [owner.id] else { throw Failure.corruption }
+             }
++            checkpoints[editionID, default: []].append(.init(point: point, isActive: point == active))
++        }
++        let selected = try Row.fetchAll(db, sql: "SELECT edition_id FROM reader_history_preparations WHERE selected = 1 AND edition_id IS NOT NULL")
++        let preparedIDs = try Set(selected.map { FeedEditionID(rawValue: try PublicationRecordFields($0).uuid("edition_id")) })
++        return editions.map { edition in
++            RetainedReading(edition: edition, owner: ownerByEdition[edition.id],
++                checkpoints: checkpoints[edition.id] ?? [], isSelectedPreparation: preparedIDs.contains(edition.id))
+         }
+     }
+ }
+diff --git a/Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift b/Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift
+index 704928ca..eb4b1783 100644
+--- a/Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift
++++ b/Sources/FeedMinePersistence/ReaderHistoryBindingStore.swift
+@@ -194,6 +194,41 @@ public struct ReaderHistoryBindingStore: Sendable {
+     }
+ 
+ 
++    /// Only the explicit retained-reading picker may attach a sibling to an established binding.
++    /// Ordinary resolve/adoption keeps its stricter active-Edition and namespace rules.
++    static func claimExplicitRetainedEdition(_ reading: RetainedReading,
++        checkpoint: SessionStore.CheckpointRecord?, in db: Database) throws -> Record {
++        let editionID = PersistenceValueCoding.uuid(reading.edition.id.rawValue)
++        guard reading.owner == nil,
++            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_editions WHERE edition_id = ?)",
++                arguments: [editionID]) == false else { throw Failure.editionAlreadyOwned }
++        let point: SessionStore.CheckpointRecord
++        if let checkpoint {
++            guard reading.checkpoints.contains(where: { $0.point == checkpoint }) else { throw Failure.incompatibleAdoption }
++            point = try validatedCheckpoint(checkpoint, editionID: reading.edition.id, in: db)
++        } else {
++            guard reading.checkpoints.isEmpty,
++                let card = try PublicationStore.firstCard(editionKey: editionID, in: db) else { throw Failure.incompatibleAdoption }
++            point = .init(editionID: reading.edition.id, cardID: card, anchorPlacement: "top", updatedAt: Date())
++        }
++        try retainLegacyCheckpoints(in: db)
++        let key = reading.edition.editorialRevision.contextKey
++        let existing = try read(key, in: db), id = existing?.id ?? UUID()
++        if existing == nil {
++            let preferred = key.canonicalIdentity
++            let occupied = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_bindings WHERE runtime_namespace = ?)",
++                arguments: [preferred]) == true
++            let namespace = occupied ? "reader-binding:" + PersistenceValueCoding.uuid(id) : preferred
++            try db.execute(sql: "INSERT INTO reader_history_bindings(id,logical_identity,logical_key_json,runtime_namespace) VALUES(?,?,?,?)",
++                arguments: [PersistenceValueCoding.uuid(id), key.canonicalIdentity, try encode(key), namespace])
++        }
++        try db.execute(sql: "INSERT INTO reader_history_editions(edition_id,binding_id,publication_key_json,adoption_kind) VALUES(?,?,?,'exact_context')",
++            arguments: [editionID, PersistenceValueCoding.uuid(id), try encode(key)])
++        try SessionStore.persistOwned(point, bindingID: id, in: db)
++        guard let result = try read(key, in: db) else { throw Failure.corruption }
++        return result
++    }
++
+     private static func validatedCheckpoint(_ original: SessionStore.CheckpointRecord,
+         editionID: FeedEditionID, in db: Database) throws -> SessionStore.CheckpointRecord {
+         // Recheck the exact source statement in the ownership transaction. A caller cannot fabricate
+diff --git a/Sources/FeedMinePersistence/SessionStore+HistoryPreparation.swift b/Sources/FeedMinePersistence/SessionStore+HistoryPreparation.swift
+index 17b69703..748201ac 100644
+--- a/Sources/FeedMinePersistence/SessionStore+HistoryPreparation.swift
++++ b/Sources/FeedMinePersistence/SessionStore+HistoryPreparation.swift
+@@ -9,30 +9,51 @@ extension SessionStore {
+         try database.write { try Self.prepareBinding(bindingID, explicitEditionID: nil, in: $0) }
+     }
+ 
+-    /// Selects an already-owned saved reading, without changing the presented reader or its point.
+-    /// Snapshot, checkpoint and predecessor must all remain current before any preparation is revoked.
++    /// Explicit selection validates its captured history and predecessor before claiming or preparing it.
+     public func prepareRetainedReading(_ reading: ReaderHistoryBindingStore.RetainedReading,
+-        checkpoint: CheckpointRecord, replacing current: BindingActivation) throws -> BindingActivation {
++        checkpoint: CheckpointRecord?, replacing current: BindingActivation?,
++        expectedLegacyCheckpoint: CheckpointRecord? = nil, expectedContext: ContextKey? = nil) throws -> BindingActivation {
+         try database.write { db in
+             try Self.requireActivation(current, in: db)
+-            guard let owner = reading.owner else { throw SessionStoreError.invalidMembership }
+-            guard !reading.isSelectedPreparation,
+-                let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
+-                    arguments: [PersistenceValueCoding.uuid(owner.id)]),
+-                try ReaderHistoryBindingStore.decodeRecord(row) == owner,
++            if current == nil {
++                let physical = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1")
++                    .map(Self.checkpoint)
++                guard physical == expectedLegacyCheckpoint else { throw SessionStoreError.staleHistoryBinding }
++            }
++            if let expectedContext {
++                guard try ReaderPreferencesStore.read(db)?.activeContextKey == expectedContext else {
++                    throw SessionStoreError.staleHistoryBinding
++                }
++            }
++            guard try ReaderHistoryBindingStore.retainedReadings(in: db).first(where: { $0.edition.id == reading.edition.id }) == reading,
++                !reading.isSelectedPreparation,
+                 let edition = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
+                     arguments: [PersistenceValueCoding.uuid(reading.edition.id.rawValue)]),
+-                try PublicationStore.decodeEdition(edition) == reading.edition else {
+-                throw SessionStoreError.staleHistoryBinding
+-            }
+-            guard try Self.isOwned(reading.edition.id, by: owner.id, in: db) else { throw SessionStoreError.invalidMembership }
+-            guard reading.checkpoints.contains(where: { $0.point == checkpoint }),
+-                try Self.ownedCheckpoint(bindingID: owner.id, editionID: reading.edition.id, in: db) == checkpoint,
++                try PublicationStore.decodeEdition(edition) == reading.edition,
+                 try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_preparations WHERE edition_id = ? AND selected = 1)",
+                     arguments: [PersistenceValueCoding.uuid(reading.edition.id.rawValue)]) == false else {
+                 throw SessionStoreError.staleHistoryBinding
+             }
+-            return try Self.prepareBinding(owner.id, explicitEditionID: reading.edition.id, in: db)
++            let owner: ReaderHistoryBindingStore.Record
++            if let captured = reading.owner {
++                guard let checkpoint, reading.checkpoints.contains(where: { $0.point == checkpoint }),
++                    let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
++                        arguments: [PersistenceValueCoding.uuid(captured.id)]),
++                    try ReaderHistoryBindingStore.decodeRecord(row) == captured,
++                    try Self.isOwned(reading.edition.id, by: captured.id, in: db),
++                    try Self.ownedCheckpoint(bindingID: captured.id, editionID: reading.edition.id, in: db) == checkpoint else {
++                    throw SessionStoreError.staleHistoryBinding
++                }
++                owner = captured
++            } else {
++                if let checkpoint, !reading.checkpoints.contains(where: { $0.point == checkpoint }) {
++                    throw SessionStoreError.invalidMembership
++                }
++                owner = try ReaderHistoryBindingStore.claimExplicitRetainedEdition(reading, checkpoint: checkpoint, in: db)
++            }
++            let prepared = try Self.prepareBinding(owner.id, explicitEditionID: reading.edition.id, in: db)
++            if expectedContext != nil { _ = try ReaderPreferencesStore.setContext(owner.logicalKey, in: db) }
++            return prepared
+         }
+     }
+ 
+@@ -112,8 +133,14 @@ extension SessionStore {
+ 
+     /// The same captured token becomes current. No callback reacquires authority during this cutover.
+     public func promotePreparedBinding(_ handle: BindingActivation,
+-        expectedLegacyCheckpoint: CheckpointRecord? = nil) throws {
++        expectedLegacyCheckpoint: CheckpointRecord? = nil, expectingNoLegacyCheckpoint: Bool = false) throws {
+         try database.write { db in
++            if expectingNoLegacyCheckpoint {
++                guard expectedLegacyCheckpoint == nil,
++                    try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM session_checkpoint WHERE singleton_id = 1)") == false else {
++                    throw SessionStoreError.staleHistoryBinding
++                }
++            }
+             if let expectedLegacyCheckpoint {
+                 guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
+                     try Self.checkpoint(row) == expectedLegacyCheckpoint else { throw SessionStoreError.staleHistoryBinding }

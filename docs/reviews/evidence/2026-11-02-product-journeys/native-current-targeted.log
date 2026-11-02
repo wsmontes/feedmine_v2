@@ -1,0 +1,399 @@
+Command line invocation:
+    /Applications/Xcode-26.6.0.app/Contents/Developer/usr/bin/xcodebuild test-without-building -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Debug -destination "platform=iOS Simulator,id=8E541C9E-FDD2-40D4-BE44-3E0814A49A8C" -derivedDataPath .build/product-media-current-derived -parallel-testing-enabled NO -testLanguage pt-BR -testRegion BR "-only-testing:FeedMineUITests/FeedMediaJourneyUITests/testRealImagesAreReachableWhileExploringTheFeed" "-only-testing:FeedMineUITests/SourcesAndFilterJourneyUITests/testFilterDraftEditedBeforeTheNodeLevelIsAppliedWhenThatLevelCloses" "-only-testing:FeedMineUITests/SourceExclusionJourneyUITests/testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch" "-only-testing:FeedMineUITests/ReadingSurfaceUITests/testABodyIsReadLocallyWithItsSourceHeadlineDateAndExit" -resultBundlePath .build/product-current-targeted-20261102.xcresult
+
+2026-11-02 09:02:40.588 xcodebuild[13138:125691]  DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+2026-11-02 09:02:40.701 xcodebuild[13138:125608] [MT] DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion.
+Resolve Package Graph
+
+
+Resolved source packages:
+  GRDB: https://github.com/groue/GRDB.swift @ 7.11.1
+  FeedMine: /Users/wagnersilvamontes/Documents/GitHub/feedmine_v2 @ local
+  FeedKit: https://github.com/nmdias/FeedKit @ 10.9.4
+
+Writing result bundle at path:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/product-current-targeted-20261102.xcresult
+
+2026-11-02 09:03:03.202378-0700 FeedMineUITests-Runner[13392:127932] [Default] Running tests...
+2026-11-02 09:03:03.249067-0700 FeedMineUITests-Runner[13392:128276] [General] Failed to send CA Event for app launch measurements for ca_event_type: 0 event_name: com.apple.app_launch_measurement.FirstFramePresentationMetric
+2026-11-02 09:03:03.293123-0700 FeedMineUITests-Runner[13392:128276] [General] Failed to send CA Event for app launch measurements for ca_event_type: 1 event_name: com.apple.app_launch_measurement.ExtendedLaunchMetrics
+objc[13392]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x104bd8310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x104b60398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-11-02 09:03:07.491.
+Test Suite 'FeedMineUITests.xctest' started at 2026-11-02 09:03:07.492.
+Test Suite 'FeedMediaJourneyUITests' started at 2026-11-02 09:03:07.492.
+Test Case '-[FeedMineUITests.FeedMediaJourneyUITests testRealImagesAreReachableWhileExploringTheFeed]' started.
+    t =     0.00s Start Test at 2026-11-02 09:03:07.493
+    t =     0.23s Set Up
+/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/FeedMediaJourneyUITests.swift:80: -[FeedMineUITests.FeedMediaJourneyUITests testRealImagesAreReachableWhileExploringTheFeed] : Test skipped - opt-in real catalogue/network journey
+    t =     0.25s Tear Down
+Test Case '-[FeedMineUITests.FeedMediaJourneyUITests testRealImagesAreReachableWhileExploringTheFeed]' skipped (0.322 seconds).
+Test Suite 'FeedMediaJourneyUITests' passed at 2026-11-02 09:03:07.815.
+	 Executed 1 test, with 1 test skipped and 0 failures (0 unexpected) in 0.322 (0.323) seconds
+Test Suite 'ReadingSurfaceUITests' started at 2026-11-02 09:03:07.815.
+Test Case '-[FeedMineUITests.ReadingSurfaceUITests testABodyIsReadLocallyWithItsSourceHeadlineDateAndExit]' started.
+    t =     0.00s Start Test at 2026-11-02 09:03:07.815
+    t =     0.02s Set Up
+    t =     0.02s Open com.feedmine.development
+    t =     0.02s     Launch com.feedmine.development
+2026-11-02 09:03:08.174 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:03:08.174 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     2.26s         Setting up automation session
+    t =     3.74s         Wait for com.feedmine.development to idle
+    t =     5.55s Find the Window (First Match)
+    t =     5.57s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =     5.66s Checking existence of `Any (Element at index 0)`
+    t =     5.70s Find the Any (Element at index 0)
+    t =     5.74s Find the "7E31E1F2-8C10-4F1A-B40E-298CCBFF1E86" Other
+    t =     5.79s Checking existence of `Any (Element at index 1)`
+    t =     5.82s Find the Any (Element at index 1)
+    t =     5.87s Find the "2AB7F44E-48C8-4004-A210-6403D7833153" Other
+    t =     5.91s Checking existence of `Any (Element at index 2)`
+    t =     5.95s Find the Any (Element at index 2)
+    t =     5.99s Find the "A411A61C-72BD-44D0-8C65-C0010626EFBD" Other
+    t =     6.03s Checking existence of `Any (Element at index 3)`
+    t =     6.07s Find the Any (Element at index 3)
+    t =     6.12s Find the "537C9D37-1ACA-4741-8ABD-B8EF55579A8E" Other
+    t =     6.16s Checking existence of `Any (Element at index 4)`
+    t =     6.19s Find the Any (Element at index 4)
+    t =     6.23s Find the "578B9384-74AB-4EA2-BC0B-8BEF4816A5D3" Other
+    t =     6.27s Checking existence of `Any (Element at index 5)`
+    t =     6.30s Find the Any (Element at index 5)
+    t =     6.34s Find the "BE4BC57C-BFF5-4397-A83F-134D3BA11410" Other
+    t =     6.38s Checking existence of `Any (Element at index 6)`
+    t =     6.41s Find the Any (Element at index 6)
+    t =     6.45s Find the "1BB2CDEE-580A-4475-AC00-01947695E2BC" Other
+    t =     6.49s Checking existence of `Any (Element at index 7)`
+    t =     6.52s Find the Any (Element at index 7)
+    t =     6.56s Find the "CC47491B-05DD-49D1-8781-A45DF7E97EBF" Other
+    t =     6.60s Checking existence of `Any (Element at index 8)`
+    t =     6.63s Find the Any (Element at index 8)
+    t =     6.67s Find the "32244BF6-C3BC-4F70-8026-834D905F789E" Other
+    t =     6.70s Checking existence of `Any (Element at index 9)`
+    t =     6.74s Find the Any (Element at index 9)
+    t =     6.78s Find the "4FA8B776-758C-4AA6-ADC5-ADAC4B4F3D81" Other
+    t =     6.81s Checking existence of `Any (Element at index 10)`
+    t =     6.84s Find the Any (Element at index 10)
+    t =     6.88s Find the "C5ED9B5E-2B38-4491-8712-0A67257D32FF" Other
+    t =     6.92s Checking existence of `"card.open" Button`
+    t =     6.94s Checking existence of `"card.open" Button`
+    t =     6.96s Find the "card.open" Button
+    t =     7.00s Find the Window (First Match)
+    t =     7.00s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =     7.04s Checking existence of `Any (Element at index 0)`
+    t =     7.07s Find the Any (Element at index 0)
+    t =     7.11s Find the "7E31E1F2-8C10-4F1A-B40E-298CCBFF1E86" Other
+    t =     7.14s Checking existence of `Any (Element at index 1)`
+    t =     7.18s Find the Any (Element at index 1)
+    t =     7.22s Find the "2AB7F44E-48C8-4004-A210-6403D7833153" Other
+    t =     7.25s Checking existence of `Any (Element at index 2)`
+    t =     7.29s Find the Any (Element at index 2)
+    t =     7.33s Find the "A411A61C-72BD-44D0-8C65-C0010626EFBD" Other
+    t =     7.38s Checking existence of `Any (Element at index 3)`
+    t =     7.42s Find the Any (Element at index 3)
+    t =     7.46s Find the "537C9D37-1ACA-4741-8ABD-B8EF55579A8E" Other
+    t =     7.51s Checking existence of `Any (Element at index 4)`
+    t =     7.55s Find the Any (Element at index 4)
+    t =     7.59s Find the "578B9384-74AB-4EA2-BC0B-8BEF4816A5D3" Other
+    t =     7.63s Checking existence of `Any (Element at index 5)`
+    t =     7.67s Find the Any (Element at index 5)
+    t =     7.71s Find the "BE4BC57C-BFF5-4397-A83F-134D3BA11410" Other
+    t =     7.75s Checking existence of `Any (Element at index 6)`
+    t =     7.78s Find the Any (Element at index 6)
+    t =     7.82s Find the "1BB2CDEE-580A-4475-AC00-01947695E2BC" Other
+    t =     7.86s Checking existence of `Any (Element at index 7)`
+    t =     7.89s Find the Any (Element at index 7)
+    t =     7.93s Find the "CC47491B-05DD-49D1-8781-A45DF7E97EBF" Other
+    t =     7.97s Checking existence of `Any (Element at index 8)`
+    t =     8.01s Find the Any (Element at index 8)
+    t =     8.05s Find the "32244BF6-C3BC-4F70-8026-834D905F789E" Other
+    t =     8.08s Checking existence of `Any (Element at index 9)`
+    t =     8.12s Find the Any (Element at index 9)
+    t =     8.17s Find the "4FA8B776-758C-4AA6-ADC5-ADAC4B4F3D81" Other
+    t =     8.21s Checking existence of `Any (Element at index 10)`
+    t =     8.26s Find the Any (Element at index 10)
+    t =     8.30s Find the "C5ED9B5E-2B38-4491-8712-0A67257D32FF" Other
+    t =     8.35s Checking existence of `"card.open" Button`
+    t =     8.37s Checking existence of `"card.open" Button`
+    t =     8.39s Find the "card.open" Button
+    t =     8.43s Find the "7E31E1F2-8C10-4F1A-B40E-298CCBFF1E86" Other
+    t =     8.46s Find the "7E31E1F2-8C10-4F1A-B40E-298CCBFF1E86" Other
+    t =     8.50s Checking existence of `"card.open" Button`
+    t =     8.52s Checking existence of `"card.open" Button`
+    t =     8.54s Find the "card.open" Button
+    t =     8.57s Tap "card.open" Button
+    t =     8.57s     Wait for com.feedmine.development to idle
+    t =     8.57s     Find the "card.open" Button
+    t =     8.59s     Check for interrupting elements affecting "card.open" Button
+    t =     8.65s     Synthesize event
+    t =     9.06s     Wait for com.feedmine.development to idle
+    t =     9.57s Waiting 20.0s for Any (First Match) to exist
+    t =    10.65s     Checking `Expect predicate `existsNoRetry == 1` for object Any (First Match)`
+    t =    10.65s         Checking existence of `Any (First Match)`
+    t =    10.67s Find the Any (First Match)
+    t =    10.68s Checking existence of `Any (First Match)`
+    t =    10.69s Find the Any (First Match)
+    t =    10.70s Find the Any (First Match)
+    t =    10.71s Checking existence of `Any (First Match)`
+    t =    10.72s Checking existence of `Any (First Match)`
+    t =    10.72s Checking existence of `Any (First Match)`
+    t =    10.73s Find the Any (First Match)
+    t =    10.74s Find the Target Application 'com.feedmine.development'
+    t =    10.88s Added attachment named 'reading-body'
+    t =    10.88s Tap Any (First Match)
+    t =    10.88s     Wait for com.feedmine.development to idle
+    t =    10.88s     Find the Any (First Match)
+    t =    10.89s     Check for interrupting elements affecting "reading.close" Button
+    t =    10.91s     Synthesize event
+    t =    11.20s     Wait for com.feedmine.development to idle
+    t =    11.57s Waiting 20.0s for Any (First Match) to not exist
+    t =    12.64s     Checking `Expect predicate `existsNoRetry == 0` for object Any (First Match)`
+    t =    12.64s         Checking existence of `Any (First Match)`
+    t =    12.74s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    12.78s Find the Any (Element at index 0)
+    t =    12.81s Find the "7E31E1F2-8C10-4F1A-B40E-298CCBFF1E86" Other
+    t =    12.85s Find the Target Application 'com.feedmine.development'
+    t =    13.00s Added attachment named 'reading-back-in-the-feed'
+    t =    13.00s Tear Down
+Test Case '-[FeedMineUITests.ReadingSurfaceUITests testABodyIsReadLocallyWithItsSourceHeadlineDateAndExit]' passed (13.251 seconds).
+Test Suite 'ReadingSurfaceUITests' passed at 2026-11-02 09:03:21.066.
+	 Executed 1 test, with 0 failures (0 unexpected) in 13.251 (13.251) seconds
+Test Suite 'SourceExclusionJourneyUITests' started at 2026-11-02 09:03:21.068.
+Test Case '-[FeedMineUITests.SourceExclusionJourneyUITests testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch]' started.
+    t =     0.00s Start Test at 2026-11-02 09:03:21.069
+    t =     0.03s Set Up
+    t =     0.04s Open com.feedmine.development
+    t =     0.04s     Launch com.feedmine.development
+    t =     0.04s         Terminate com.feedmine.development:13457
+2026-11-02 09:03:22.128 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:03:22.128 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     1.28s         Setting up automation session
+    t =     2.50s         Wait for com.feedmine.development to idle
+    t =     3.95s Waiting 60.0s for ScrollView (First Match) to exist
+    t =     5.02s     Checking `Expect predicate `existsNoRetry == 1` for object ScrollView (First Match)`
+    t =     5.02s         Checking existence of `ScrollView (First Match)`
+    t =     5.08s Waiting 20.0s for "more-menu" Button to exist
+    t =     6.16s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =     6.16s         Checking existence of `"more-menu" Button`
+    t =     6.23s Find the "feed-window-proof" StaticText
+    t =     6.29s Tap "more-menu" Button
+    t =     6.29s     Wait for com.feedmine.development to idle
+    t =     6.29s     Find the "more-menu" Button
+    t =     6.34s     Check for interrupting elements affecting "more-menu" Button
+    t =     6.38s     Synthesize event
+    t =     6.67s     Wait for com.feedmine.development to idle
+    t =     7.93s Tap "history-recovery-action" Button
+    t =     7.93s     Wait for com.feedmine.development to idle
+    t =     7.94s     Find the "history-recovery-action" Button
+    t =     8.02s     Check for interrupting elements affecting "history-recovery-action" Button
+    t =     8.07s     Synthesize event
+    t =     8.36s     Wait for com.feedmine.development to idle
+    t =     9.78s Tap "history-recovery-current" Button
+    t =     9.78s     Wait for com.feedmine.development to idle
+    t =     9.78s     Find the "history-recovery-current" Button
+    t =     9.87s     Check for interrupting elements affecting "history-recovery-current" Button
+    t =     9.93s     Synthesize event
+    t =    10.22s     Wait for com.feedmine.development to idle
+    t =    11.92s Checking `Expect predicate `exists == 0` for object "history-recovery-current" Button`
+    t =    11.92s     Checking existence of `"history-recovery-current" Button`
+    t =    11.99s Waiting 20.0s for "feed-window-proof" StaticText to exist
+    t =    13.06s     Checking `Expect predicate `existsNoRetry == 1` for object "feed-window-proof" StaticText`
+    t =    13.06s         Checking existence of `"feed-window-proof" StaticText`
+    t =    13.12s Find the "feed-window-proof" StaticText
+    t =    13.18s Tap "more-menu" Button
+    t =    13.18s     Wait for com.feedmine.development to idle
+    t =    13.18s     Find the "more-menu" Button
+    t =    13.24s     Check for interrupting elements affecting "more-menu" Button
+    t =    13.29s     Synthesize event
+    t =    13.60s     Wait for com.feedmine.development to idle
+    t =    14.88s Tap "history-recovery-action" Button
+    t =    14.88s     Wait for com.feedmine.development to idle
+    t =    14.89s     Find the "history-recovery-action" Button
+    t =    14.96s     Check for interrupting elements affecting "history-recovery-action" Button
+    t =    15.01s     Synthesize event
+    t =    15.31s     Wait for com.feedmine.development to idle
+    t =    16.72s Waiting 10.0s for "Leituras guardadas" StaticText to exist
+    t =    17.78s     Checking `Expect predicate `existsNoRetry == 1` for object "Leituras guardadas" StaticText`
+    t =    17.78s         Checking existence of `"Leituras guardadas" StaticText`
+    t =    17.90s Checking existence of `Button (First Match)`
+    t =    18.03s Find the Button (First Match)
+    t =    18.18s Tap "retained-open-B66A564B-2B60-414A-806B-F6A92B9AB004-9D838BEF-64ED-4807-A12F-FD814210D446" Button
+    t =    18.18s     Wait for com.feedmine.development to idle
+    t =    18.18s     Find the "retained-open-B66A564B-2B60-414A-806B-F6A92B9AB004-9D838BEF-64ED-4807-A12F-FD814210D446" Button
+    t =    18.33s     Check for interrupting elements affecting "retained-open-B66A564B-2B60-414A-806B-F6A92B9AB004-9D838BEF-64ED-4807-A12F-FD814210D446" Button
+    t =    18.41s     Synthesize event
+    t =    18.71s     Wait for com.feedmine.development to idle
+    t =    20.43s Checking `Expect predicate `exists == 0` for object "Leituras guardadas" StaticText`
+    t =    20.43s     Checking existence of `"Leituras guardadas" StaticText`
+    t =    20.52s Find the "feed-window-proof" StaticText
+    t =    20.57s Terminate com.feedmine.development:13498
+    t =    21.66s Open com.feedmine.development
+    t =    21.66s     Launch com.feedmine.development
+2026-11-02 09:03:42.737 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:03:42.737 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =    21.89s         Setting up automation session
+    t =    23.13s         Wait for com.feedmine.development to idle
+    t =    24.91s Waiting 30.0s for "more-menu" Button to exist
+    t =    25.92s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =    25.92s         Checking existence of `"more-menu" Button`
+    t =    26.05s Waiting 30.0s for "feed-window-proof" StaticText to exist
+    t =    27.11s     Checking `Expect predicate `existsNoRetry == 1` for object "feed-window-proof" StaticText`
+    t =    27.11s         Checking existence of `"feed-window-proof" StaticText`
+    t =    27.19s Find the "feed-window-proof" StaticText
+    t =    27.24s Tap "more-menu" Button
+    t =    27.24s     Wait for com.feedmine.development to idle
+    t =    27.24s     Find the "more-menu" Button
+    t =    27.29s     Check for interrupting elements affecting "more-menu" Button
+    t =    27.33s     Synthesize event
+    t =    27.62s     Wait for com.feedmine.development to idle
+    t =    28.91s Tap "history-recovery-action" Button
+    t =    28.91s     Wait for com.feedmine.development to idle
+    t =    28.92s     Find the "history-recovery-action" Button
+    t =    29.07s     Check for interrupting elements affecting "history-recovery-action" Button
+    t =    29.13s     Synthesize event
+    t =    29.42s     Wait for com.feedmine.development to idle
+    t =    31.10s Waiting 10.0s for "Leituras guardadas" StaticText to exist
+    t =    32.17s     Checking `Expect predicate `existsNoRetry == 1` for object "Leituras guardadas" StaticText`
+    t =    32.17s         Checking existence of `"Leituras guardadas" StaticText`
+    t =    32.30s Checking existence of `Button (First Match)`
+    t =    32.42s Find the Button (First Match)
+    t =    32.55s Tap "retained-open-50971955-4222-477A-96F6-CBDD9A05E7EB-C34244B5-BDC4-4A55-BA72-13A951393CD9" Button
+    t =    32.55s     Wait for com.feedmine.development to idle
+    t =    32.56s     Find the "retained-open-50971955-4222-477A-96F6-CBDD9A05E7EB-C34244B5-BDC4-4A55-BA72-13A951393CD9" Button
+    t =    32.68s     Check for interrupting elements affecting "retained-open-50971955-4222-477A-96F6-CBDD9A05E7EB-C34244B5-BDC4-4A55-BA72-13A951393CD9" Button
+    t =    32.74s     Synthesize event
+    t =    33.04s     Wait for com.feedmine.development to idle
+    t =    34.77s Checking `Expect predicate `exists == 0` for object "Leituras guardadas" StaticText`
+    t =    34.77s     Checking existence of `"Leituras guardadas" StaticText`
+    t =    34.83s Find the "feed-window-proof" StaticText
+    t =    34.88s Terminate com.feedmine.development:13544
+    t =    36.96s Open com.feedmine.development
+    t =    36.96s     Launch com.feedmine.development
+2026-11-02 09:03:58.029 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:03:58.029 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =    37.18s         Setting up automation session
+    t =    38.57s         Wait for com.feedmine.development to idle
+    t =    40.46s Waiting 30.0s for "more-menu" Button to exist
+    t =    41.52s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =    41.52s         Checking existence of `"more-menu" Button`
+    t =    41.65s Waiting 30.0s for "feed-window-proof" StaticText to exist
+    t =    42.71s     Checking `Expect predicate `existsNoRetry == 1` for object "feed-window-proof" StaticText`
+    t =    42.71s         Checking existence of `"feed-window-proof" StaticText`
+    t =    42.80s Find the "feed-window-proof" StaticText
+    t =    42.85s Terminate com.feedmine.development:13577
+    t =    44.93s Tear Down
+Test Case '-[FeedMineUITests.SourceExclusionJourneyUITests testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch]' passed (45.010 seconds).
+Test Suite 'SourceExclusionJourneyUITests' passed at 2026-11-02 09:04:06.080.
+	 Executed 1 test, with 0 failures (0 unexpected) in 45.010 (45.012) seconds
+Test Suite 'SourcesAndFilterJourneyUITests' started at 2026-11-02 09:04:06.081.
+Test Case '-[FeedMineUITests.SourcesAndFilterJourneyUITests testFilterDraftEditedBeforeTheNodeLevelIsAppliedWhenThatLevelCloses]' started.
+    t =     0.00s Start Test at 2026-11-02 09:04:06.081
+    t =     0.02s Set Up
+    t =     0.02s Open com.feedmine.development
+    t =     0.02s     Launch com.feedmine.development
+2026-11-02 09:04:06.103 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-02 09:04:06.103 xcodebuild[13138:125608] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     0.23s         Setting up automation session
+    t =     1.43s         Wait for com.feedmine.development to idle
+    t =     3.13s Waiting 60.0s for ScrollView (First Match) to exist
+    t =     4.14s     Checking `Expect predicate `existsNoRetry == 1` for object ScrollView (First Match)`
+    t =     4.14s         Checking existence of `ScrollView (First Match)`
+    t =     4.21s Waiting 20.0s for "more-menu" Button to exist
+    t =     5.28s     Checking `Expect predicate `existsNoRetry == 1` for object "more-menu" Button`
+    t =     5.28s         Checking existence of `"more-menu" Button`
+    t =     5.37s Tap "filter-button" Button
+    t =     5.37s     Wait for com.feedmine.development to idle
+    t =     5.38s     Find the "filter-button" Button
+    t =     5.42s     Check for interrupting elements affecting "filter-button" Button
+    t =     5.46s     Synthesize event
+    t =     5.75s     Wait for com.feedmine.development to idle
+    t =     5.98s Waiting 30.0s for "filter-done" Button to exist
+    t =     7.04s     Checking `Expect predicate `existsNoRetry == 1` for object "filter-done" Button`
+    t =     7.04s         Checking existence of `"filter-done" Button`
+    t =     7.21s Waiting 20.0s for "preset-option-lastClicked" Button to exist
+    t =     8.28s     Checking `Expect predicate `existsNoRetry == 1` for object "preset-option-lastClicked" Button`
+    t =     8.28s         Checking existence of `"preset-option-lastClicked" Button`
+    t =     8.41s Find the "preset-option-lastClicked" Button
+    t =     8.51s Tap "preset-option-lastClicked" Button
+    t =     8.51s     Wait for com.feedmine.development to idle
+    t =     8.51s     Find the "preset-option-lastClicked" Button
+    t =     8.61s     Check for interrupting elements affecting "preset-option-lastClicked" Button
+    t =     8.69s     Synthesize event
+    t =     8.98s     Wait for com.feedmine.development to idle
+    t =     8.99s Find the "preset-option-lastClicked" Button
+    t =     9.11s Checking existence of `"countries-link" Button`
+    t =     9.23s Find the "countries-link" Button
+    t =     9.37s Checking existence of `"countries-done" Button`
+    t =     9.48s Tap "countries-link" Button
+    t =     9.48s     Wait for com.feedmine.development to idle
+    t =     9.48s     Find the "countries-link" Button
+    t =     9.60s     Check for interrupting elements affecting "countries-link" Button
+    t =     9.68s     Synthesize event
+    t =     9.97s     Wait for com.feedmine.development to idle
+    t =    11.36s Checking existence of `"countries-done" Button`
+    t =    11.52s Checking existence of `"countries-done" Button`
+    t =    11.62s Waiting 30.0s for "countries-done" Button to exist
+    t =    12.67s     Checking `Expect predicate `existsNoRetry == 1` for object "countries-done" Button`
+    t =    12.67s         Checking existence of `"countries-done" Button`
+    t =    12.81s Checking existence of `"country-algeria" Button`
+    t =    12.91s Find the "country-algeria" Button
+    t =    13.02s Tap "country-algeria" Button
+    t =    13.02s     Wait for com.feedmine.development to idle
+    t =    13.03s     Find the "country-algeria" Button
+    t =    13.19s     Check for interrupting elements affecting "country-algeria" Button
+    t =    13.28s     Synthesize event
+    t =    13.58s     Wait for com.feedmine.development to idle
+    t =    13.93s Waiting 30.0s for "node-sources-done" Button to exist
+    t =    14.95s     Checking `Expect predicate `existsNoRetry == 1` for object "node-sources-done" Button`
+    t =    14.95s         Checking existence of `"node-sources-done" Button`
+    t =    15.15s Tap "node-sources-done" Button
+    t =    15.15s     Wait for com.feedmine.development to idle
+    t =    15.20s     Find the "node-sources-done" Button
+    t =    15.33s     Check for interrupting elements affecting "node-sources-done" Button
+    t =    15.42s     Synthesize event
+    t =    15.73s     Wait for com.feedmine.development to idle
+    t =    17.56s Checking `Expect predicate `exists == 0` for object "filter-done" Button`
+    t =    17.56s     Checking existence of `"filter-done" Button`
+    t =    17.61s Waiting 20.0s for "lens-chip-preset" Button to exist
+    t =    18.64s     Checking `Expect predicate `existsNoRetry == 1` for object "lens-chip-preset" Button`
+    t =    18.64s         Checking existence of `"lens-chip-preset" Button`
+    t =    18.69s Tap "filter-button" Button
+    t =    18.69s     Wait for com.feedmine.development to idle
+    t =    18.69s     Find the "filter-button" Button
+    t =    18.74s     Check for interrupting elements affecting "filter-button" Button
+    t =    18.78s     Synthesize event
+    t =    19.07s     Wait for com.feedmine.development to idle
+    t =    19.14s Waiting 30.0s for "filter-done" Button to exist
+    t =    20.19s     Checking `Expect predicate `existsNoRetry == 1` for object "filter-done" Button`
+    t =    20.19s         Checking existence of `"filter-done" Button`
+    t =    20.33s Waiting 20.0s for "preset-option-lastClicked" Button to exist
+    t =    21.41s     Checking `Expect predicate `existsNoRetry == 1` for object "preset-option-lastClicked" Button`
+    t =    21.41s         Checking existence of `"preset-option-lastClicked" Button`
+    t =    21.51s Find the "preset-option-lastClicked" Button
+    t =    21.61s Tap "filter-done" Button
+    t =    21.61s     Wait for com.feedmine.development to idle
+    t =    21.62s     Find the "filter-done" Button
+    t =    21.72s     Check for interrupting elements affecting "filter-done" Button
+    t =    21.79s     Synthesize event
+    t =    22.09s     Wait for com.feedmine.development to idle
+    t =    23.93s Checking `Expect predicate `exists == 0` for object "filter-done" Button`
+    t =    23.93s     Checking existence of `"filter-done" Button`
+    t =    23.98s Added attachment named 'filter-node-close-applies'
+    t =    23.98s Tear Down
+Test Case '-[FeedMineUITests.SourcesAndFilterJourneyUITests testFilterDraftEditedBeforeTheNodeLevelIsAppliedWhenThatLevelCloses]' passed (24.259 seconds).
+Test Suite 'SourcesAndFilterJourneyUITests' passed at 2026-11-02 09:04:30.340.
+	 Executed 1 test, with 0 failures (0 unexpected) in 24.259 (24.259) seconds
+Test Suite 'FeedMineUITests.xctest' passed at 2026-11-02 09:04:30.341.
+	 Executed 4 tests, with 1 test skipped and 0 failures (0 unexpected) in 82.841 (82.849) seconds
+Test Suite 'Selected tests' passed at 2026-11-02 09:04:30.342.
+	 Executed 4 tests, with 1 test skipped and 0 failures (0 unexpected) in 82.841 (82.851) seconds
+2026-11-02 09:04:30.767 xcodebuild[13138:125608] [MT] IDETestOperationsObserverDebug: 106.836 elapsed -- Testing started completed.
+2026-11-02 09:04:30.767 xcodebuild[13138:125608] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-02 09:04:30.767 xcodebuild[13138:125608] [MT] IDETestOperationsObserverDebug: 106.836 sec, +106.836 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/wagnersilvamontes/Documents/GitHub/feedmine_v2/.build/product-current-targeted-20261102.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started
