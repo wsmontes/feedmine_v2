@@ -93,10 +93,11 @@ public enum PublicationPreparation {
         case .observed: timestampKind = .observed
         }
         // v6 freezes the actual published payload identity. The candidate hint may differ; the input is what
-        // the occurrence publishes. v5 and older keep the fact unchanged (nil). Explicit .none is a known
-        // absence, not Optional.none.
+        // the occurrence publishes. v7 freezes it the same way. v5 and older keep the fact unchanged (nil).
+        // Explicit .none is a known absence, not Optional.none.
         let frozenMediaKind: EditorialMediaKind?
-        if selection.editorialRevision.sequencingPolicyVersion.rawValue == 6 {
+        let sequencingVersion = selection.editorialRevision.sequencingPolicyVersion.rawValue
+        if sequencingVersion == 6 || sequencingVersion == 7 {
             switch input.mediaIdentity {
             case .some(.audio): frozenMediaKind = .audio
             case .some(.video): frozenMediaKind = .video

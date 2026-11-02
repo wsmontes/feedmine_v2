@@ -1,0 +1,23 @@
+=== A 1 podcast + 20 text ===
+  v6 one opportunity  : n=50 distinct=21 top=[('POD', 25), ('T00', 2)] types={'audio': 25, 'none': 25} pd4_breaks=0
+  v7 one opportunity  : n=50 distinct=21 top=[('POD', 3), ('T00', 3)] types={'audio': 3, 'none': 47} pd4_breaks=0
+  v6 opportunities of 4: n=50 distinct=21 top=[('POD', 25), ('T00', 2)] types={'audio': 25, 'none': 25} pd4_breaks=0
+  v7 opportunities of 4: n=50 distinct=21 top=[('POD', 3), ('T00', 3)] types={'audio': 3, 'none': 47} pd4_breaks=0
+=== B 4 podcasts + 20 text ===
+  v6 one opportunity  : n=50 distinct=24 top=[('P0', 7), ('P1', 6)] types={'audio': 25, 'none': 25} pd4_breaks=0
+  v7 one opportunity  : n=50 distinct=24 top=[('P0', 3), ('P1', 3)] types={'audio': 12, 'none': 38} pd4_breaks=0
+  v6 opportunities of 4: n=50 distinct=24 top=[('P0', 7), ('P1', 6)] types={'audio': 25, 'none': 25} pd4_breaks=0
+  v7 opportunities of 4: n=50 distinct=24 top=[('P0', 3), ('P1', 3)] types={'audio': 12, 'none': 38} pd4_breaks=0
+=== C per-post tagger + 19 ===
+  v6 one opportunity  : n=50 distinct=20 top=[('TAGGY', 24), ('T00', 2)] types={'none': 50} pd4_breaks=0
+  v7 one opportunity  : n=50 distinct=20 top=[('TAGGY', 3), ('T00', 3)] types={'none': 50} pd4_breaks=0
+  v6 opportunities of 4: n=50 distinct=20 top=[('TAGGY', 24), ('T00', 2)] types={'none': 50} pd4_breaks=0
+  v7 opportunities of 4: n=50 distinct=20 top=[('TAGGY', 3), ('T00', 3)] types={'none': 50} pd4_breaks=0
+=== D prolific + 19 small ===
+  v6 one opportunity  : n=50 distinct=20 top=[('BIG', 3), ('T00', 3)] types={'none': 50} pd4_breaks=0
+  v7 one opportunity  : n=50 distinct=20 top=[('BIG', 3), ('T00', 3)] types={'none': 50} pd4_breaks=0
+  v6 opportunities of 4: n=50 distinct=20 top=[('BIG', 3), ('T00', 3)] types={'none': 50} pd4_breaks=0
+  v7 opportunities of 4: n=50 distinct=20 top=[('BIG', 3), ('T00', 3)] types={'none': 50} pd4_breaks=0
+=== late source after 200 positions (v7, 20 cards) ===
+  NEW count: 3  order: NEW S9 NEW S8 NEW S7 S6 S5 S4 S3 S2 S1 S0 S9 S8 S7 S6 S5 S4 S3
+determinism under input permutation: True

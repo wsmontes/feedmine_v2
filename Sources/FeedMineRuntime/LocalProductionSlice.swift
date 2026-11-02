@@ -181,8 +181,10 @@ public struct LocalProductionSlice: Sendable {
         // row has no fact and contributes nothing; the engine enables the tie-break only for the supported version.
         // v6 uses the complete active-Edition positions (nil holes) in one read; v5 keeps the exact bounded recent16
         // path. A v6 opportunity with no offer or no ready revision does not read history at all.
-        let maximumDistance = request.plan.revision.sequencingPolicyVersion.rawValue == 6
-            && request.policy.sequencing == .maximumDistance
+        // v7 reads the same complete positions: its source share is a window over them.
+        let sequencingVersion = request.plan.revision.sequencingPolicyVersion.rawValue
+        let maximumDistance = (sequencingVersion == 6 && request.policy.sequencing == .maximumDistance)
+            || (sequencingVersion == 7 && request.policy.sequencing == .sourceShareThenMaximumDistance)
         let diversity: SelectionDiversityContext?
         if maximumDistance {
             let hasOffer = !window.candidates.isEmpty

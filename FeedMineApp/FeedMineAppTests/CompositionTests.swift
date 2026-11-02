@@ -2213,7 +2213,7 @@ final class CompositionTests: XCTestCase {
         let presentation = try XCTUnwrap(association.store.state.presentation)
         let store = PublicationStore(database: association.database)
         let edition = try XCTUnwrap(try store.edition(id: presentation.editionID))
-        XCTAssertEqual(edition.editorialRevision.sequencingPolicyVersion.rawValue, 6,
+        XCTAssertEqual(edition.editorialRevision.sequencingPolicyVersion.rawValue, 7,
             "edições novas declaram a versão suportada de diversidade")
         let record = try XCTUnwrap(try store.card(id: presentation.window.items[0].id))
         let diversity = try XCTUnwrap(record.diversity, "a ocorrência carrega os fatos congelados")
@@ -3090,8 +3090,10 @@ final class CompositionTests: XCTestCase {
             "v5's alternation shape is supplied by the composition that knows its scoring; the fallback is recency")
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 6)), .maximumDistance,
             "fresh v6 editions use maximum distance")
-        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 7)), .recencyDescending,
-            "an unknown future version does not inherit v6")
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 7)), .sourceShareThenMaximumDistance,
+            "fresh v7 editions put the source share before the v6 distance")
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 8)), .recencyDescending,
+            "an unknown future version does not inherit v7")
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 99)), .recencyDescending)
     }
 
@@ -3154,15 +3156,15 @@ final class CompositionTests: XCTestCase {
             "the context the app rebuilds from is the resolved one, not the stale overlay")
     }
 
-    /// v6: a fresh session declares maximum-distance sequencing, and a v2 revision stays usable
+    /// v7: a fresh session declares source-share-then-maximum-distance sequencing, and a v2 revision stays usable
     /// for the Editions already published under it.
     func testFreshSessionDeclaresMaximumDistanceAndStillAcceptsV2Editions() async throws {
         let root = root()
         await root.launch()
         let association = try XCTUnwrap(root.association)
-        // New editions use v6; the legacy v2 assertion below still protects already-published behavior.
-        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 6))
-        XCTAssertEqual(association.policy.sequencing, .maximumDistance)
+        // New editions use v7; the legacy v2 assertion below still protects already-published behavior.
+        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 7))
+        XCTAssertEqual(association.policy.sequencing, .sourceShareThenMaximumDistance)
         let v2 = EditorialRevision(id: EditorialRevisionID(), contextKey: ContextKey(request: .main),
             catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 2),
             eligibilityPolicyVersion: PolicyVersion(rawValue: 2), scoringPolicyVersion: PolicyVersion(rawValue: 1),

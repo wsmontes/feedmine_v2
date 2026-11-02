@@ -100,3 +100,24 @@ Para validar no Mac, além da suíte do pacote:
   `.unavailable/.deferred/.unreachable/.failed` e cards (bloco `feed-tail-recovery` depois do último card),
   `FeedVisibleExperienceUITests` caso 3 (falha atrás de conteúdo: o bloco entra no fim, os cards não devem mover).
 - Conferir no simulador: swipe "Remover" nos Salvos some com a linha e mostra o toast; "Tentar de novo" relê.
+
+## Rodada 3: sequenciamento v7 (mesmo branch)
+
+Edi??es novas passam a declarar `sequencingPolicyVersion` 7 (`.sourceShareThenMaximumDistance`). A cada
+escolha, entre os candidatos compat?veis com PD-4, ficam s? as fontes com a menor participa??o nas ?ltimas 32
+posi??es da Edition (regra de provedor menos usado da V1). Dentro desse empate, o v6 decide como antes (tipo ?
+assuntos ? fonte ? ordem base). Sem aleatoriedade.
+
+- C?digo: `MaximumDistanceSequencing.sequence(..., sourceShareWindow:)`, `SelectionEngine` (v6 s? com revis?o 6,
+  v7 s? com revis?o 7), `LocalProductionSlice` (v7 l? as mesmas posi??es completas), `PublicationPreparation`
+  (v7 congela o tipo de m?dia como o v6), `FeedAssociation.sequencingBehavior` e vers?o 7 na composi??o.
+- Edi??es j? publicadas em v6 continuam em v6 quando restauradas (mesma conven??o da passagem 5?6). Uma
+  instala??o existente s? v? o v7 quando uma Edition nova ? criada para o contexto.
+- Prova offline: `evidence/2026-11-02-v6-sequencing-sim/v7_sim.py` e `v7_output.txt`. Um podcast entre 20
+  feeds de texto: v6 25/50, v7 3/50, tamb?m em oportunidades de 4 cards lendo o hist?rico. Fonte que entra
+  depois de 200 posi??es: 3 cards e depois rod?zio normal.
+- Testes: `SourceShareSequencingTests` (novo; n?meros iguais aos da simula??o), `CompositionTests` (vers?o 7,
+  8 cai para rec?ncia), `MaximumDistanceSequencingTests` (7 e 8 com o comportamento v6 n?o herdam v6),
+  `PublicationPreparationTests` (v7 congela o tipo).
+- No Mac: rodar esses quatro primeiro. Depois, num aparelho com o cat?logo real, comparar os 50 primeiros
+  cards de uma Edition nova com os da Edition v6 atual (participa??o de ?udio e fontes distintas).

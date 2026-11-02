@@ -74,12 +74,14 @@ final class PublicationPreparationTests: XCTestCase {
         let cases: [(PublishedMediaIdentity, EditorialMediaKind)] = [
             (.audio, .audio), (.video, .video), (.none, EditorialMediaKind.none),
         ]
-        for (identity, expected) in cases {
-            let draft = try XCTUnwrap(PublicationPreparation.drafts(
-                selection: selection([candidate], version: 6),
-                inputs: [input(candidate, mediaIdentity: identity)]).first)
-            XCTAssertEqual(draft.diversity?.mediaKind, expected,
-                "the published input identity is authoritative, even when the candidate hint differs")
+        for version: UInt64 in [6, 7] {
+            for (identity, expected) in cases {
+                let draft = try XCTUnwrap(PublicationPreparation.drafts(
+                    selection: selection([candidate], version: version),
+                    inputs: [input(candidate, mediaIdentity: identity)]).first)
+                XCTAssertEqual(draft.diversity?.mediaKind, expected,
+                    "v\(version): the published input identity is authoritative, even when the candidate hint differs")
+            }
         }
         let legacy = try XCTUnwrap(PublicationPreparation.drafts(
             selection: selection([candidate], version: 5),

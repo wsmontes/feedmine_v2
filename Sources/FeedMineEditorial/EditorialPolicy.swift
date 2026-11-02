@@ -36,6 +36,11 @@ public struct ResolvedSelectionPolicy: Hashable, Sendable {
         /// Sequencing v6: per choice, among PD-4-compatible candidates maximize the nearest prior distance
         /// lexicographically by type, declared subjects and source. Weights/recency/IDs are final ties only.
         case maximumDistance
+        /// Sequencing v7: per choice, among PD-4-compatible candidates keep the sources with the smallest share of
+        /// the recent published positions (V1's least-used provider rule), then apply v6's type → subjects →
+        /// source distance inside that tie. v6 alone gave one source of a rare type every other card; an Edition
+        /// published under v6 keeps v6 when restored.
+        case sourceShareThenMaximumDistance
     }
     public enum ExposureBehavior: Hashable, Sendable {
         case none

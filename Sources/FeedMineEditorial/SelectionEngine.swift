@@ -152,7 +152,7 @@ public struct SelectionEngine: Sendable {
         let ordered: [Candidate]
         switch policy.sequencing {
         case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare,
-             .recencyAlternatingSourcesByWeightedSupplyShare, .maximumDistance:
+             .recencyAlternatingSourcesByWeightedSupplyShare, .maximumDistance, .sourceShareThenMaximumDistance:
             ordered = readyEligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
@@ -172,12 +172,17 @@ public struct SelectionEngine: Sendable {
                     > right.originRevisionID.rawValue.uuidString.lowercased()
             }
         }
-        // v6 is explicit to revision 6 and the maximum-distance behavior. An unknown future version never
-        // inherits it: it falls through to the preserved legacy paths below.
-        if plan.revision.sequencingPolicyVersion.rawValue == 6, policy.sequencing == .maximumDistance {
+        // v6 is explicit to revision 6 and the maximum-distance behavior, v7 to revision 7 and the source-share
+        // behavior. A mismatched pair or an unknown future version never inherits either: it falls through to the
+        // preserved legacy paths below.
+        let sequencingVersion = plan.revision.sequencingPolicyVersion.rawValue
+        let v6 = sequencingVersion == 6 && policy.sequencing == .maximumDistance
+        let v7 = sequencingVersion == 7 && policy.sequencing == .sourceShareThenMaximumDistance
+        if v6 || v7 {
             let positions = diversity?.publishedPositions ?? []
             let sequenced = MaximumDistanceSequencing.sequence(ordered, positions: positions,
-                after: neighbor, singleSourceContext: Self.isSingleSource(plan.context.request))
+                after: neighbor, singleSourceContext: Self.isSingleSource(plan.context.request),
+                sourceShareWindow: v7 ? MaximumDistanceSequencing.sourceShareWindow : nil)
             return Self.result(plan: plan, window: window,
                 placed: sequenced.placed, held: sequenced.held, publicationLimit: publicationLimit)
         }
@@ -205,7 +210,7 @@ public struct SelectionEngine: Sendable {
             case .recencyAlternatingSourcesByWeightedSupplyShare:
                 alternated = SourceAlternation.applyByWeightedSupplyShare(ordered, after: neighbor,
                     countingSources: countedSources, weights: weights)
-            case .recencyDescending, .maximumDistance:
+            case .recencyDescending, .maximumDistance, .sourceShareThenMaximumDistance:
                 alternated = (ordered, [])
             }
         }
