@@ -3006,9 +3006,17 @@ final class FeedAssociation {
     /// V1's conditional item and appears only while the reader is reading a collection's own feed.
     static func readerDestinations(for contextKey: ContextKey) -> Set<ReaderDestination> {
         var destinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters,
-            .collections, .collectionFromContextPrompt, .smartFeedPrompt, .smartFeedDeletion,
-            .curatedOnboarding, .curatedInspector, .curatedDeletion, .export, .settings, .addFeed]
-        if case .collection = contextKey.preset { destinations.insert(.addFeedToCollection) }
+            .collections, .collectionFromContextPrompt, .smartFeedPrompt,
+            .curatedOnboarding, .export, .settings, .addFeed]
+        // A preset's own tools exist only while that preset is the one being read: deletion removes *the current*
+        // preset, and the inspector describes the current curated feed. Offered everywhere, "Excluir feed curado"
+        // deleted a smart bookmark, "Excluir" did nothing on a plain feed, and the inspector spun forever.
+        switch contextKey.preset {
+        case .collection: destinations.insert(.addFeedToCollection)
+        case .smartFeed: destinations.insert(.smartFeedDeletion)
+        case .curatedFeed: destinations.formUnion([.curatedInspector, .curatedDeletion])
+        default: break
+        }
         return destinations
     }
 
