@@ -28,7 +28,7 @@ private struct NativeStageHost: View {
         ScrollView {
             LazyVStack {
                 ForEach(store.renderedItems, id: \.id) { card in
-                    Text(card.title).frame(maxWidth: .infinity).frame(height: 150)
+                    Text(card.title ?? "").frame(maxWidth: .infinity).frame(height: 150)
                 }
             }
             .scrollTargetLayout()
@@ -54,7 +54,7 @@ final class FeedNativeStageHostTests: XCTestCase {
         let cards = ids.enumerated().map { index, id in
             PresentationCard(id: id, title: "Stage \(index)",
                 primaryText: "Local ready text", timestamp: nil,
-                sourceID: nil, sourceDisplayName: nil,
+                sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil,
                 layout: .textOnly, mediaAspectRatio: nil,
                 primaryActionKind: nil, image: nil)
         }
