@@ -125,6 +125,14 @@ final class FeedNativeScrollOffset {
         scrollView != nil && !nativeGestureActive && !isAnimatingScroll && !isCorrecting
     }
     #if DEBUG
+    /// DEBUG-only: IDs with physical card geometry inside the real viewport.
+    /// Bounded to the IDs of the installed native rail; not editorial exposure.
+    private(set) var observedVisibleCardIDs: Set<PublicationCardID> = []
+    private(set) var nativeProofsBeforeBinding = 0
+    private(set) var nativeProofsAfterBinding = 0
+    private(set) var nativeProofsOutsideViewport = 0
+    /// One latest real-layout sample per actually rendered ID. Never a source of scroll authority.
+    private(set) var nativeLastPhysicalProofs: [PublicationCardID: FeedVisualCardGeometry] = [:]
     private(set) var activeWrites = 0
     private(set) var activeWindowChanges = 0
     private(set) var activeLayoutSteps = 0
@@ -158,6 +166,8 @@ final class FeedNativeScrollOffset {
         }
         #if DEBUG
         if changed {
+            observedVisibleCardIDs.formIntersection(ids)
+            nativeLastPhysicalProofs = nativeLastPhysicalProofs.filter { ids.contains($0.key) }
             let kept = Set(ids)
             gestureProofs = gestureProofs.filter { kept.contains($0.key) }
             if gestureActive { activeWindowChanges += 1 }
@@ -176,6 +186,22 @@ final class FeedNativeScrollOffset {
         visualWitness = nil
     }
     func observe(_ proof: FeedVisualCardGeometry) -> Bool {
+        #if DEBUG
+        if correction.currentWindowIDs.contains(proof.cardID) {
+            nativeLastPhysicalProofs[proof.cardID] = proof
+            if scrollView == nil {
+                nativeProofsBeforeBinding += 1
+            } else {
+                nativeProofsAfterBinding += 1
+                if proof.frame.height > 0 &&
+                    proof.frame.maxY > 0 && proof.frame.minY < proof.height {
+                    observedVisibleCardIDs.insert(proof.cardID)
+                } else {
+                    nativeProofsOutsideViewport += 1
+                }
+            }
+        }
+        #endif
         if provisionalCorrection != nil && !provisionalPhysicalScopeMatches {
             discardUntrustedProvisionalGeometry()
             return false

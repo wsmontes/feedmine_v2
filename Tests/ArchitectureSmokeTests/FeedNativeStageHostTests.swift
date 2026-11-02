@@ -114,5 +114,102 @@ final class FeedNativeStageHostTests: XCTestCase {
         XCTAssertNil(captureBox.value.readyWindowHandshake?.pending)
         XCTAssertNil(captureBox.value.readyWindowHandshake?.provisionalID)
     }
+
+    /// Unlike the reduced modifier harness, this mounts FeedScreen itself.
+    /// It proves the same native offset writer is attached to the actual
+    /// ScrollView and receives a measured common visible card. It does not
+    /// pretend the unimplemented non-prefix physical swap has happened.
+    func testFullFeedScreenConnectsNativeProbeAndKeepsVisibleReaderOnStaging() async throws {
+        guard #available(iOS 18, *) else { return }
+        let ids = (0..<4).map { _ in PublicationCardID() }
+        let cards = ids.enumerated().map { index, id in
+            PresentationCard(id: id, title: "Real host \(index)",
+                primaryText: String(repeating: "Published local text. ", count: 5),
+                timestamp: nil, sourceID: nil, sourceDisplayName: nil,
+                providerDisplayName: nil, layout: .textOnly,
+                mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        func snapshot(_ range: Range<Int>, ordinal: UInt64) throws -> FeedPresentationSnapshot {
+            FeedPresentationSnapshot(contextKey: FeedContext(request: .main).key,
+                editionID: edition,
+                window: try XCTUnwrap(FeedWindowSnapshot(items: Array(cards[range]),
+                    anchor: .init(cardID: ids[1], placement: .top))),
+                provenance: .init(sequenceID: sequence, position: ordinal))
+        }
+
+        var viewportEvents = 0
+        let store = FeedScreenStore(onViewport: { _, _ in viewportEvents += 1 },
+            onRenderedViewport: { _, _ in viewportEvents += 1 })
+        try store.install(.init(presentation: snapshot(0..<3, ordinal: 1)))
+        let host = UIHostingController(rootView:
+            FeedScreen(store: store).frame(width: 390, height: 780))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 780))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; withExtendedLifetime(window) {} }
+
+        func layout() async {
+            for _ in 0..<60 {
+                window.layoutIfNeeded()
+                host.view.layoutIfNeeded()
+                await Task.yield()
+            }
+        }
+        func findProbe(_ view: UIView) -> FeedNativeScrollProbe.Probe? {
+            if let probe = view as? FeedNativeScrollProbe.Probe { return probe }
+            for child in view.subviews {
+                if let probe = findProbe(child) { return probe }
+            }
+            return nil
+        }
+        func ancestorScroll(_ view: UIView) -> UIScrollView? {
+            var node = view.superview
+            while let parent = node {
+                if let scroll = parent as? UIScrollView { return scroll }
+                node = parent.superview
+            }
+            return nil
+        }
+
+        await layout()
+        let probe = try XCTUnwrap(findProbe(host.view))
+        let scroll = try XCTUnwrap(ancestorScroll(probe))
+        let native = probe.access
+        XCTAssertTrue(native.scrollView === scroll,
+            "The actual FeedScreen probe must bind the same physical UIScrollView")
+        XCTAssertEqual(native.currentWindowIDs, Array(ids[0..<3]),
+            "The native writer must track actual drawn IDs, not the semantic rail")
+        XCTAssertTrue(native.observedVisibleCardIDs.contains(ids[1]),
+            "Common card B missing from writer. Visible-native IDs: \(native.observedVisibleCardIDs.map { $0.rawValue.uuidString }.sorted()), capture probeEntries: \(FeedVisualCapture.probeEntries), probeGuards: \(FeedVisualCapture.probeGuards), cardObservations: \(FeedVisualCapture.cardObservations), physicalIDs: \(native.currentWindowIDs.count), nativeScrollAttached: \(native.scrollView != nil), beforeBinding: \(native.nativeProofsBeforeBinding), afterBinding: \(native.nativeProofsAfterBinding), outsideViewport: \(native.nativeProofsOutsideViewport), BProof: \(String(describing: native.nativeLastPhysicalProofs[ids[1]])), scrollOffset: \(scroll.contentOffset.y), scrollBounds: \(scroll.bounds)")
+        let offsetBefore = scroll.contentOffset.y
+        let eventsBefore = viewportEvents
+
+        try store.install(.init(presentation: snapshot(1..<4, ordinal: 2)))
+        await layout()
+        let currentProbe = try XCTUnwrap(findProbe(host.view))
+        XCTAssertTrue(currentProbe.access === native,
+            "Staging cannot silently replace the native offset owner")
+        XCTAssertTrue(native.scrollView === scroll,
+            "The writer must remain attached to the same native scroll view")
+        XCTAssertEqual(store.state.presentation?.window.items.map(\.id), Array(ids[1..<4]))
+        XCTAssertEqual(store.renderedItems.map(\.id), Array(ids[0..<3]))
+        XCTAssertEqual(native.currentWindowIDs, Array(ids[0..<3]))
+        XCTAssertTrue(native.observedVisibleCardIDs.contains(ids[1]),
+            "Common card B still has no native proof after semantic staging")
+        XCTAssertEqual(scroll.contentOffset.y, offsetBefore, accuracy: 1,
+            "Staging alone must not move the reader")
+        XCTAssertEqual(viewportEvents, eventsBefore,
+            "A semantic transition must not invent viewport/seen activity")
+        XCTAssertEqual(native.appliedCount, 0,
+            "No native offset correction is justified before a physical swap")
+
+        try store.install(.init(presentation: snapshot(0..<4, ordinal: 3)))
+        await layout()
+        XCTAssertEqual(store.renderedItems.map(\.id), ids)
+        XCTAssertEqual(native.currentWindowIDs, ids,
+            "The same real probe must receive the safely append-only rail")
+    }
+
 }
 #endif
