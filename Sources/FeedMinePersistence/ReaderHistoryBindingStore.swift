@@ -194,6 +194,41 @@ public struct ReaderHistoryBindingStore: Sendable {
     }
 
 
+    /// Only the explicit retained-reading picker may attach a sibling to an established binding.
+    /// Ordinary resolve/adoption keeps its stricter active-Edition and namespace rules.
+    static func claimExplicitRetainedEdition(_ reading: RetainedReading,
+        checkpoint: SessionStore.CheckpointRecord?, in db: Database) throws -> Record {
+        let editionID = PersistenceValueCoding.uuid(reading.edition.id.rawValue)
+        guard reading.owner == nil,
+            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_editions WHERE edition_id = ?)",
+                arguments: [editionID]) == false else { throw Failure.editionAlreadyOwned }
+        let point: SessionStore.CheckpointRecord
+        if let checkpoint {
+            guard reading.checkpoints.contains(where: { $0.point == checkpoint }) else { throw Failure.incompatibleAdoption }
+            point = try validatedCheckpoint(checkpoint, editionID: reading.edition.id, in: db)
+        } else {
+            guard reading.checkpoints.isEmpty,
+                let card = try PublicationStore.firstCard(editionKey: editionID, in: db) else { throw Failure.incompatibleAdoption }
+            point = .init(editionID: reading.edition.id, cardID: card, anchorPlacement: "top", updatedAt: Date())
+        }
+        try retainLegacyCheckpoints(in: db)
+        let key = reading.edition.editorialRevision.contextKey
+        let existing = try read(key, in: db), id = existing?.id ?? UUID()
+        if existing == nil {
+            let preferred = key.canonicalIdentity
+            let occupied = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_bindings WHERE runtime_namespace = ?)",
+                arguments: [preferred]) == true
+            let namespace = occupied ? "reader-binding:" + PersistenceValueCoding.uuid(id) : preferred
+            try db.execute(sql: "INSERT INTO reader_history_bindings(id,logical_identity,logical_key_json,runtime_namespace) VALUES(?,?,?,?)",
+                arguments: [PersistenceValueCoding.uuid(id), key.canonicalIdentity, try encode(key), namespace])
+        }
+        try db.execute(sql: "INSERT INTO reader_history_editions(edition_id,binding_id,publication_key_json,adoption_kind) VALUES(?,?,?,'exact_context')",
+            arguments: [editionID, PersistenceValueCoding.uuid(id), try encode(key)])
+        try SessionStore.persistOwned(point, bindingID: id, in: db)
+        guard let result = try read(key, in: db) else { throw Failure.corruption }
+        return result
+    }
+
     private static func validatedCheckpoint(_ original: SessionStore.CheckpointRecord,
         editionID: FeedEditionID, in db: Database) throws -> SessionStore.CheckpointRecord {
         // Recheck the exact source statement in the ownership transaction. A caller cannot fabricate

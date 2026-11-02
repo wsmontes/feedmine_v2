@@ -118,3 +118,12 @@ Introduce a transactional preparation entry point taking the retained-reading sn
 - [ ] Native consumption and unowned retained selection into an existing logical binding; no implicit ownership or namespace sharing.
 
 This primitive requires a current bound reader and a checkpoint already owned by the selected binding. Absence of a current binding, original-only points, unowned sibling adoption, per-history namespace compatibility and UI choices remain required work, not silently treated as a fresh context.
+
+## Task 2j — explicit retained selection through the native sheet
+
+Extend the existing preparation boundary to claim an explicitly selected unowned Edition under its complete frozen criteria, including a sibling of an existing binding. Keep that binding's namespace and active Edition; the frozen revision remains authoritative and namespace only partitions future fresh revisions/discovery. A new binding whose preferred namespace is already owned gets an independent discriminator. Validate the inventory snapshot, original checkpoint and predecessor before ownership/preparation writes; no latest-Edition choice. With no saved statement, the explicit row says to start at the Edition's first surviving card; never create a replacement Edition silently. Missing live content is a visible refusal. An absent singleton must be fenced at promotion, just like an exact legacy checkpoint.
+
+Expose the inventory from the existing reader menu and recovery/startup surface. Owned rows use the retained owned position; unowned rows offer distinct original statements, with frozen criteria and date/Edition identity for disambiguation. Prepare the selected handle in the existing constructor, launch while the previous reader remains presented, drain/save A, promote and install without suspension. Persist chosen criteria atomically with selection and report saved-but-not-activated failures. Keep explicit unowned claims scoped to this selection API; ordinary resolution remains strict. Verify sibling A→B→A, no-singleton startup, stale source rollback, namespace collision, native failure/retry and actual UI relaunch.
+
+- [ ] Transactional selection and predecessor/absence fences.
+- [ ] Native consumption and selectable sheet, PT/EN large text and real relaunch.

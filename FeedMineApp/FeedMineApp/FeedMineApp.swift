@@ -18,6 +18,8 @@ struct FeedMineApp: App {
     @State private var savedPath: [ReaderDestination] = []
     @State private var readerError: String?
     @State private var historyRecoveryMessage: String?
+    @State private var retainedReadings: [ReaderHistoryBindingStore.RetainedReading] = []
+    @State private var retainedReadingsMessage: String?
     /// A filter selection that was durably saved but not presented. The retry uses the existing activation
     /// owner; the alert is above the feed, not behind the closed sheet.
     @State private var filterActivationFailure = false
@@ -98,6 +100,7 @@ struct FeedMineApp: App {
         case settings
         case contentFilters
         case historyRecovery
+        case retainedReadings
         case curatedHood
         case export
         case filters
@@ -113,6 +116,7 @@ struct FeedMineApp: App {
             case .settings: return "settings"
             case .contentFilters: return "contentFilters"
             case .historyRecovery: return "historyRecovery"
+            case .retainedReadings: return "retainedReadings"
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
@@ -479,6 +483,7 @@ struct FeedMineApp: App {
                             // R3: the flow that owns the reader's interests is the existing one.
                             onAdjustInterests: { present(.settings) },
                             onManageSourceExclusions: sourceExclusionRecoveryAction,
+                            onRecoverHistory: { loadRetainedReadings(); present(.retainedReadings) },
                             editorial: { card, index, previous in
                                 editorialInvitation(for: card, index: index, previous: previous,
                                     association: association)
@@ -557,7 +562,10 @@ struct FeedMineApp: App {
                                 recovery.store.reportFirstScreenSurfaceIfReading()
                             }
                     } else if let failure = composition.startupFailure {
-                        Text(failure).padding()
+                        VStack {
+                            Text(failure).padding()
+                            Button(String(localized: "Leituras guardadas")) { loadRetainedReadings(); present(.retainedReadings) }
+                        }
                     } else {
                         #if DEBUG
                         // The app's own launch progress, nameable so a journey can assert its absence once the app
@@ -681,6 +689,14 @@ struct FeedMineApp: App {
                         }
                     case .historyRecovery:
                         historyRecoverySurface
+                    case .retainedReadings:
+                        NavigationStack {
+                            retainedReadingsForm
+                                .toolbar { ToolbarItem(placement: .topBarTrailing) {
+                                    Button(String(localized: "Concluir")) { popSurface() }
+                                        .disabled(composition.contextSwitchInProgress)
+                                } }
+                        }.interactiveDismissDisabled(composition.contextSwitchInProgress)
                     case .contentFilters:
                         contentFilterSurface
                     case .settings:
@@ -2094,6 +2110,11 @@ struct ReaderHost: UIViewControllerRepresentable {
                         activateHistoryRecovery(.currentCriteria)
                     }.accessibilityIdentifier("history-recovery-current")
                 }.disabled(composition.contextSwitchInProgress)
+                Section {
+                    NavigationLink(String(localized: "Leituras guardadas")) {
+                        retainedReadingsForm.onAppear { loadRetainedReadings() }
+                    }.disabled(composition.contextSwitchInProgress)
+                }
                 if composition.contextSwitchInProgress {
                     ProgressView(String(localized: "Abrindo leitura"))
                         .accessibilityIdentifier("history-recovery-progress")
@@ -2110,6 +2131,84 @@ struct ReaderHost: UIViewControllerRepresentable {
                 }
             }
             .interactiveDismissDisabled(composition.contextSwitchInProgress)
+        }
+    }
+
+    private func loadRetainedReadings() {
+        retainedReadingsMessage = nil
+        do { retainedReadings = try composition.retainedReadings() }
+        catch {
+            retainedReadings = []
+            retainedReadingsMessage = String(localized: "Não foi possível carregar as leituras guardadas. Tente novamente.")
+        }
+    }
+
+    private var retainedReadingsForm: some View {
+        Form {
+            Section { Text(String(localized: "Cada leitura mantém seus critérios e sua posição. Escolha qual deseja abrir.")) }
+            if let retainedReadingsMessage {
+                Section { Text(retainedReadingsMessage).accessibilityIdentifier("retained-reading-message") }
+                Button(String(localized: "Tentar novamente")) { loadRetainedReadings() }
+                    .disabled(composition.contextSwitchInProgress)
+            }
+            ForEach(retainedReadings, id: \.edition.id) { reading in
+                retainedReadingSection(reading)
+            }
+            if retainedReadings.isEmpty, retainedReadingsMessage == nil {
+                Text(String(localized: "Nenhuma leitura guardada."))
+            }
+            if composition.contextSwitchInProgress { ProgressView(String(localized: "Abrindo leitura")) }
+        }
+        .navigationTitle(String(localized: "Leituras guardadas"))
+    }
+
+    private func retainedReadingSection(_ reading: ReaderHistoryBindingStore.RetainedReading) -> some View {
+        let key = reading.edition.editorialRevision.contextKey
+        let positions = reading.owner == nil ? reading.checkpoints.map(\.point) : reading.ownedCheckpoint.map { [$0] } ?? []
+        let current = composition.association?.store.state.presentation?.editionID == reading.edition.id
+        let chips = ReaderFilterLens.chips(filter: key.filter, preset: key.preset,
+            presetName: nil, searchQuery: nil, languageNames: Dictionary(uniqueKeysWithValues:
+                composition.filterLanguages().map { ($0.languageCode, $0.displayName) }))
+        return Section {
+            Text(reading.edition.createdAt, format: .dateTime.day().month().year().hour().minute())
+            if case .source(let id) = key.request {
+                Text(verbatim: composition.feeds.first { $0.sourceID == id }?.displayName ?? id.rawValue.uuidString)
+            } else if case .search(let search) = key.request { Text(verbatim: search.query) }
+            else { Text(String(localized: "Principal")) }
+            ForEach(chips) { chip in Text(verbatim: chip.label).font(.caption) }
+            if !key.filter.exclusions.rules.isEmpty { Text(verbatim: key.filter.exclusions.rules.joined(separator: ", ")).font(.caption) }
+            if current { Text(String(localized: "Leitura atual")) }
+            if positions.isEmpty {
+                Button(String(localized: "Começar no início")) { openRetainedReading(reading, checkpoint: nil) }
+                    .accessibilityIdentifier("retained-head-" + reading.edition.id.rawValue.uuidString)
+                    .disabled(current || reading.isSelectedPreparation || composition.contextSwitchInProgress)
+            } else {
+                ForEach(positions, id: \.self) { point in
+                    Button { openRetainedReading(reading, checkpoint: point) } label: {
+                        VStack(alignment: .leading) {
+                            Text(String(localized: "Abrir posição salva"))
+                            Text(point.updatedAt, format: .dateTime.day().month().year().hour().minute().second()).font(.caption)
+                        }
+                    }
+                    .accessibilityIdentifier("retained-open-" + reading.edition.id.rawValue.uuidString + "-" + point.cardID.rawValue.uuidString)
+                    .disabled(current || reading.isSelectedPreparation || composition.contextSwitchInProgress)
+                }
+            }
+        } header: { Text(verbatim: String(reading.edition.id.rawValue.uuidString.prefix(8))) }
+    }
+
+    private func openRetainedReading(_ reading: ReaderHistoryBindingStore.RetainedReading,
+        checkpoint: SessionStore.CheckpointRecord?) {
+        guard !composition.contextSwitchInProgress else { return }
+        retainedReadingsMessage = nil
+        Task {
+            do {
+                try await composition.selectRetainedReading(reading, checkpoint: checkpoint)
+                popSurface()
+            } catch {
+                loadRetainedReadings()
+                retainedReadingsMessage = String(localized: "Não foi possível abrir esta leitura. Sua posição anterior foi preservada. Tente novamente.")
+            }
         }
     }
 

@@ -9,30 +9,65 @@ extension SessionStore {
         try database.write { try Self.prepareBinding(bindingID, explicitEditionID: nil, in: $0) }
     }
 
-    /// Selects an already-owned saved reading, without changing the presented reader or its point.
-    /// Snapshot, checkpoint and predecessor must all remain current before any preparation is revoked.
+    /// Explicit selection validates its captured history and predecessor before claiming or preparing it.
     public func prepareRetainedReading(_ reading: ReaderHistoryBindingStore.RetainedReading,
-        checkpoint: CheckpointRecord, replacing current: BindingActivation) throws -> BindingActivation {
+        checkpoint: CheckpointRecord?, replacing current: BindingActivation?,
+        expectedLegacyCheckpoint: CheckpointRecord? = nil, expectedContext: ContextKey? = nil) throws -> BindingActivation {
         try database.write { db in
             try Self.requireActivation(current, in: db)
-            guard let owner = reading.owner else { throw SessionStoreError.invalidMembership }
-            guard !reading.isSelectedPreparation,
-                let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
-                    arguments: [PersistenceValueCoding.uuid(owner.id)]),
-                try ReaderHistoryBindingStore.decodeRecord(row) == owner,
+            if current == nil {
+                let physical = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1")
+                    .map(Self.checkpoint)
+                guard physical == expectedLegacyCheckpoint else { throw SessionStoreError.staleHistoryBinding }
+            }
+            if let expectedContext {
+                guard try ReaderPreferencesStore.read(db)?.activeContextKey == expectedContext else {
+                    throw SessionStoreError.staleHistoryBinding
+                }
+            }
+            guard try ReaderHistoryBindingStore.retainedReadings(in: db).first(where: { $0.edition.id == reading.edition.id }) == reading,
+                !reading.isSelectedPreparation,
                 let edition = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
                     arguments: [PersistenceValueCoding.uuid(reading.edition.id.rawValue)]),
-                try PublicationStore.decodeEdition(edition) == reading.edition else {
-                throw SessionStoreError.staleHistoryBinding
-            }
-            guard try Self.isOwned(reading.edition.id, by: owner.id, in: db) else { throw SessionStoreError.invalidMembership }
-            guard reading.checkpoints.contains(where: { $0.point == checkpoint }),
-                try Self.ownedCheckpoint(bindingID: owner.id, editionID: reading.edition.id, in: db) == checkpoint,
+                try PublicationStore.decodeEdition(edition) == reading.edition,
                 try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_history_preparations WHERE edition_id = ? AND selected = 1)",
                     arguments: [PersistenceValueCoding.uuid(reading.edition.id.rawValue)]) == false else {
                 throw SessionStoreError.staleHistoryBinding
             }
-            return try Self.prepareBinding(owner.id, explicitEditionID: reading.edition.id, in: db)
+            let owner: ReaderHistoryBindingStore.Record
+            if let captured = reading.owner {
+                guard let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_history_bindings WHERE id = ?",
+                        arguments: [PersistenceValueCoding.uuid(captured.id)]),
+                    try ReaderHistoryBindingStore.decodeRecord(row) == captured,
+                    try Self.isOwned(reading.edition.id, by: captured.id, in: db),
+                    try Self.ownedCheckpoint(bindingID: captured.id, editionID: reading.edition.id, in: db) == checkpoint else {
+                    throw SessionStoreError.staleHistoryBinding
+                }
+                if let checkpoint {
+                    guard reading.checkpoints.contains(where: { $0.point == checkpoint }) else {
+                        throw SessionStoreError.staleHistoryBinding
+                    }
+                } else {
+                    // An explicitly chosen history with no saved position starts at its own first card,
+                    // just as an unowned history does. Never replace an existing retained position.
+                    guard reading.checkpoints.isEmpty,
+                        let card = try PublicationStore.firstCard(
+                            editionKey: PersistenceValueCoding.uuid(reading.edition.id.rawValue), in: db) else {
+                        throw SessionStoreError.staleHistoryBinding
+                    }
+                    try Self.persistOwned(.init(editionID: reading.edition.id, cardID: card,
+                        anchorPlacement: "top", updatedAt: Date()), bindingID: captured.id, in: db)
+                }
+                owner = captured
+            } else {
+                if let checkpoint, !reading.checkpoints.contains(where: { $0.point == checkpoint }) {
+                    throw SessionStoreError.invalidMembership
+                }
+                owner = try ReaderHistoryBindingStore.claimExplicitRetainedEdition(reading, checkpoint: checkpoint, in: db)
+            }
+            let prepared = try Self.prepareBinding(owner.id, explicitEditionID: reading.edition.id, in: db)
+            if expectedContext != nil { _ = try ReaderPreferencesStore.setContext(owner.logicalKey, in: db) }
+            return prepared
         }
     }
 
@@ -112,8 +147,14 @@ extension SessionStore {
 
     /// The same captured token becomes current. No callback reacquires authority during this cutover.
     public func promotePreparedBinding(_ handle: BindingActivation,
-        expectedLegacyCheckpoint: CheckpointRecord? = nil) throws {
+        expectedLegacyCheckpoint: CheckpointRecord? = nil, expectingNoLegacyCheckpoint: Bool = false) throws {
         try database.write { db in
+            if expectingNoLegacyCheckpoint {
+                guard expectedLegacyCheckpoint == nil,
+                    try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM session_checkpoint WHERE singleton_id = 1)") == false else {
+                    throw SessionStoreError.staleHistoryBinding
+                }
+            }
             if let expectedLegacyCheckpoint {
                 guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1"),
                     try Self.checkpoint(row) == expectedLegacyCheckpoint else { throw SessionStoreError.staleHistoryBinding }

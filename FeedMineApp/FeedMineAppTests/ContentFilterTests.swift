@@ -52,6 +52,49 @@ final class ContentFilterTests: XCTestCase {
         (association?.store.state.presentation?.window.items ?? []).compactMap(\.title)
     }
 
+    func testRetainedReadingSelectionInstallsTheChosenEditionAndReturnsToTheSavedPredecessor() async throws {
+        let directory = directory(), seed = root(directory: directory)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 5
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let raw = seed.currentContextKey
+        let frozen = ContextKey(request: .main, filter: ReaderFilter(exclusions: .init(isEnabled: true, rules: ["retained criteria"])))
+        let a = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
+            configuration: configuration, database: database, contextKey: raw,
+            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
+        try await a.launch()
+        let aID = try XCTUnwrap(a.store.state.presentation?.editionID)
+        await a.close()
+        let b = try FeedAssociation(directory: directory, feeds: TrustedFeed.development,
+            configuration: configuration, database: database, contextKey: frozen,
+            catalogueURL: nil, editorialExposure: EditorialExposureLedger())
+        try await b.launch()
+        let bID = try XCTUnwrap(b.store.state.presentation?.editionID)
+        await b.close()
+        try SessionStore(database: database).activateContext(raw)
+        let opened = root(directory: directory)
+        await opened.launch()
+        let live = try XCTUnwrap(opened.association)
+        XCTAssertEqual(live.store.state.presentation?.editionID, aID)
+        let store = ReaderHistoryBindingStore(database: database)
+        let selected = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == bID })
+        XCTAssertNil(selected.owner)
+        let point = try XCTUnwrap(selected.checkpoints.first).point
+        try await opened.selectRetainedReading(selected, checkpoint: point)
+        XCTAssertEqual(opened.currentContextKey, frozen)
+        XCTAssertEqual(opened.association?.store.state.presentation?.editionID, bID)
+        XCTAssertEqual(try ReaderPreferencesStore(database: database).load()?.activeContextKey, frozen)
+        let back = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == aID })
+        let owner = try XCTUnwrap(back.owner)
+        let saved = try XCTUnwrap(SessionStore(database: database).checkpoint(bindingID: owner.id))
+        try await opened.selectRetainedReading(back, checkpoint: saved)
+        XCTAssertEqual(opened.association?.store.state.presentation?.editionID, aID)
+        XCTAssertEqual(opened.association?.store.state.presentation?.window.anchor.cardID, saved.cardID)
+        XCTAssertThrowsError(try SessionStore(database: database).validateBinding(try XCTUnwrap(live.bindingActivation), editionID: aID))
+        await opened.association?.close()
+    }
+
     func testGlobalWordEditDoesNotCreateAPendingContextHandoff() async throws {
         let directory = directory(), root = root(directory: directory)
         await root.launch()

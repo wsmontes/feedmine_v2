@@ -30,6 +30,114 @@ final class ReaderHistoryBindingStoreTests: XCTestCase {
         return prefs
     }
 
+    func testExplicitRetainedUnownedSiblingPreparesWithoutMovingTheCurrentOwnedReading() throws {
+        let db = try StorageFixture.database(self), logical = key([])
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let (first, _) = try published(db, key: logical)
+        let owner = try store.resolve(logicalKey: logical, adopting: .init(editionID: first.id,
+            publicationKey: logical, evidence: .exactContext))
+        let second = StorageFixture.edition(revision: first.editorialRevision), card = StorageFixture.card()
+        try PublicationStore(database: db).createEdition(second,
+            firstSegment: StorageFixture.segment(second, [card]), cards: [card])
+        let point = SessionStore.CheckpointRecord(editionID: second.id, cardID: card.id,
+            anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 1234), topDelta: -12, cardHeight: 200)
+        try db.write { try SessionStore.persistContext(point, in: $0) }
+        let active = try sessions.activateBinding(owner.id)
+        let original = try XCTUnwrap(sessions.checkpoint())
+        let reading = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == second.id })
+        let prepared = try sessions.prepareRetainedReading(reading, checkpoint: point, replacing: active)
+        XCTAssertEqual(prepared.bindingID, owner.id)
+        XCTAssertEqual(try store.binding(for: logical)?.runtimeNamespace, owner.runtimeNamespace)
+        XCTAssertEqual(try store.binding(for: logical)?.activeEditionID, first.id)
+        XCTAssertEqual(try sessions.checkpoint(), original)
+        XCTAssertEqual(try sessions.checkpoint(bindingActivation: prepared), point)
+        try sessions.promotePreparedBinding(prepared)
+        XCTAssertEqual(try sessions.checkpoint(), point)
+        XCTAssertTrue(try store.retainedReadings().contains { $0.edition.id == second.id && $0.owner?.id == owner.id })
+    }
+
+    func testExplicitRetainedReadingWithoutSingletonStartsAtItsOwnHeadAndFencesAbsence() throws {
+        for owned in [false, true] {
+        let db = try StorageFixture.database(self), logical = key([])
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let (edition, card) = try published(db, key: logical)
+        try db.write { db in
+            try db.execute(sql: "DELETE FROM session_checkpoint")
+            try db.execute(sql: "DELETE FROM context_checkpoints")
+        }
+        if owned { _ = try store.resolve(logicalKey: logical, adopting: .init(editionID: edition.id,
+            publicationKey: logical, evidence: .exactContext)) }
+        let reading = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == edition.id })
+        XCTAssertTrue(reading.checkpoints.isEmpty)
+        let prepared = try sessions.prepareRetainedReading(reading, checkpoint: nil, replacing: nil)
+        XCTAssertNil(try sessions.checkpoint())
+        XCTAssertEqual(try sessions.checkpoint(bindingActivation: prepared)?.cardID, card.id)
+        try db.write { db in
+            try db.execute(sql: "INSERT INTO session_checkpoint(singleton_id,edition_id,card_id,anchor_placement,updated_at) VALUES(1,?,?,?,?)",
+                arguments: [PersistenceValueCoding.uuid(edition.id.rawValue), PersistenceValueCoding.uuid(card.id.rawValue), "top", 1234])
+        }
+        XCTAssertThrowsError(try sessions.promotePreparedBinding(prepared, expectingNoLegacyCheckpoint: true))
+        XCTAssertTrue(try sessions.isPreparedBinding(prepared))
+        try db.write { try $0.execute(sql: "DELETE FROM session_checkpoint") }
+        try sessions.promotePreparedBinding(prepared, expectingNoLegacyCheckpoint: true)
+        XCTAssertEqual(try sessions.checkpoint()?.cardID, card.id)
+        }
+    }
+
+    func testExplicitRetainedStaleHeadSnapshotDoesNotClaimHistoryOrRevokeAnotherPreparation() throws {
+        let db = try StorageFixture.database(self), logical = key([])
+        let sessions = SessionStore(database: db), store = ReaderHistoryBindingStore(database: db)
+        let (edition, card) = try published(db, key: logical)
+        try db.write { db in
+            try db.execute(sql: "DELETE FROM session_checkpoint")
+            try db.execute(sql: "DELETE FROM context_checkpoints")
+        }
+        let captured = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == edition.id })
+        let other = try store.resolve(logicalKey: key(["other"]))
+        let pending = try sessions.prepareBinding(other.id)
+        try db.write { try SessionStore.persistContext(.init(editionID: edition.id, cardID: card.id,
+            anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 1234)), in: $0) }
+        XCTAssertThrowsError(try sessions.prepareRetainedReading(captured, checkpoint: nil, replacing: nil))
+        XCTAssertTrue(try sessions.isPreparedBinding(pending))
+        XCTAssertNil(try store.binding(for: logical))
+    }
+
+    func testExplicitRetainedNamespaceCollisionAndPreferenceFailureRemainAtomic() throws {
+        let db = try StorageFixture.database(self), raw = key([]), frozen = key(["old"])
+        let prefs = try prefs(db, words: ["old"])
+        let store = ReaderHistoryBindingStore(database: db), sessions = SessionStore(database: db)
+        let (a, _) = try published(db, key: frozen)
+        let original = try XCTUnwrap(sessions.checkpoint())
+        let b = StorageFixture.edition(revision: a.editorialRevision), card = StorageFixture.card()
+        try PublicationStore(database: db).createEdition(b, firstSegment: StorageFixture.segment(b, [card]), cards: [card])
+        // Exact snapshot equality is the selection fence. Use a timestamp that survives the SQLite
+        // Unix-seconds round trip rather than Date()'s finer reference-date precision.
+        let saved = SessionStore.CheckpointRecord(editionID: b.id, cardID: card.id, anchorPlacement: "top",
+            updatedAt: Date(timeIntervalSince1970: 1234))
+        try db.write { try SessionStore.persistContext(saved, in: $0) }
+        let owner = try store.resolve(logicalKey: raw, adopting: .init(editionID: a.id, publicationKey: frozen,
+            evidence: .legacyWords(prefs.wordExclusionSnapshot(templates: [])), checkpoint: original))
+        let active = try sessions.activateBinding(owner.id)
+        let selected = try XCTUnwrap(store.retainedReadings().first { $0.edition.id == b.id })
+        let pending = try sessions.prepareBinding(owner.id)
+        try db.write { try $0.execute(sql: "CREATE TRIGGER reject_retained_choice BEFORE UPDATE ON reader_preferences BEGIN SELECT RAISE(ABORT,'rejected'); END") }
+        XCTAssertThrowsError(try sessions.prepareRetainedReading(selected, checkpoint: saved,
+            replacing: active, expectedContext: raw))
+        XCTAssertNil(try store.binding(for: frozen))
+        XCTAssertNil(try store.owner(ofEditionID: b.id))
+        XCTAssertTrue(try sessions.isPreparedBinding(pending))
+        XCTAssertEqual(try prefs.load()?.activeContextKey, raw)
+        try db.write { try $0.execute(sql: "DROP TRIGGER reject_retained_choice") }
+        let prepared = try sessions.prepareRetainedReading(selected, checkpoint: saved, replacing: active, expectedContext: raw)
+        let chosen = try XCTUnwrap(store.binding(for: frozen))
+        XCTAssertNotEqual(chosen.runtimeNamespace, owner.runtimeNamespace)
+        XCTAssertNil(chosen.activeEditionID)
+        XCTAssertEqual(try prefs.load()?.activeContextKey, frozen)
+        XCTAssertEqual(try sessions.checkpoint(), original)
+        try sessions.promotePreparedBinding(prepared)
+        XCTAssertEqual(try sessions.checkpoint(), saved)
+    }
+
     func testFreshBindingIsStableAcrossConnectionsAndHasNoBorrowedEdition() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }

@@ -18,6 +18,40 @@ final class SourceExclusionJourneyUITests: XCTestCase {
     }
 
     @MainActor
+    func testRetainedReadingPickerSelectsLegacyAndOwnedHistoriesAndSurvivesProcessRelaunch() throws {
+        let app = SurfaceTest.launchFixture(["FEEDMINE_RECOVERY_LEGACY_FIXTURE": "1",
+            "FEEDMINE_DISABLE_CATALOGUE_SYNC": "1", "FEEDMINE_FIXTURE_ITEMS": "6", "FEEDMINE_TRACE_CAPTURE": "1"],
+            arguments: ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"])
+        defer { app.terminate() }
+        let proof = app.staticTexts["feed-window-proof"]
+        let oldIDs = String(proof.label.split(separator: ";")[0])
+        let oldCard = try XCTUnwrap(oldIDs.dropFirst(4).split(separator: ",").first).description
+        app.buttons["more-menu"].tap()
+        app.buttons["history-recovery-action"].tap()
+        app.buttons["history-recovery-current"].tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(app.buttons["history-recovery-current"], timeout: 40))
+        XCTAssertTrue(proof.waitForExistence(timeout: 20))
+        let currentIDs = String(proof.label.split(separator: ";")[0])
+        let currentCard = try XCTUnwrap(currentIDs.dropFirst(4).split(separator: ",").first).description
+        XCTAssertNotEqual(currentIDs, oldIDs)
+        for (card, expected) in [(oldCard, oldIDs), (currentCard, currentIDs)] {
+            app.buttons["more-menu"].tap()
+            app.buttons["history-recovery-action"].tap()
+            XCTAssertTrue(app.staticTexts["Leituras guardadas"].waitForExistence(timeout: 10))
+            let choice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'retained-open-' AND identifier ENDSWITH %@", card)).firstMatch
+            XCTAssertTrue(SurfaceTest.scrollIntoView(choice, in: app, timeout: 15))
+            choice.tap()
+            XCTAssertTrue(SurfaceTest.waitForAbsence(app.staticTexts["Leituras guardadas"], timeout: 40))
+            XCTAssertEqual(String(proof.label.split(separator: ";")[0]), expected)
+            app.terminate()
+            app.launch()
+            XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 30))
+            XCTAssertTrue(proof.waitForExistence(timeout: 30))
+            XCTAssertEqual(String(proof.label.split(separator: ";")[0]), expected)
+        }
+    }
+
+    @MainActor
     private func legacyRecovery(previous: Bool, english: Bool) throws {
         var arguments = ["-AppleLanguages", english ? "(en)" : "(pt-BR)", "-AppleLocale", english ? "en_US" : "pt_BR"]
         if english { arguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }

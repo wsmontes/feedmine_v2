@@ -139,7 +139,7 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
         Menu {
             if let onRecoverHistory {
                 Button(action: onRecoverHistory) {
-                    Label(String(localized: "Escolher como continuar"), systemImage: "clock.arrow.circlepath")
+                    Label(readingIsPaused ? String(localized: "Escolher como continuar") : String(localized: "Leituras guardadas"), systemImage: "clock.arrow.circlepath")
                 }.accessibilityIdentifier("history-recovery-action")
                 Divider()
             }

@@ -321,7 +321,7 @@ extension PublicationStore {
         }
     }
 
-    private static func firstCard(editionKey: String, in db: Database) throws -> PublicationCardID? {
+    static func firstCard(editionKey: String, in db: Database) throws -> PublicationCardID? {
         guard let row = try Row.fetchOne(db, sql: """
             SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
             WHERE s.edition_id = ? ORDER BY s.ordinal ASC, c.ordinal ASC LIMIT 1

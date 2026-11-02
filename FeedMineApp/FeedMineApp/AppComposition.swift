@@ -2210,7 +2210,7 @@ final class AppComposition {
     /// — and therefore how much of discovery exists when it is built.
     private func makeAssociation(contextKey: ContextKey, profile: ReaderDiscoveryProfile,
         read: DiscoveryRead?, warmLaunch: Bool, allowsSourceOutsideSelection: Bool = false,
-        preparingReplacement: Bool = false) throws -> FeedAssociation {
+        preparingReplacement: Bool = false, preparedHistory: SessionStore.BindingActivation? = nil) throws -> FeedAssociation {
         let session = try sessionState(for: contextKey,
             allowsSourceOutsideSelection: allowsSourceOutsideSelection)
         if session.key != contextKey {
@@ -2221,7 +2221,8 @@ final class AppComposition {
         let (scoring, version) = scoring(for: session.key)
         let binding = try resolveHistoryBinding(session.key, database: database, scoringVersion: version)
         let checkpoints = SessionStore(database: database), publication = PublicationStore(database: database)
-        var handle = try checkpoints.prepareBinding(binding.id)
+        guard preparedHistory == nil || preparedHistory?.bindingID == binding.id else { throw SessionStoreError.staleHistoryBinding }
+        var handle = try preparedHistory ?? checkpoints.prepareBinding(binding.id)
         var built: FeedAssociation?
         do {
             var editionID = try checkpoints.editionID(bindingActivation: handle)
@@ -2230,6 +2231,7 @@ final class AppComposition {
                 let point = try checkpoints.checkpoint(bindingActivation: handle)
                 if !FeedAssociation.mayShow(existing.editorialRevision, for: existing.editorialRevision.contextKey,
                     scoringVersion: version) || point == nil {
+                    guard preparedHistory == nil else { throw ReaderHistoryRecoveryError.unavailable }
                     handle = try checkpoints.resetPreparedBinding(handle, editionID: nil)
                     editionID = nil
                     frozen = nil
@@ -2310,6 +2312,68 @@ final class AppComposition {
             }
         }
         return try bindings.resolve(logicalKey: raw)
+    }
+
+    func retainedReadings() throws -> [ReaderHistoryBindingStore.RetainedReading] {
+        guard let database = libraryDatabase() else { throw ReaderHistoryRecoveryError.unavailable }
+        return try ReaderHistoryBindingStore(database: database).retainedReadings()
+    }
+
+    /// A user-selected Edition is never replaced by automatic history resolution or a fresh publication.
+    func selectRetainedReading(_ reading: ReaderHistoryBindingStore.RetainedReading,
+        checkpoint: SessionStore.CheckpointRecord?) async throws {
+        guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
+        guard let database = libraryDatabase(), let preferences else { throw ReaderHistoryRecoveryError.unavailable }
+        let previous = association, recovery = historyRecovery
+        if previous?.store.state.presentation?.editionID == reading.edition.id { return }
+        let expected = currentContextKey
+        let selected = reading.owner?.logicalKey ?? reading.edition.editorialRevision.contextKey
+        replacingSession = true
+        defer {
+            replacingSession = false
+            if association === previous { previous?.resumeViewportAfterFailedHandoff() }
+            if historyRecovery === recovery { recovery?.resumeViewportAfterFailedChoice() }
+        }
+        if let recovery { await recovery.freezeViewportForChoice() }
+        guard association === previous, historyRecovery === recovery, currentContextKey == expected else {
+            throw ReaderHistoryRecoveryError.staleChoice
+        }
+        let sessions = SessionStore(database: database)
+        let legacy = previous == nil ? try sessions.checkpoint() : nil
+        let prepared = try sessions.prepareRetainedReading(reading, checkpoint: checkpoint,
+            replacing: previous?.bindingActivation, expectedLegacyCheckpoint: legacy, expectedContext: expected)
+        currentContextKey = selected
+        recovery?.recordSelection(selected)
+        var candidate: FeedAssociation?
+        do {
+            let next = try makeAssociation(contextKey: selected, profile: discoveryProfile(for: selected), read: nil,
+                warmLaunch: true, allowsSourceOutsideSelection: allowsSourceOutsideSelection(selected),
+                preparingReplacement: true, preparedHistory: prepared)
+            candidate = next
+            try await next.launch()
+            guard association === previous, historyRecovery === recovery, currentContextKey == selected,
+                try preferences.load()?.activeContextKey == selected,
+                next.store.state.presentation?.editionID == reading.edition.id else { throw ReaderHistoryRecoveryError.staleChoice }
+            if let previous {
+                await previous.freezeViewportForHandoff()
+                _ = try await previous.session.checkpointCurrentPosition(at: Date())
+                if previous.bindingActivation?.bindingID == prepared.bindingID { try await next.refreshPreparedPosition() }
+            }
+            guard association === previous, historyRecovery === recovery, currentContextKey == selected,
+                try preferences.load()?.activeContextKey == selected else { throw ReaderHistoryRecoveryError.staleChoice }
+            try next.promotePreparedHistory(expectedLegacyCheckpoint: legacy,
+                expectingNoLegacyCheckpoint: previous == nil && legacy == nil)
+            recovery?.retire()
+            association = next
+            historyRecovery = nil
+            startupFailure = nil
+            startupFailureDetail = nil
+            await previous?.close()
+        } catch {
+            _ = try? sessions.cancelPreparedBinding(prepared)
+            await candidate?.close()
+            throw ReaderHistoryRecoveryError.selectionStoredNotActivated
+        }
     }
 
     /// Saves an explicit choice first; a failed activation keeps that intent and the local preview for retry.
@@ -5195,10 +5259,11 @@ final class FeedAssociation {
         }
     }
 
-    func promotePreparedHistory(expectedLegacyCheckpoint: SessionStore.CheckpointRecord? = nil) throws {
+    func promotePreparedHistory(expectedLegacyCheckpoint: SessionStore.CheckpointRecord? = nil,
+        expectingNoLegacyCheckpoint: Bool = false) throws {
         guard let bindingActivation else { return }
         try SessionStore(database: database).promotePreparedBinding(bindingActivation,
-            expectedLegacyCheckpoint: expectedLegacyCheckpoint)
+            expectedLegacyCheckpoint: expectedLegacyCheckpoint, expectingNoLegacyCheckpoint: expectingNoLegacyCheckpoint)
     }
 
     func close() async {

@@ -1081,7 +1081,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Completed"
+            "value": "Done"
           }
         }
       }
@@ -4544,6 +4544,134 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reading criteria choice pending"
+          }
+        }
+      }
+    },
+    "Leituras guardadas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved readings"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leituras guardadas"
+          }
+        }
+      }
+    },
+    "Cada leitura mantém seus critérios e sua posição. Escolha qual deseja abrir.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each reading keeps its criteria and position. Choose which one to open."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada leitura mantém seus critérios e sua posição. Escolha qual deseja abrir."
+          }
+        }
+      }
+    },
+    "Não foi possível carregar as leituras guardadas. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load saved readings. Try again."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível carregar as leituras guardadas. Tente novamente."
+          }
+        }
+      }
+    },
+    "Nenhuma leitura guardada.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No saved readings."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma leitura guardada."
+          }
+        }
+      }
+    },
+    "Leitura atual": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current reading"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leitura atual"
+          }
+        }
+      }
+    },
+    "Começar no início": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start at the beginning"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Começar no início"
+          }
+        }
+      }
+    },
+    "Abrir posição salva": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open saved position"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir posição salva"
+          }
+        }
+      }
+    },
+    "Não foi possível abrir esta leitura. Sua posição anterior foi preservada. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not open this reading. Your previous position was preserved. Try again."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir esta leitura. Sua posição anterior foi preservada. Tente novamente."
           }
         }
       }
