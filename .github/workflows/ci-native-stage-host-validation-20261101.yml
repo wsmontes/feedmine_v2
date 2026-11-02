@@ -1,0 +1,78 @@
+name: FeedMine native stage host diagnostic (iOS)
+on:
+  push:
+    branches:
+      - ci/native-stage-host-validation-20261101
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: feedmine-stage-host-20261101
+  cancel-in-progress: true
+jobs:
+  ios-stage-host:
+    name: Native stage host XCTest (iOS Simulator)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Discover simulator and toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Commit: $GITHUB_SHA"
+          xcodebuild -version
+          swift --version
+          python3 - <<'PY'
+          import json, os, subprocess
+          info = json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','--json'], text=True))
+          devices = [(runtime, dev) for runtime, listed in info['devices'].items()
+                     if 'SimRuntime.iOS' in runtime for dev in listed
+                     if dev.get('isAvailable') and 'iPhone' in dev.get('name','')]
+          if not devices: raise SystemExit('No iOS iPhone simulator available')
+          runtime, dev = sorted(devices, key=lambda x:(x[0], x[1]['name']), reverse=True)[0]
+          print('Simulator', runtime, dev['name'], dev['udid'])
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+              env.write('FEEDMINE_SIMULATOR_ID=' + dev['udid'] + '\n')
+          PY
+      - name: Run live SwiftUI staging host XCTest
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme FeedMine-Package \
+            -destination "platform=iOS Simulator,id=$FEEDMINE_SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
+            -only-testing:ArchitectureSmokeTests/FeedNativeStageHostTests \
+            -resultBundlePath "$RUNNER_TEMP/NativeStageHost.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Prove XCTest actually ran
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$RUNNER_TEMP/NativeStageHost.xcresult" || exit 1
+          xcrun xcresulttool get test-results summary \
+            --path "$RUNNER_TEMP/NativeStageHost.xcresult" \
+            > "$RUNNER_TEMP/NativeStageHost-summary.json"
+          python3 - <<'PY'
+          import json, os
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'NativeStageHost-summary.json')) as fp:
+              summary=json.load(fp)
+          print('XCTest:',summary)
+          if summary.get('totalTestCount',0) < 1: raise SystemExit('No tests actually executed')
+          if summary.get('failedTests',0): raise SystemExit('Test failed')
+          PY
+      - name: Preserve host test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedmine-native-stage-host-20261101
+          path: |
+            ${{ runner.temp }}/NativeStageHost.xcresult
+            ${{ runner.temp }}/NativeStageHost-summary.json
+          if-no-files-found: warn
+          retention-days: 7
