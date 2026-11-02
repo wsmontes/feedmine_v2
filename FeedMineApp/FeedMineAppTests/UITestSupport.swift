@@ -66,7 +66,7 @@ enum SurfaceTest {
     /// reader gesture is retried without inventing a different control.
     @MainActor
     static func menuEntry(_ app: XCUIApplication, _ label: String) {
-        for _ in 0..<4 {
+        for attempt in 0..<4 {
             openMenu(app)
             let visible = app.buttons[label].firstMatch
             if visible.waitForExistence(timeout: 5) {
@@ -77,6 +77,33 @@ enum SurfaceTest {
             if item.waitForExistence(timeout: 3) {
                 item.tap()
                 return
+            }
+            // UIKit's menu is a scrolling collection at accessibility text sizes. Its full
+            // collection frame can exceed the clipped popover, so drag inside its upper area.
+            let menuList = app.collectionViews.firstMatch
+            if menuList.exists {
+                for _ in 0..<6 {
+                    menuList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                        .press(forDuration: 0.05,
+                            thenDragTo: menuList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+                    let entry = menuList.buttons[label].firstMatch
+                    if entry.exists && entry.isHittable {
+                        entry.tap()
+                        return
+                    }
+                }
+            }
+            if attempt == 3 {
+                XCTContext.runActivity(named: "Missing menu entry: \(label)") { activity in
+                    let tree = XCTAttachment(string: app.debugDescription)
+                    tree.name = "menu-entry-failure-tree"
+                    tree.lifetime = .keepAlways
+                    activity.add(tree)
+                    let screenshot = XCTAttachment(screenshot: app.screenshot())
+                    screenshot.name = "menu-entry-failure-screen"
+                    screenshot.lifetime = .keepAlways
+                    activity.add(screenshot)
+                }
             }
             // Close the empty menu so the next attempt starts from the reader's chrome.
             let menu = app.buttons["more-menu"]
