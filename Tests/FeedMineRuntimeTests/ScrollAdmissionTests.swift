@@ -304,4 +304,35 @@ final class ScrollAdmissionTests: XCTestCase {
         XCTAssertEqual(reachable.window.items.first?.layout, frozenLayout)
         XCTAssertEqual(reachable.window.items.first?.mediaAspectRatio, frozenRatio)
     }
+
+    /// An observation refused as visual exposure (its anchor has no pixels) still ran the residency decision:
+    /// that decision is committed, so the failed reconstruction becomes a stated fact of the projection, while
+    /// the reader's previous anchor stays. Discarding it hid the unavailable fact from the surface (a pending
+    /// jump kept waiting) and left the residency books describing a list the session never installed.
+    func testRefusedObservationStillCommitsTheResidencyItDecided() async throws {
+        let f = try fixture(cards: 30, bounds: .init(backwardCapacity: 2, forwardCapacity: 4))
+        _ = try await admitted(f.session, .initial(f.bounds))
+        _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
+        let extended = try await admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
+        XCTAssertEqual(extended.window.items.map(\.id), Array(f.ids[2...8]))
+        // Two observations at the tail: the second no longer protects the band around card 4, so the cards
+        // behind the reader's own band release their pixels.
+        _ = try await recorded(f.session, observation(f.cards[8], placement: .top))
+        let released = try await recorded(f.session, observation(f.cards[8], placement: .top))
+        XCTAssertNil(released.window.items.first?.image, "precondition: card 2 released its pixels")
+        XCTAssertEqual(released.window.anchor.cardID, f.cards[8].id)
+        XCTAssertFalse(released.unavailableImageCardIDs.contains(f.cards[2].id))
+        // The local asset disappears: reconstructing card 2 on the way back fails.
+        try FileManager.default.removeItem(at: f.directory.appendingPathComponent("Media"))
+        let refused = try await f.session.submitViewport(observation(f.cards[2], placement: .center),
+            deliberate: true)
+        let after = try XCTUnwrap(refused)
+        XCTAssertEqual(after.window.anchor.cardID, f.cards[8].id,
+            "a card without pixels is not a reading position: the previous anchor stays")
+        XCTAssertTrue(after.unavailableImageCardIDs.contains(f.cards[2].id),
+            "the failed reconstruction residency decided is committed and stated")
+        XCTAssertGreaterThan(after.provenance.position, released.provenance.position)
+        let currentValue = await f.session.currentPresentation()
+        XCTAssertEqual(currentValue, after, "the returned projection is the installed one")
+    }
 }

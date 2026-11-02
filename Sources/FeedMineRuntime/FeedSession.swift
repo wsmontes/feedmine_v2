@@ -218,6 +218,26 @@ public actor FeedSession {
         guard let current = state else { return nil }
         let items = current.presentation.window.items
         guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
+        // Residency runs first, around where the reader physically is: it may decode a returning anchor, and it
+        // mutates the session's residency books (`releasedImageCards`, `unrecoverableImageCards`,
+        // `previousResidencyAnchor`). Its result must therefore always be committed, even when the observation is
+        // then refused as visual exposure; discarding it left released siblings without pixels for the session.
+        let (bounded, residencyChanged) = try boundedResidency(items: items,
+            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
+        // A card whose pixels were not drawn cannot certify visual exposure: rejecting the
+        // observation before `markSeen` keeps a restored descriptor from becoming "seen" material.
+        // The refusal keeps the previous anchor and the restore's substitution untouched.
+        guard let target = bounded.first(where: { $0.id == observation.anchor.cardID }),
+            target.isRenderReady else {
+            guard residencyChanged,
+                let window = FeedWindowSnapshot(items: bounded, anchor: current.presentation.window.anchor)
+            else { return current.presentation }
+            let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+                editionID: current.presentation.editionID, window: window)
+            state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
+                bounds: current.bounds)
+            return snapshot
+        }
         // A deliberate move to another admitted card is the reader establishing a new position: the restore's
         // substitute no longer speaks for them. The layout's own observations (`deliberate == false`) never end it —
         // the first automatic observation after a restore must not be mistaken for a gesture.
@@ -233,12 +253,6 @@ public actor FeedSession {
             // even when this move changed neither the anchor nor residency.
             substitutionCleared = true
         }
-        let (bounded, residencyChanged) = try boundedResidency(items: items,
-            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
-        // A card whose pixels were not drawn cannot certify visual exposure: rejecting the
-        // observation before `markSeen` keeps a restored descriptor from becoming "seen" material.
-        guard let target = bounded.first(where: { $0.id == observation.anchor.cardID }),
-            !target.isImageBearing || target.image != nil else { return current.presentation }
         try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
         let anchorChanged = observation.anchor != current.presentation.window.anchor
         guard anchorChanged || residencyChanged || substitutionCleared else { return current.presentation }
