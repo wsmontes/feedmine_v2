@@ -372,7 +372,7 @@ public struct FeedScreen: View {
     @ViewBuilder private func endOfContentBlock(items: [PresentationCard]) -> some View {
         // A logical history can extend beyond the currently mounted ready
         // rail. A deferred gap is not an end-of-content invitation.
-        if store.work == .endOfContent,
+        if store.work == .endOfContent, onRecoverHistory == nil,
             let lastPhysical = items.last?.id,
             lastPhysical == store.state.presentation?.window.items.last?.id {
             FeedEndOfContentView(appearance: appearance,
