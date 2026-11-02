@@ -217,9 +217,7 @@ struct FeedMineApp: App {
     /// *sheet's* own presentation, anchored on the sheet (`exportSheet`), not the feed's: the reader asks for it
     /// while the sheet is up, and a surface presented by a presenter that already has one up is deferred.
     @State private var sharedExport: SharedLink?
-    /// The written export the reader asked to save to a location of their choice ("Salvar arquivo").
-    @State private var exportFileToSave: URL?
-    /// The export could not be written (or moved): stated by the export sheet itself, which is on top.
+    /// The export could not be written: stated by the export sheet itself, which is on top.
     @State private var exportWriteFailed = false
     /// Presents the V1-upgrade notice on the window's topmost controller, which is above the reader's own
     /// presented surface. The receipt is recorded **only** by the reader's acknowledgement.
@@ -1827,11 +1825,12 @@ struct ReaderHost: UIViewControllerRepresentable {
                     sharedExport = writtenExport()
                     exportWriteFailed = sharedExport == nil
                 },
-                // "Salvar arquivo" used to open the same share sheet as "Compartilhar". It now asks where to keep
-                // the file (the system's own location picker), which is what the label promises.
+                // Both doors open the platform's share surface, which carries "Salvar em Arquivos": that is the
+                // tested design (`testSavingTheExportOpensTheSystemSurfaceAndKeepsTheReadingPoint`). What was
+                // missing is a statement when the file could not be written.
                 onSave: {
-                    exportFileToSave = writtenExport()?.url
-                    exportWriteFailed = exportFileToSave == nil
+                    sharedExport = writtenExport()
+                    exportWriteFailed = sharedExport == nil
                 },
                 onClose: { popSurface() })
                 // The document is produced by the app's own coordinator, and the sheet is what shows it: it is
@@ -1859,11 +1858,6 @@ struct ReaderHost: UIViewControllerRepresentable {
         // move.
         .sheet(item: $sharedExport) { link in
             shareSurface(link)
-        }
-        .fileMover(isPresented: Binding(get: { exportFileToSave != nil },
-            set: { if !$0 { exportFileToSave = nil } }), file: exportFileToSave) { result in
-            exportFileToSave = nil
-            if case .failure = result { exportWriteFailed = true }
         }
         .alert(String(localized: "Não foi possível exportar"), isPresented: $exportWriteFailed) {
             Button(String(localized: "OK"), role: .cancel) {}
