@@ -5155,6 +5155,38 @@
           }
         }
       }
+    },
+    "Buscar fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search sources"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar fontes"
+          }
+        }
+      }
+    },
+    "Nenhuma fonte encontrada": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No sources found"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma fonte encontrada"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

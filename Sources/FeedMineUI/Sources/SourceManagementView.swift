@@ -51,11 +51,26 @@ public struct SourceManagementView: View {
     public static let selectionFooter = String(localized: "Fontes desabilitadas não são consultadas na atualização. As mudanças valem a partir da próxima atualização.")
 
     public var body: some View {
-        List { content }
+        List {
+            if isSearching {
+                searchResultsSection
+            } else {
+                content
+            }
+        }
             .listStyle(Self.listStyle)
             .scrollContentBackground(.hidden)
             .background(appearance.pageBackground)
             .navigationTitle(String(localized: "Fontes"))
+            // The catalogue could only be walked level by level: the store's search had no surface. A name the
+            // reader already knows is now one field away.
+            .searchable(text: $searchText, prompt: Text(String(localized: "Buscar fontes")))
+            .task(id: searchText) {
+                // A short pause so each keystroke does not become a catalogue read; a newer text cancels this one.
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                await store.search(searchText)
+            }
             .modifier(SourceToolErrorAlert(store: store))
             .toolbar {
                 ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
@@ -71,6 +86,33 @@ public struct SourceManagementView: View {
     #else
     private static let listStyle = InsetListStyle()
     #endif
+
+    @State private var searchText = ""
+
+    private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// The matching catalogue sources, each with its own toggle — the same row and the same single-key intent the
+    /// node level uses, so a source turned on here is turned on everywhere.
+    @ViewBuilder private var searchResultsSection: some View {
+        Section {
+            if store.results.isEmpty {
+                Text(verbatim: store.query.isEmpty
+                    ? String(localized: "Buscando…")
+                    : String(localized: "Nenhuma fonte encontrada"))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("sources-search-empty")
+            }
+            ForEach(store.results) { source in
+                NodeSourceRowView(
+                    row: NodeSourceRow(id: source.id, title: source.title, detail: source.id,
+                        isSelected: store.selection.contains(source.id), health: store.health[source.id]),
+                    isSelected: store.selection.contains(source.id),
+                    onToggle: { Task { await store.toggle(source) } })
+            }
+        } header: {
+            Text(verbatim: String(localized: "Resultados"))
+        }
+    }
 
     @ViewBuilder private var content: some View {
         if !importedSources.isEmpty {
