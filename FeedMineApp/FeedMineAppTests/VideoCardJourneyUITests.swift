@@ -277,23 +277,55 @@ final class VideoCardJourneyUITests: XCTestCase {
         //      leitor tem); o conteúdo do item é o que diz que a página é a correspondente, não uma genérica.
         let browserView = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "BrowserView?")).firstMatch
+        // The publisher separates the show/episode prefix and subtitle from its page heading.
+        // Match the actual episode name, rather than accepting Safari's loaded flag on an empty page.
+        let pageTitleProbe = String((cardTitle.components(separatedBy: ": ").last ?? cardTitle)
+            .components(separatedBy: " - ")[0].prefix(40))
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService")
         var pageLoaded = false
         var pageTitleVisible = false
         let loadDeadline = Date().addingTimeInterval(budget(40))
         while Date() < loadDeadline {
             if browserView.exists && browserView.identifier.contains("IsPageLoaded=true") { pageLoaded = true }
             pageTitleVisible = app.webViews.staticTexts
-                .matching(NSPredicate(format: "label CONTAINS[c] %@", titleProbe)).count > 0
-            if pageLoaded || pageTitleVisible { break }
+                .matching(NSPredicate(format: "label CONTAINS[c] %@", pageTitleProbe)).count > 0
+                || safari.webViews.staticTexts
+                    .matching(NSPredicate(format: "label CONTAINS[c] %@", pageTitleProbe)).count > 0
+            if pageTitleVisible { break }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
         notes.append("browser page loaded=\(pageLoaded) itemTitleOnPage=\(pageTitleVisible) "
             + "probe='\(titleProbe)' browser='\(browserView.exists ? browserView.identifier : "none")'")
-        XCTAssertTrue(pageLoaded || pageTitleVisible,
+        attach(app, name: "5-origem-conteudo")
+        let loadedTree = XCTAttachment(string: app.debugDescription)
+        loadedTree.name = "5-arvore-conteudo-carregado"
+        loadedTree.lifetime = .keepAlways
+        add(loadedTree)
+        XCTAssertTrue(pageTitleVisible,
             "a página do item carregou no navegador in-app (loaded=\(pageLoaded), título na página="
                 + "\(pageTitleVisible), browser='\(browserView.exists ? browserView.identifier : "none")')")
-        if !(pageLoaded || pageTitleVisible) {
-            failures.append("a página do item não carregou no navegador in-app no orçamento")
+        if !pageTitleVisible {
+            failures.append("a página não mostrou o episódio '\(pageTitleProbe)' no navegador in-app no orçamento")
+        }
+
+        if pageTitleVisible {
+            let playVideo = app.webViews.buttons["Play video"].firstMatch
+            XCTAssertTrue(playVideo.waitForExistence(timeout: budget(15)), "the publisher offers its video player")
+            if playVideo.exists {
+                playVideo.tap()
+                let pause = app.buttons.matching(NSPredicate(
+                    format: "label BEGINSWITH[c] 'Pause' OR label BEGINSWITH[c] 'Pausar'")).firstMatch
+                let playing = pause.waitForExistence(timeout: budget(30))
+                notes.append("publisher player pause control=\(playing)")
+                XCTAssertTrue(playing, "playing the publisher's video reaches a real pause control")
+                if !playing { failures.append("o player da origem não iniciou após tocar Play video") }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                attach(app, name: "5-video-reproducao")
+                let playbackTree = XCTAttachment(string: app.debugDescription)
+                playbackTree.name = "5-arvore-video-reproducao"
+                playbackTree.lifetime = .keepAlways
+                add(playbackTree)
+            }
         }
 
         // (4) A volta: fechar o navegador devolve o leitor ao feed, na **mesma** carta e na mesma posição.
