@@ -67,9 +67,18 @@ public struct SourceManagementView: View {
             .searchable(text: $searchText, prompt: Text(String(localized: "Buscar fontes")))
             .task(id: searchText) {
                 // A short pause so each keystroke does not become a catalogue read; a newer text cancels this one.
+                // The first appearance (and every return to this screen) runs this with an empty field: it must not
+                // start an intent then, or it would take the feedback lease from the catalogue load running beside it.
+                let text = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else {
+                    if !store.query.isEmpty { await store.clearSearch() }
+                    searchedText = ""
+                    return
+                }
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
                 await store.search(searchText)
+                if !Task.isCancelled { searchedText = searchText }
             }
             .modifier(SourceToolErrorAlert(store: store))
             .toolbar {
@@ -88,6 +97,8 @@ public struct SourceManagementView: View {
     #endif
 
     @State private var searchText = ""
+    /// The text whose answer is on screen. While it differs from the field, the answer is still coming.
+    @State private var searchedText = ""
 
     private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -95,14 +106,16 @@ public struct SourceManagementView: View {
     /// node level uses, so a source turned on here is turned on everywhere.
     @ViewBuilder private var searchResultsSection: some View {
         Section {
-            if store.results.isEmpty {
-                Text(verbatim: store.query.isEmpty
-                    ? String(localized: "Buscando…")
-                    : String(localized: "Nenhuma fonte encontrada"))
+            if searchedText != searchText {
+                Text(verbatim: String(localized: "Buscando…"))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("sources-search-pending")
+            } else if store.results.isEmpty {
+                Text(verbatim: String(localized: "Nenhuma fonte encontrada"))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("sources-search-empty")
             }
-            ForEach(store.results) { source in
+            ForEach(searchedText == searchText ? store.results : []) { source in
                 NodeSourceRowView(
                     row: NodeSourceRow(id: source.id, title: source.title, detail: source.id,
                         isSelected: store.selection.contains(source.id), health: store.health[source.id]),

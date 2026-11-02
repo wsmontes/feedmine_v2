@@ -174,11 +174,14 @@ public struct BookmarkBoxesView: View {
             }
             .tint(.blue)
             if !box.isDefault {
-                Button(role: .destructive) {
+                // Not `role: .destructive`: that role animates the row away at once, while the box stays until the
+                // reader confirms below.
+                Button {
                     deleteTarget = box
                 } label: {
                     Label(String(localized: "Apagar"), systemImage: "trash")
                 }
+                .tint(.red)
             }
         }
     }

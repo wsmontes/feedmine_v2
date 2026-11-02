@@ -250,9 +250,6 @@ struct FeedMineApp: App {
     /// coming back to a context the reader has already read resume the budget instead of renewing it.
     @State private var cadence = EditorialInvitationCadence()
     @State private var showsCuratedHood = false
-    /// Bumped by the Saved list's "Tentar de novo" after a failed read: the list destinations read it, so the
-    /// read runs again without the reader leaving and reopening the surface.
-    @State private var savedReadAttempt = 0
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -703,7 +700,6 @@ struct FeedMineApp: App {
                                     onClose: { popSurface() })
                                     .navigationDestination(for: LibraryRoute.self) { route in
                                         let _ = composition.association?.savedMediaRevision
-                                        let _ = savedReadAttempt
                                         FeedSavedListView(
                                             read: composition.association?.readSavedArticles(inBox: Self.boxID(route)) ?? .failed,
                                             onOpen: { cardID in composition.association?.openSaved(cardID) },
@@ -711,7 +707,7 @@ struct FeedMineApp: App {
                                             onRemove: { cardID in
                                                 composition.association?.removeSaved(cardID, fromBox: Self.boxID(route))
                                             },
-                                            onReload: { savedReadAttempt &+= 1 })
+                                            onReload: { composition.association?.reloadSaved() })
                                             .task { composition.association?.resumeSavedMedia() }
                                     }
                             } else {
@@ -741,7 +737,7 @@ struct FeedMineApp: App {
                                     onOpenCuratedFeed: { key in
                                         popSurface()
                                         do { try await composition.activateSavedPreset(key) }
-                                        catch { readerError = String(localized: "Não foi possível abrir este feed.") }
+                                        catch { reportLibraryFailure(String(localized: "Não foi possível abrir este feed.")) }
                                     },
                                     onClose: { popSurface() })
                             } else {
@@ -757,7 +753,7 @@ struct FeedMineApp: App {
                                         Task {
                                             do { try await composition.openCollectionFeed(id: id) }
                                             catch {
-                                                readerError = String(localized: "Não foi possível abrir o feed desta coleção.")
+                                                reportLibraryFailure(String(localized: "Não foi possível abrir o feed desta coleção."))
                                             }
                                         }
                                     },
@@ -776,12 +772,11 @@ struct FeedMineApp: App {
                     switch destination {
                     case .saved:
                         let _ = composition.association?.savedMediaRevision
-                        let _ = savedReadAttempt
                         FeedSavedListView(read: composition.association?.readSavedArticles() ?? .failed,
                             onOpen: { cardID in composition.association?.openSaved(cardID) },
                             onRetry: { cardID in composition.association?.retrySavedMedia(cardID) },
                             onRemove: { cardID in composition.association?.removeSaved(cardID, fromBox: nil) },
-                            onReload: { savedReadAttempt &+= 1 })
+                            onReload: { composition.association?.reloadSaved() })
                             .task { composition.association?.resumeSavedMedia() }
                     default:
                         // Only destinations the host declares available can be reached (T5 rule).
@@ -834,7 +829,7 @@ struct FeedMineApp: App {
                                     composition.association?.store.showToast(text: String(localized: "Excluído"),
                                         systemImage: "trash")
                                 } catch {
-                                    readerError = String(localized: "Não foi possível excluir. Tente novamente.")
+                                    reportLibraryFailure(String(localized: "Não foi possível excluir. Tente novamente."))
                                 }
                             }
                         }
@@ -852,25 +847,25 @@ struct FeedMineApp: App {
                                 case .collectSources:
                                     do {
                                         guard try composition.collectCurrentSources(named: name) != nil else {
-                                            readerError = String(localized: "Não foi possível reunir estas fontes.")
+                                            reportLibraryFailure(String(localized: "Não foi possível reunir estas fontes."))
                                             return
                                         }
                                         present(.collections)
                                     } catch {
-                                        readerError = String(localized: "Não foi possível reunir estas fontes.")
+                                        reportLibraryFailure(String(localized: "Não foi possível reunir estas fontes."))
                                     }
                                 case .saveSmartBookmark:
                                     do {
                                         guard try await composition.saveCurrentContextAsPreset(named: name,
                                             kind: .smartBookmark) != nil else {
-                                            readerError = String(localized: "Não foi possível salvar o marcador inteligente.")
+                                            reportLibraryFailure(String(localized: "Não foi possível salvar o marcador inteligente."))
                                             return
                                         }
                                         composition.association?.store.showToast(
                                             text: String(localized: "Marcador inteligente salvo"),
                                             systemImage: "sparkles.rectangle.stack")
                                     } catch {
-                                        readerError = String(localized: "Não foi possível salvar o marcador inteligente.")
+                                        reportLibraryFailure(String(localized: "Não foi possível salvar o marcador inteligente."))
                                     }
                                 default: break
                                 }
@@ -1817,7 +1812,7 @@ struct ReaderHost: UIViewControllerRepresentable {
                     onSave: { name in
                         Task {
                             do { try await composition.renameCurrentCuratedFeed(to: name) }
-                            catch { readerError = String(localized: "Não foi possível renomear o feed curado.") }
+                            catch { reportLibraryFailure(String(localized: "Não foi possível renomear o feed curado.")) }
                             popSurface()
                         }
                     },
@@ -1833,7 +1828,7 @@ struct ReaderHost: UIViewControllerRepresentable {
                                 composition.association?.store.showToast(text: String(localized: "Excluído"),
                                     systemImage: "trash")
                             } catch {
-                                readerError = String(localized: "Não foi possível excluir. Tente novamente.")
+                                reportLibraryFailure(String(localized: "Não foi possível excluir. Tente novamente."))
                             }
                         }
                     },
@@ -2038,6 +2033,12 @@ struct ReaderHost: UIViewControllerRepresentable {
     </body></opml>
     """
 
+    /// A library action that failed after its sheet or alert closed. An alert raised while that presentation is
+    /// still going down can be dropped by the platform, so the failure is stated where the reader is: the feed's
+    /// own toast.
+    private func reportLibraryFailure(_ text: String) {
+        composition.association?.store.showToast(text: text, systemImage: "exclamationmark.triangle")
+    }
     /// The box a library route names, or nil for the all-saved list.
     private static func boxID(_ route: LibraryRoute) -> String? {
         if case .box(let id) = route { return id }

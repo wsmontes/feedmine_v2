@@ -3128,6 +3128,10 @@ final class FeedAssociation {
         } catch { reportFailure(error, operation: .save) }
     }
 
+    /// The Saved list's "Tentar de novo" after a failed read: the list destinations read this revision, so bumping it
+    /// is what makes them read again (an app-level `@State` read only inside a destination closure may not be).
+    func reloadSaved() { savedMediaRevision &+= 1 }
+
     /// The Saved list's own "Remover": takes the article out of one box, or out of every box when the list shows
     /// all saved articles. Unlike the card's toggle it can never *add* (a toggle on a card saved in another box
     /// would save it again in the preferred one), and it states the result, since the row disappears.
