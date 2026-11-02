@@ -217,6 +217,10 @@ struct FeedMineApp: App {
     /// *sheet's* own presentation, anchored on the sheet (`exportSheet`), not the feed's: the reader asks for it
     /// while the sheet is up, and a surface presented by a presenter that already has one up is deferred.
     @State private var sharedExport: SharedLink?
+    /// The written export the reader asked to save to a location of their choice ("Salvar arquivo").
+    @State private var exportFileToSave: URL?
+    /// The export could not be written (or moved): stated by the export sheet itself, which is on top.
+    @State private var exportWriteFailed = false
     /// Presents the V1-upgrade notice on the window's topmost controller, which is above the reader's own
     /// presented surface. The receipt is recorded **only** by the reader's acknowledgement.
     @MainActor private func presentLegacyUpgradeNoticeIfOwed() {
@@ -714,7 +718,8 @@ struct FeedMineApp: App {
                                     },
                                     onOpenCuratedFeed: { key in
                                         popSurface()
-                                        try? await composition.activateSavedPreset(key)
+                                        do { try await composition.activateSavedPreset(key) }
+                                        catch { readerError = String(localized: "Não foi possível abrir este feed.") }
                                     },
                                     onClose: { popSurface() })
                             } else {
@@ -727,7 +732,12 @@ struct FeedMineApp: App {
                                 CollectionsView(store: store,
                                     onOpenFeed: { id in
                                         popSurface()
-                                        Task { try? await composition.openCollectionFeed(id: id) }
+                                        Task {
+                                            do { try await composition.openCollectionFeed(id: id) }
+                                            catch {
+                                                readerError = String(localized: "Não foi possível abrir o feed desta coleção.")
+                                            }
+                                        }
                                     },
                                     onClose: { popSurface() })
                             } else {
@@ -792,26 +802,56 @@ struct FeedMineApp: App {
                     if libraryPrompt == .deleteSmartFeed || libraryPrompt == .deleteCuratedFeed {
                         Button("Cancelar", role: .cancel) { libraryPrompt = nil }
                         Button("Excluir", role: .destructive) {
-                            Task { try? await composition.deleteCurrentPreset() }
+                            Task {
+                                do {
+                                    try await composition.deleteCurrentPreset()
+                                    composition.association?.store.showToast(text: String(localized: "Excluído"),
+                                        systemImage: "trash")
+                                } catch {
+                                    readerError = String(localized: "Não foi possível excluir. Tente novamente.")
+                                }
+                            }
                         }
                     } else {
                         TextField("Nome", text: $promptName)
                         Button("Cancelar", role: .cancel) { libraryPrompt = nil }
                         Button("Salvar") {
-                            let name = promptName
-                            guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                            let name = promptName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            // Read the prompt now: dismissing the alert clears `libraryPrompt`, and a task that read
+                            // it later could find nil and do nothing.
+                            let prompt = libraryPrompt
+                            guard !name.isEmpty else { return }
                             Task {
-                                switch libraryPrompt {
+                                switch prompt {
                                 case .collectSources:
-                                    _ = try? composition.collectCurrentSources(named: name)
-                                    present(.collections)
+                                    do {
+                                        guard try composition.collectCurrentSources(named: name) != nil else {
+                                            readerError = String(localized: "Não foi possível reunir estas fontes.")
+                                            return
+                                        }
+                                        present(.collections)
+                                    } catch {
+                                        readerError = String(localized: "Não foi possível reunir estas fontes.")
+                                    }
                                 case .saveSmartBookmark:
-                                    _ = try? await composition.saveCurrentContextAsPreset(named: name,
-                                        kind: .smartBookmark)
+                                    do {
+                                        guard try await composition.saveCurrentContextAsPreset(named: name,
+                                            kind: .smartBookmark) != nil else {
+                                            readerError = String(localized: "Não foi possível salvar o marcador inteligente.")
+                                            return
+                                        }
+                                        composition.association?.store.showToast(
+                                            text: String(localized: "Marcador inteligente salvo"),
+                                            systemImage: "sparkles.rectangle.stack")
+                                    } catch {
+                                        readerError = String(localized: "Não foi possível salvar o marcador inteligente.")
+                                    }
                                 default: break
                                 }
                             }
                         }
+                        // An empty name used to close the prompt and do nothing.
+                        .disabled(promptName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 } message: {
                     Text(verbatim: libraryPrompt == .collectSources
@@ -1741,7 +1781,8 @@ struct ReaderHost: UIViewControllerRepresentable {
                 CuratedFeedInspectorView(summary: summary,
                     onSave: { name in
                         Task {
-                            try? await composition.renameCurrentCuratedFeed(to: name)
+                            do { try await composition.renameCurrentCuratedFeed(to: name) }
+                            catch { readerError = String(localized: "Não foi possível renomear o feed curado.") }
                             popSurface()
                         }
                     },
@@ -1751,7 +1792,15 @@ struct ReaderHost: UIViewControllerRepresentable {
                     },
                     onDelete: {
                         popSurface()
-                        Task { try? await composition.deleteCurrentPreset() }
+                        Task {
+                            do {
+                                try await composition.deleteCurrentPreset()
+                                composition.association?.store.showToast(text: String(localized: "Excluído"),
+                                    systemImage: "trash")
+                            } catch {
+                                readerError = String(localized: "Não foi possível excluir. Tente novamente.")
+                            }
+                        }
                     },
                     onClose: { popSurface() })
             }
@@ -1774,8 +1823,16 @@ struct ReaderHost: UIViewControllerRepresentable {
                     exportRequest = ReaderExportRequest(scope: choice.scope, format: format)
                     exportText = composition.exportPreview(exportRequest)
                 },
-                onShare: { sharedExport = writtenExport() },
-                onSave: { sharedExport = writtenExport() },
+                onShare: {
+                    sharedExport = writtenExport()
+                    exportWriteFailed = sharedExport == nil
+                },
+                // "Salvar arquivo" used to open the same share sheet as "Compartilhar". It now asks where to keep
+                // the file (the system's own location picker), which is what the label promises.
+                onSave: {
+                    exportFileToSave = writtenExport()?.url
+                    exportWriteFailed = exportFileToSave == nil
+                },
                 onClose: { popSurface() })
                 // The document is produced by the app's own coordinator, and the sheet is what shows it: it is
                 // recomputed here so the preview is never the value a previous opening left behind, and so it is
@@ -1802,6 +1859,16 @@ struct ReaderHost: UIViewControllerRepresentable {
         // move.
         .sheet(item: $sharedExport) { link in
             shareSurface(link)
+        }
+        .fileMover(isPresented: Binding(get: { exportFileToSave != nil },
+            set: { if !$0 { exportFileToSave = nil } }), file: exportFileToSave) { result in
+            exportFileToSave = nil
+            if case .failure = result { exportWriteFailed = true }
+        }
+        .alert(String(localized: "Não foi possível exportar"), isPresented: $exportWriteFailed) {
+            Button(String(localized: "OK"), role: .cancel) {}
+        } message: {
+            Text(verbatim: String(localized: "O arquivo não pôde ser gravado. Tente novamente."))
         }
     }
 

@@ -25,6 +25,8 @@ public struct ReaderDiscoveryPreferencesView: View {
     @State private var feedName = ""
     @State private var createdKey: ContextKey?
     @State private var isCreating = false
+    /// The last creation failed: stated under the button, since a nil answer used to look exactly like "try again".
+    @State private var createFailed = false
 
     public init(store: ReaderSettingsStore, languages: [OnboardingLanguage] = [],
         topics: [OnboardingTopic] = [], places: [OnboardingRegion] = [],
@@ -75,7 +77,13 @@ public struct ReaderDiscoveryPreferencesView: View {
                         let recipe = store.settings.discoveryProfile
                         let name = feedName
                         Task {
-                            createdKey = await onCreateFeed(recipe, name)
+                            let created = await onCreateFeed(recipe, name)
+                            createFailed = created == nil
+                            if let created {
+                                createdKey = created
+                                // A second tap would create a second feed with the same name.
+                                feedName = ""
+                            }
                             isCreating = false
                         }
                     } label: {
@@ -99,6 +107,12 @@ public struct ReaderDiscoveryPreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("discovery-create-note")
+                if createFailed {
+                    Text(verbatim: String(localized: "Não foi possível criar o feed. Tente novamente."))
+                        .font(.caption)
+                        .foregroundStyle(FeedDesignTokens.Palette.statusCaution)
+                        .accessibilityIdentifier("discovery-create-failed")
+                }
             }
         }
     }
