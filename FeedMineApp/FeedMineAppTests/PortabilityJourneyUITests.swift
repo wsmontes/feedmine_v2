@@ -16,6 +16,7 @@ final class PortabilityJourneyUITests: XCTestCase {
         // The add-feed fixture installs its own URLProtocol and deliberately fails the development feeds, so this
         // launch starts from the empty-selection surface; the reader chrome and the menu are still the product's.
         let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"

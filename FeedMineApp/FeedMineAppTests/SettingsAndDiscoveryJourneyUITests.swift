@@ -46,7 +46,10 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
         XCTAssertTrue(SurfaceTest.scrollIntoView(rulesLink, in: app, timeout: 20))
         rulesLink.tap()
         XCTAssertTrue(app.navigationBars["Filtros de conteúdo"].waitForExistence(timeout: 20))
-        app.buttons["content-filter-add-rule"].tap()
+        let addRule = app.buttons["content-filter-add-rule"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(addRule, in: app, timeout: 30),
+            "the reader can reach their own words below the templates and source exclusions")
+        addRule.tap()
         let ruleAlert = app.alerts["Nova regra"]
         XCTAssertTrue(ruleAlert.waitForExistence(timeout: 10))
         ruleAlert.textFields.firstMatch.typeText("palavra-teste")

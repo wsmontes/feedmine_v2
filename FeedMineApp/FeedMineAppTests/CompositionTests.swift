@@ -453,7 +453,13 @@ final class CompositionTests: XCTestCase {
         let segment = PublicationStore.SegmentRecord(id: FeedSegmentID(), editionID: edition.id, ordinal: 0,
             segmentSeed: 1, publicationSchemaVersion: 1, createdAt: Date(timeIntervalSince1970: 11),
             cardIDs: [card.id])
-        try PublicationStore(database: database).createEdition(edition, firstSegment: segment, cards: [card])
+        let sessions = SessionStore(database: database)
+        let owner = try ReaderHistoryBindingStore(database: database).resolve(logicalKey: editorial.contextKey)
+        let prepared = try sessions.prepareBinding(owner.id)
+        defer { _ = try? sessions.cancelPreparedBinding(prepared) }
+        try PublicationStore(database: database).createEdition(edition, firstSegment: segment, cards: [card],
+            expectedSourceExclusions: nil, bindingPublication: .init(activation: prepared,
+                expectedActiveEditionID: try sessions.editionID(bindingActivation: prepared)))
         return card
     }
 
@@ -3382,7 +3388,8 @@ final class CompositionTests: XCTestCase {
         await composition.inactive()
         await association.close()
         let offline = try RuntimeDatabase(location: .init(directory: directory))
-        try PublicationStore(database: offline).markSeen(editionID: editionID, cardID: target.id)
+        try PublicationStore(database: offline).markSeen(editionID: editionID, cardID: target.id,
+            bindingActivation: association.bindingActivation)
         let fresh = OriginRecordID(), freshRevision = OriginRevisionID()
         try ContentStore(database: offline).commitCanonicalChange(.init(recordID: fresh,
             externalObjectIdentity: .init(connectorKind: .syndication, namespace: "pd5-lifecycle",

@@ -21,6 +21,14 @@ enum SurfaceTest {
         arguments: [String] = [],
         namespace: String = UUID().uuidString) -> XCUIApplication {
         let app = XCUIApplication()
+        // These journeys assert Portuguese copy. Keep them independent of the simulator's language,
+        // while allowing localization journeys to supply their own language and region.
+        if !arguments.contains("-AppleLanguages") {
+            app.launchArguments += ["-AppleLanguages", "(pt-BR)"]
+        }
+        if !arguments.contains("-AppleLocale") {
+            app.launchArguments += ["-AppleLocale", "pt_BR"]
+        }
         app.launchArguments += arguments
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"

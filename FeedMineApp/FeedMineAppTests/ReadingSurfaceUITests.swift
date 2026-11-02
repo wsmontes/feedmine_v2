@@ -89,6 +89,8 @@ final class ReadingSurfaceUITests: XCTestCase {
     private func launched(shape: String, blocked: Bool = false, largeText: Bool = false,
         media: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
+        // The fixture's origin/action wording is asserted in Portuguese below.
+        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
@@ -464,7 +466,7 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(save.waitForExistence(timeout: 20), "the card offers saving")
         XCTAssertTrue(save.isHittable)
         XCTAssertEqual(save.label, "Salvar artigo", "the save control states its action in words")
-        XCTAssertEqual(save.value as? String, "not bookmarked", "and the state the reader's own list records")
+        XCTAssertEqual(save.value as? String, "não salvo", "and the state the reader's own list records")
         attach(app, "nn07-card-controls-at-the-largest-text-size")
 
         open.tap()

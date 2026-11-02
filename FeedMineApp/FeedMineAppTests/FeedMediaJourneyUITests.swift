@@ -74,6 +74,38 @@ final class FeedMediaJourneyUITests: XCTestCase {
 
     // MARK: - A jornada
 
+    /// Separate from the first-screen requirement above: follow the real reader's scroll to prove
+    /// whether prepared images can actually be reached. This does not waive a first-screen failure.
+    func testRealImagesAreReachableWhileExploringTheFeed() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["FEEDMINE_LIVE_IMAGES"] == "1",
+            "opt-in real catalogue/network journey")
+        let app = launched()
+        defer { app.terminate() }
+        let broad = app.buttons["welcome-broad"]
+        XCTAssertTrue(broad.waitForExistence(timeout: 90), "a fresh reader can start without configuring sources")
+        broad.tap()
+        let deadline = Date().addingTimeInterval(180)
+        var visited = Set<String>()
+        var imageID: String?
+        while Date() < deadline {
+            let cards = visibleCards(app)
+            visited.formUnion(cards.map(\.identifier))
+            if let card = cards.first(where: { isImageDrawn(of: $0, in: app) }) {
+                imageID = card.identifier
+                break
+            }
+            if cards.isEmpty { Thread.sleep(forTimeInterval: 1) }
+            else { app.scrollViews.firstMatch.swipeUp() }
+        }
+        attach(app, name: "real-images-after-exploring")
+        XCTAssertNotNil(imageID,
+            "Exploring \(visited.count) real cards must reach a decoded image in the viewport")
+        let proof = XCTAttachment(string: "REAL_IMAGES cards=\(visited.count) image=\(imageID ?? "none")")
+        proof.name = "REAL_IMAGES summary"
+        proof.lifetime = .keepAlways
+        add(proof)
+    }
+
     func testTheShippedCatalogueDeliversAnImageAnAudioItemAndAVideoItem() throws {
         let started = Date()
         journeyDeadline = started.addingTimeInterval(Self.journeyBudget)

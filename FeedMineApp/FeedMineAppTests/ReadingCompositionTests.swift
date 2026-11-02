@@ -233,7 +233,13 @@ final class ReadingCompositionTests: XCTestCase {
             let segment = PublicationStore.SegmentRecord(id: FeedSegmentID(), editionID: edition.id,
                 ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1, createdAt: time,
                 cardIDs: [published.id])
-            try publication.createEdition(edition, firstSegment: segment, cards: [published])
+            let sessions = SessionStore(database: association.database)
+            let owner = try ReaderHistoryBindingStore(database: association.database).resolve(logicalKey: context)
+            let prepared = try sessions.prepareBinding(owner.id)
+            defer { _ = try? sessions.cancelPreparedBinding(prepared) }
+            try publication.createEdition(edition, firstSegment: segment, cards: [published],
+                expectedSourceExclusions: nil, bindingPublication: .init(activation: prepared,
+                    expectedActiveEditionID: try sessions.editionID(bindingActivation: prepared)))
             XCTAssertEqual(try contents.currentRevision(originRecordID: originID), legacy)
             let windowBefore = association.store.state.presentation?.window.items.map(\.id)
             guard case .site = assertTheReadTouchesNothing(association, published.id) else {

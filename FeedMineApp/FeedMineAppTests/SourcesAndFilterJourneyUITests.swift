@@ -94,11 +94,10 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
     /// F12/V1's filter contract: the sheet going away **is** the apply. The node level's Concluído closes the
     /// whole surface, so a draft edited before walking Filtros → Países → nó reaches the same `dismiss()` the
     /// toolbar uses. Before this, that close dropped the edits and left the old filter applied.
-    /// Assertions use accessibility identifiers only: this device runs the app in English, so the localized titles
-    /// ("Filtros") are not stable selectors.
+    /// Run this journey explicitly in English; identifiers keep navigation independent of translated titles.
     @MainActor
     func testFilterDraftEditedBeforeTheNodeLevelIsAppliedWhenThatLevelCloses() throws {
-        let app = SurfaceTest.launchFixture()
+        let app = SurfaceTest.launchFixture(arguments: ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
         app.buttons["filter-button"].tap()
         XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 30), "the filter sheet is presented")
         let preset = app.buttons["preset-option-lastClicked"]
