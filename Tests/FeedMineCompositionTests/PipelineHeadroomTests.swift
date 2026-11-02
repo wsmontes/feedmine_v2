@@ -9,7 +9,7 @@ import FeedMineEditorial
 import FeedMineRuntime
 
 /// R09: the stage budgets are an explicit function of **measured** pressure. The bootstrap keeps the documented
-/// 48 plan / 8 sockets / 128 examined / 1 MB (PM-028A/PM-029 scaled the examined ladder to the prepared reserve's
+/// 48 plan / 8 sockets / 128 examined / 4 MB (PM-028A/PM-029 scaled the examined ladder to the prepared reserve's
 /// depth); pressure may only reduce work, never below one eligible target, and never turns local reading off.
 /// Fairness is asserted as progress of an eligible target, not as created tasks.
 final class PipelineHeadroomTests: XCTestCase {
@@ -125,6 +125,24 @@ final class PipelineHeadroomTests: XCTestCase {
             CollectionLaunchSettings.defaultInitialParallelism)
         XCTAssertLessThanOrEqual(critical.acquisition.byteCapacityPerBatch,
             nominal.acquisition.byteCapacityPerBatch)
+    }
+
+    /// A large single-document feed (a podcast with its back catalogue) fits the nominal pull; pressure still reads
+    /// at most the previous rungs, so the raise never costs a hot device, a constrained network or a full disk.
+    func testNominalPullReadsLargeFeedsAndPressureKeepsTheSmallerRungs() {
+        XCTAssertEqual(StageBudgetPolicy.bootstrap().acquisition.byteCapacityPerBatch, 4_000_000)
+        XCTAssertEqual(StageBudgetPolicy.budget(pressure: facts(), settings: .init())
+            .acquisition.byteCapacityPerBatch, 4_000_000)
+        XCTAssertEqual(StageBudgetPolicy.budget(pressure: facts(thermal: .fair), settings: .init())
+            .acquisition.byteCapacityPerBatch, 4_000_000)
+        XCTAssertEqual(StageBudgetPolicy.budget(pressure: facts(thermal: .serious), settings: .init())
+            .acquisition.byteCapacityPerBatch, 500_000)
+        XCTAssertEqual(StageBudgetPolicy.budget(pressure: facts(thermal: .critical), settings: .init())
+            .acquisition.byteCapacityPerBatch, 250_000)
+        XCTAssertEqual(StageBudgetPolicy.budget(pressure: facts(constrained: true), settings: .init())
+            .acquisition.byteCapacityPerBatch, 500_000)
+        XCTAssertEqual(StageBudgetPolicy.budget(pressure: facts(free: 50_000_000), settings: .init())
+            .acquisition.byteCapacityPerBatch, 500_000)
     }
 
     /// PM-028A/PM-029: the examined window is scaled to the prepared reserve's depth **and** still follows the

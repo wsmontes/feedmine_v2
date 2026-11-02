@@ -3,7 +3,7 @@
 //
 // Responsibility:
 // R09: map **measured** pressure facts to the explicit resource authorization of one opportunity. The bootstrap
-// (48 plan / 8 sockets / 128 examined / 1 MB) is used when nothing was measured; measured pressure may only reduce
+// (48 plan / 8 sockets / 128 examined / 4 MB) is used when nothing was measured; measured pressure may only reduce
 // work, never invent capacity and never below one eligible target (fairness).
 //
 // PM-028A/PM-029: the examined window is the prepared reserve's material, so its nominal ceiling is the reserve's
@@ -95,13 +95,20 @@ public enum StageBudgetPolicy {
     }
 
     /// The documented bootstrap: `CollectionLaunchSettings.defaultInitialParallelism` (48) planned per opportunity,
-    /// `maximumConcurrentTargets` (8) opening at once, `preparedReserveDepth` examined candidates and 1 MB per pull.
-    /// No measured pressure exists, so nothing is adapted.
+    /// `maximumConcurrentTargets` (8) opening at once, `preparedReserveDepth` examined candidates and
+    /// `nominalFeedBodyBytes` per pull. No measured pressure exists, so nothing is adapted.
     public static func bootstrap(_ settings: CollectionLaunchSettings = .init()) -> StageBudget {
         .init(acquisition: .init(targetWorkCapacity: settings.targetWorkCapacity,
             batchCapacityPerNewExecution: 1, observationCapacityPerBatch: 32,
-            byteCapacityPerBatch: 1_000_000)!, examinedCandidateCapacity: preparedReserveDepth)
+            byteCapacityPerBatch: nominalFeedBodyBytes)!, examinedCandidateCapacity: preparedReserveDepth)
     }
+
+    /// The largest feed document one pull reads when nothing is pressured. It was 1 MB, and a body past the cap is
+    /// `bodyTooLarge` (remote content, no retry): a feed that keeps its whole back catalogue in one document (a
+    /// long-running podcast is the usual case) passes 1 MB and never produced a card. V1 streamed up to 20 MB (`FeedHTTPSync.maxFeedBytes`);
+    /// 4 MB keeps the eight concurrent pulls at 32 MB of bodies at most. The pressure rungs below are unchanged:
+    /// a constrained network, low storage or a hot device still read 500 KB or less.
+    public static let nominalFeedBodyBytes = 4_000_000
 
     /// Measured pressure may reduce the plan, the examined window and the pull's byte budget. It never exceeds the
     /// bootstrap and never drops the plan below one target: a pressured reader still progresses, one target at a
@@ -113,7 +120,7 @@ public enum StageBudgetPolicy {
         let authorized = settings.targetWorkCapacity
         var capacity = authorized
         var examined = ladder(32)
-        var bytes = 1_000_000
+        var bytes = nominalFeedBodyBytes
         switch pressure.thermal {
         case .nominal: break
         case .fair:

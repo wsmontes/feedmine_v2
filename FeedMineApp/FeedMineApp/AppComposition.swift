@@ -3528,7 +3528,7 @@ final class FeedAssociation {
     /// coordinator is built, from the same settings value.
     var resources: FeedRunwayDriverResources {
         // R09/P05: the opportunity's budgets come from the one policy, fitted to the pressure facts the platform
-        // can state now. Nothing measured → the documented bootstrap (48/8/32/1 MB); pressure only reduces, an
+        // can state now. Nothing measured → the documented bootstrap (48/8/32/4 MB); pressure only reduces, an
         // explicit zero stays zero, and local reading is never turned off. Every fact here is an in-memory snapshot:
         // the volume read happens in `storageCapacity.refresh()` on a background executor.
         let budget = StageBudgetPolicy.budget(pressure: stagePressureFacts(), settings: launchSettings)
