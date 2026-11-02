@@ -181,7 +181,7 @@ final class FeedNativeStageHostTests: XCTestCase {
         XCTAssertEqual(native.currentWindowIDs, Array(ids[0..<3]),
             "The native writer must track actual drawn IDs, not the semantic rail")
         XCTAssertTrue(native.observedVisibleCardIDs.contains(ids[1]),
-            "Common card B missing from writer. Visible-native IDs: \(native.observedVisibleCardIDs.map { $0.rawValue.uuidString }.sorted()), capture probeEntries: \(FeedVisualCapture.probeEntries), probeGuards: \(FeedVisualCapture.probeGuards), cardObservations: \(FeedVisualCapture.cardObservations), physicalIDs: \(native.currentWindowIDs.count), nativeScrollAttached: \(native.scrollView != nil)")
+            "Common card B missing from writer. Visible-native IDs: \(native.observedVisibleCardIDs.map { $0.rawValue.uuidString }.sorted()), capture probeEntries: \(FeedVisualCapture.probeEntries), probeGuards: \(FeedVisualCapture.probeGuards), cardObservations: \(FeedVisualCapture.cardObservations), physicalIDs: \(native.currentWindowIDs.count), nativeScrollAttached: \(native.scrollView != nil), beforeBinding: \(native.nativeProofsBeforeBinding), afterBinding: \(native.nativeProofsAfterBinding), outsideViewport: \(native.nativeProofsOutsideViewport), BProof: \(String(describing: native.nativeLastPhysicalProofs[ids[1]])), scrollOffset: \(scroll.contentOffset.y), scrollBounds: \(scroll.bounds)")
         let offsetBefore = scroll.contentOffset.y
         let eventsBefore = viewportEvents
 
