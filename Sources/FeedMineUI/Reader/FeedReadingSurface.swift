@@ -81,6 +81,19 @@ public struct FeedReadingSurface: View {
 
             Spacer(minLength: 0)
 
+            // The local reader had no way to pass the article on: share (which also carries "Copiar") was only a
+            // card action in the feed. The system surface is presented by this view's own presentation.
+            if let siteURL = content.siteURL {
+                ShareLink(item: siteURL, subject: Text(verbatim: content.headline)) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.body)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("reading.share")
+                .accessibilityLabel(String(localized: "Compartilhar"))
+            }
+
             if let onOpenSite {
                 // At the accessibility sizes a one-line text truncated to "Abrir…". The header now shows a short
                 // visual label beside an *external-opening* glyph — never the share icon: this action opens the
