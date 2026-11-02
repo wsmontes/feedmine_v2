@@ -103,73 +103,74 @@ Para validar no Mac, além da suíte do pacote:
 
 ## Rodada 3: sequenciamento v7 (mesmo branch)
 
-Edi??es novas passam a declarar `sequencingPolicyVersion` 7 (`.sourceShareThenMaximumDistance`). A cada
-escolha, entre os candidatos compat?veis com PD-4, ficam s? as fontes com a menor participa??o nas ?ltimas 32
-posi??es da Edition (regra de provedor menos usado da V1). Dentro desse empate, o v6 decide como antes (tipo ?
-assuntos ? fonte ? ordem base). Sem aleatoriedade.
+Edições novas passam a declarar `sequencingPolicyVersion` 7 (`.sourceShareThenMaximumDistance`). A cada
+escolha, entre os candidatos compatíveis com PD-4, ficam só as fontes com a menor participação nas últimas 32
+posições da Edition (regra de provedor menos usado da V1). Dentro desse empate, o v6 decide como antes (tipo →
+assuntos → fonte → ordem base). Sem aleatoriedade.
 
-- C?digo: `MaximumDistanceSequencing.sequence(..., sourceShareWindow:)`, `SelectionEngine` (v6 s? com revis?o 6,
-  v7 s? com revis?o 7), `LocalProductionSlice` (v7 l? as mesmas posi??es completas), `PublicationPreparation`
-  (v7 congela o tipo de m?dia como o v6), `FeedAssociation.sequencingBehavior` e vers?o 7 na composi??o.
-- Edi??es j? publicadas em v6 continuam em v6 quando restauradas (mesma conven??o da passagem 5?6). Uma
-  instala??o existente s? v? o v7 quando uma Edition nova ? criada para o contexto.
+- Código: `MaximumDistanceSequencing.sequence(..., sourceShareWindow:)`, `SelectionEngine` (v6 só com revisão 6,
+  v7 só com revisão 7), `LocalProductionSlice` (v7 lê as mesmas posições completas), `PublicationPreparation`
+  (v7 congela o tipo de mídia como o v6), `FeedAssociation.sequencingBehavior` e versão 7 na composição.
+- Edições já publicadas em v6 continuam em v6 quando restauradas (mesma convenção da passagem 5→6). Uma
+  instalação existente só vê o v7 quando uma Edition nova é criada para o contexto.
 - Prova offline: `evidence/2026-11-02-v6-sequencing-sim/v7_sim.py` e `v7_output.txt`. Um podcast entre 20
-  feeds de texto: v6 25/50, v7 3/50, tamb?m em oportunidades de 4 cards lendo o hist?rico. Fonte que entra
-  depois de 200 posi??es: 3 cards e depois rod?zio normal.
-- Testes: `SourceShareSequencingTests` (novo; n?meros iguais aos da simula??o), `CompositionTests` (vers?o 7,
-  8 cai para rec?ncia), `MaximumDistanceSequencingTests` (7 e 8 com o comportamento v6 n?o herdam v6),
+  feeds de texto: v6 25/50, v7 3/50, também em oportunidades de 4 cards lendo o histórico. Fonte que entra
+  depois de 200 posições: 3 cards e depois rodízio normal.
+- Testes: `SourceShareSequencingTests` (novo; números iguais aos da simulação), `CompositionTests` (versão 7,
+  8 cai para recência), `MaximumDistanceSequencingTests` (7 e 8 com o comportamento v6 não herdam v6),
   `PublicationPreparationTests` (v7 congela o tipo).
-- No Mac: rodar esses quatro primeiro. Depois, num aparelho com o cat?logo real, comparar os 50 primeiros
-  cards de uma Edition nova com os da Edition v6 atual (participa??o de ?udio e fontes distintas).
+- No Mac: rodar esses quatro primeiro. Depois, num aparelho com o catálogo real, comparar os 50 primeiros
+  cards de uma Edition nova com os da Edition v6 atual (participação de áudio e fontes distintas).
 
 ## Rodada 4: teto de feed e imagens decorativas (mesmo branch)
 
 - **Teto do corpo do feed: 1 MB para 4 MB no estado nominal** (`StageBudgetPolicy.nominalFeedBodyBytes`). Um feed
-  acima do teto d? `bodyTooLarge` (conte?do remoto, sem nova tentativa), ent?o um podcast que publica o cat?logo
-  inteiro num documento nunca gerava card. Os degraus de press?o n?o mudaram: 500 KB em rede limitada, pouco
-  espa?o ou aquecimento s?rio; 250 KB em cr?tico. Teste: `PipelineHeadroomTests.testNominalPullReadsLargeFeedsAndPressureKeepsTheSmallerRungs`.
-  No aparelho: medir mem?ria com 8 feeds grandes simult?neos.
+  acima do teto dá `bodyTooLarge` (conteúdo remoto, sem nova tentativa), então um podcast que publica o catálogo
+  inteiro num documento nunca gerava card. Os degraus de pressão não mudaram: 500 KB em rede limitada, pouco
+  espaço ou aquecimento sério; 250 KB em crítico. Teste: `PipelineHeadroomTests.testNominalPullReadsLargeFeedsAndPressureKeepsTheSmallerRungs`.
+  No aparelho: medir memória com 8 feeds grandes simultâneos.
 - **Imagens decorativas filtradas na origem**, para o item virar card de texto em vez de imagem declarada que
   falha e sai da fila (INV-17):
   - marcadores novos em `SyndicationMediaLocator.decorativeMarkers`: smilies do WordPress (`/wp-includes/images/smilies/`,
-    `wp-smiley`), bot?es de coment?rio do WordPress.com, Feedsportal, `doubleclick` em qualquer dom?nio, `/avatars/`;
-  - `<img>` com `width`/`height` declarados: um lado de 1 ou 2 px, ou os dois ? 150, ? pulado e a pr?xima imagem
+    `wp-smiley`), botões de comentário do WordPress.com, Feedsportal, `doubleclick` em qualquer domínio, `/avatars/`;
+  - `<img>` com `width`/`height` declarados: um lado de 1 ou 2 px, ou os dois ≤ 150, é pulado e a próxima imagem
     vale (`isDecorativeDeclaredSize`);
-  - `media:thumbnail`/`media:content` com um lado declarado de 1 ou 2 px ? recusado mesmo sem o outro lado.
+  - `media:thumbnail`/`media:content` com um lado declarado de 1 ou 2 px é recusado mesmo sem o outro lado.
   - Testes: `SyndicationMediaLocatorDecorativeTests` (novo) e `SyndicationTranslatorTests.test28b...`.
-  - Efeito colateral esperado: como as URLs de m?dia entram na impress?o material, itens que tinham uma dessas
-    imagens ganham uma revis?o nova na pr?xima coleta. Cards j? publicados n?o mudam (PD-5).
+  - Efeito colateral esperado: como as URLs de mídia entram na impressão material, itens que tinham uma dessas
+    imagens ganham uma revisão nova na próxima coleta. Cards já publicados não mudam (PD-5).
 
-**Fora desta m?quina, de prop?sito:**
-- Mem?ria de visto/aberto por mat?ria: migra??o de banco e decis?o de produto sobre "lido".
-- Chave de provedor/agregador no v7: `providerID` ? sempre nil em produ??o (`SyndicationTranslator.swift`, `providerID: nil`)
-  e nenhum campo de publicador original ? lido; exige modelo novo.
-- Limite por fonte e filtros antes do `LIMIT`: a janela ? paginada por cursor e um corte em SQL pula linhas para
+**Fora desta máquina, de propósito:**
+- Memória de visto/aberto por matéria: migração de banco e decisão de produto sobre "lido".
+- Chave de provedor/agregador no v7: `providerID` é sempre nil em produção (`SyndicationTranslator.swift`, `providerID: nil`)
+  e nenhum campo de publicador original é lido; exige modelo novo.
+- Limite por fonte e filtros antes do `LIMIT`: a janela é paginada por cursor e um corte em SQL pula linhas para
   sempre (`ContentStore.candidateWindow`). Precisa de desenho e testes rodando.
-- Idade m?xima: vários fixtures usam datas fixas antigas (ex.: 1_700_000_000, nov/2023); um corte quebraria testes que n?o consigo rodar aqui.
-- Busca ao voltar depois de N minutos: a coleta s? nasce da press?o do runway (`RunwayController.acquisitionIntentIfEligible`);
+- Idade máxima: vários fixtures usam datas fixas antigas (ex.: 1_700_000_000, nov/2023); um corte quebraria testes
+  que não consigo rodar aqui.
+- Busca ao voltar depois de N minutos: a coleta só nasce da pressão do runway (`RunwayController.acquisitionIntentIfEligible`);
   um gatilho por tempo mexe nesse contrato.
-- Port?es de qualidade por item e idioma detectado: mudam a contagem de rejei??es e a identidade do que entra.
+- Portões de qualidade por item e idioma detectado: mudam a contagem de rejeições e a identidade do que entra.
 
 ## Rodada 5: leitura em painel que desce (NF-10)
 
-O leitor local deixou de ser `.fullScreen` e virou `.pageSheet` (detent `.large`, al?a vis?vel); o site
-(`SFSafariViewController`) tamb?m ? apresentado como `.pageSheet`. Arrastar para baixo fecha, como na V1
-(`.sheet(item:)` em `FeedScreen.swift:260` da V1). O `ReaderHost` continua sendo a apresenta??o UIKit a partir do
-topo (a raz?o est? em `FeedMineApp.swift`, coment?rio de `AppSurface`); s? o estilo e o retorno mudaram.
+O leitor local deixou de ser `.fullScreen` e virou `.pageSheet` (detent `.large`, alça visível); o site
+(`SFSafariViewController`) também é apresentado como `.pageSheet`. Arrastar para baixo fecha, como na V1
+(`.sheet(item:)` em `FeedScreen.swift:260` da V1). O `ReaderHost` continua sendo a apresentação UIKit a partir do
+topo (a razão está em `FeedMineApp.swift`, comentário de `AppSurface`); só o estilo e o retorno mudaram.
 
-- `ReaderHost.Coordinator` agora ? `UIAdaptivePresentationControllerDelegate`. `presentationControllerDidDismiss`
-  esquece a p?gina sem pedir outro dismiss ao UIKit e chama `onFinish()`, o mesmo caminho do bot?o Fechar. Um site
-  arrastado sobre o texto encerra o leitor, como o Fechar do Safari j? fazia.
+- `ReaderHost.Coordinator` agora é `UIAdaptivePresentationControllerDelegate`. `presentationControllerDidDismiss`
+  esquece a página sem pedir outro dismiss ao UIKit e chama `onFinish()`, o mesmo caminho do botão Fechar. Um site
+  arrastado sobre o texto encerra o leitor, como o Fechar do Safari já fazia.
 - Testes novos: `ReaderHostTests.testDraggingTheTextPageDownFinishesTheReaderOnce` e
   `testDraggingTheSiteDownFinishesTheReader`.
 - O feed fica na janela por baixo do painel. Antes, com `.fullScreen`, o `onDisappear` de `FeedNativeViewport`
-  (linhas 232-241) pode ter disparado ao abrir o leitor; agora n?o dispara. N?o verificado em execu??o.
-- No Mac, rodar `ReaderHostTests` e as su?tes de leitura que medem a posi??o na volta:
+  (linhas 232-241) pode ter disparado ao abrir o leitor; agora não dispara. Não verificado em execução.
+- No Mac, rodar `ReaderHostTests` e as suítes de leitura que medem a posição na volta:
   `ReadingSurfaceUITests` (principalmente `testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory`),
   `ReleaseReaderJourneyUITests` (`test01`, `test02`), `VideoCardJourneyUITests`, `FeedMediaJourneyUITests`,
   `FeedMineUITests.testU2SavedListAndInAppReaderPreserveTheSession`. Nenhum desses testes arrasta para baixo; um
-  teste de UI do gesto deve arrastar a partir da al?a ("Sheet Grabber"), li??o da V1
+  teste de UI do gesto deve arrastar a partir da alça ("Sheet Grabber"), lição da V1
   (`PersonaExplorationUITests.swift:542`).
-- No aparelho: conferir se arrastar o texto rolado no topo fecha o painel e se o gesto dentro do Safari n?o
-  briga com a rolagem da p?gina.
+- No aparelho: conferir se arrastar o texto rolado no topo fecha o painel e se o gesto dentro do Safari não
+  briga com a rolagem da página.

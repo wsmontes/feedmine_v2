@@ -80,7 +80,7 @@ enum SyndicationMediaLocator {
                     if attributes[name] == nil { attributes[name] = String(tag[valueRange]) }
                 }
                 func first(_ names: [String]) -> String? { names.lazy.compactMap { attributes[$0] }.first }
-                // The tag's own declared size: a beacon (`width="1"`) or an icon (both sides ? 150) is decoration,
+                // The tag's own declared size: a beacon (`width="1"`) or an icon (both sides ≤ 150) is decoration,
                 // and the next image is considered instead. Skipped here, an item with no other image is the text
                 // card as designed, never an image that "failed" to prepare (INV-17).
                 if isDecorativeDeclaredSize(width: attributes["width"], height: attributes["height"]) { continue }
