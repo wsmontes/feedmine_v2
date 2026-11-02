@@ -49,3 +49,54 @@ handoff nativo for ligado (item acima).
 
 **Baixa:** `busyMode = .timeout(10)` — não verifiquei se alguma escrita roda no MainActor (um lock
 disputado viraria 10 s de tela parada).
+
+## Rodada 2: correções de usabilidade (mesmo branch, `727db59..HEAD`)
+
+Base: `docs/reviews/2026-11-02-kiro-usability-review.md`. Também **não compilado aqui**; uma revisão de
+compilação feita por leitura não achou erro certo e apontou quatro riscos de runtime, já corrigidos em `a1372a7`.
+
+Feito:
+- D1 falha de inicialização: `StartupFailureView` com "Tentar novamente" (`AppComposition.retryStartup`);
+  falha na construção da composição diz para reabrir o app.
+- Menu: as ferramentas de cada preset só aparecem no próprio preset (o achado B1/B2 do relatório estava
+  exagerado: `refreshMenuDestinations` já filtrava; o defeito real era "Excluir marcador inteligente" num feed
+  curado).
+- Retry no fim da lista com cards (`FeedScreen.tailRecoveryBlock`) e retry no `.failed` sem cards
+  (expectativa U10 de `FeedScreenRenderingTests` atualizada).
+- Salvos: remover por swipe/menu (`FeedAssociation.removeSaved`), "Tentar de novo" na falha de leitura.
+- Alertas de erro que não fechavam (4 stores ganharam `dismissError()`); erro das ferramentas de fontes
+  agora aparece (`SourceToolErrorAlert`); colar no add-feed descarta a prévia velha.
+- Prompts da biblioteca: `libraryPrompt` capturado antes do `Task`; falhas viram toast; nome vazio desabilita
+  "Salvar". Criar feed nas preferências avisa falha e limpa o nome.
+- Export: só a falha de escrita foi acrescentada. "Salvar arquivo" continua abrindo a folha do sistema
+  (desenho testado por `testSavingTheExportOpensTheSystemSurfaceAndKeepsTheReadingPoint`).
+- Rascunho de filtro obsoleto: descartar ou continuar editando; no swipe, descarta com toast.
+- Item sem nada para abrir: toast "Este conteúdo não está disponível".
+- Coleção vazia: "Adicionar feed por link". Leitura em recuperação: aviso visível com "Escolher como
+  continuar"; sem ações de fim de conteúdo ali. Falha ao salvar o onboarding: alerta que reabre.
+- Mídia: fechar o mini player (`stopMedia`); player cheio sem "Carregando…" junto do erro.
+- Caixas: confirmação ao apagar (apagar a caixa tira dos salvos o que só estava nela); um só "Concluir"
+  ao reordenar.
+- Convite editorial: título uma vez; botões quebram linha com `ViewThatFits`.
+- Busca: fechar pela lupa é o mesmo que "Cancelar".
+- Busca no catálogo de fontes (`SourceManagementView.searchable`).
+- Compartilhar no leitor local (`ShareLink`).
+- Humor/tipo de conteúdo em pt-BR (`displayName`); "carta" → "card"; valores em inglês no
+  `Localizable.xcstrings` para todas as strings novas.
+
+Não feito, de propósito:
+- F1/F2 (lista física congela; tela volta a "Descobrindo…" com âncora sem pixels) e F3 (convite editorial
+  entrando numa célula visível): dependem da linha `native-*` e de simulador.
+- F5 estado "lido": não há registro persistido de leitura; precisa de decisão de produto (aberto ou visto).
+- Valores de VoiceOver em inglês ("selected", "bookmarked"): são contrato dos UI tests e do benchmark congelado.
+- Puxar para atualizar: o feed é uma pista que cresce no fim; um gesto no topo que não traz nada no topo
+  confunde, e `.refreshable` mexe no inset do scroll que a captura nativa mede. Substituído pelo retry no fim.
+- Baixa prioridade: aviso do limite de 200 salvos, restaurar padrões nos ajustes, compartilhar visível no
+  card, salvar visível no iPad em lista, motivos por link no add-feed direto.
+
+Para validar no Mac, além da suíte do pacote:
+- UI tests que podem mudar: fontes (barra de busca nova no `NavigationStack`), caixas (sem `bookmarkBoxes.done`
+  durante reordenação; apagar pede confirmação), mini player (botão `mini-player-close`), feed com
+  `.unavailable/.deferred/.unreachable/.failed` e cards (bloco `feed-tail-recovery` depois do último card),
+  `FeedVisibleExperienceUITests` caso 3 (falha atrás de conteúdo: o bloco entra no fim, os cards não devem mover).
+- Conferir no simulador: swipe "Remover" nos Salvos some com a linha e mostra o toast; "Tentar de novo" relê.
