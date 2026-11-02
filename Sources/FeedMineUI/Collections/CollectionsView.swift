@@ -18,6 +18,8 @@ public struct CollectionsView: View {
     private let appearance: ReaderAppearance
     /// Opening a collection's feed belongs to the host: it is a session transition, not a layout decision.
     private let onOpenFeed: (String) -> Void
+    /// Opens the add-feed sheet with this collection chosen. Nil keeps the detail without the action.
+    private let onAddFeed: ((String) -> Void)?
     private let onClose: () -> Void
 
     @State private var isCreating = false
@@ -28,10 +30,12 @@ public struct CollectionsView: View {
     @State private var opened: SourceCollectionRow?
 
     public init(store: CollectionsStore, appearance: ReaderAppearance = .standard,
-        onOpenFeed: @escaping (String) -> Void, onClose: @escaping () -> Void = {}) {
+        onOpenFeed: @escaping (String) -> Void, onAddFeed: ((String) -> Void)? = nil,
+        onClose: @escaping () -> Void = {}) {
         _store = State(initialValue: store)
         self.appearance = appearance
         self.onOpenFeed = onOpenFeed
+        self.onAddFeed = onAddFeed
         self.onClose = onClose
     }
 
@@ -91,7 +95,7 @@ public struct CollectionsView: View {
         // drag, and made the surface behind it unreachable.
         .navigationDestination(item: $opened) { collection in
             CollectionDetailView(store: store, collection: collection, appearance: appearance,
-                onOpenFeed: onOpenFeed)
+                onOpenFeed: onOpenFeed, onAddFeed: onAddFeed)
         }
         .alert(String(localized: "Nova coleção de fontes"), isPresented: $isCreating) {
             TextField(String(localized: "Nome"), text: $newName)
@@ -195,6 +199,7 @@ struct CollectionDetailView: View {
     let collection: SourceCollectionRow
     let appearance: ReaderAppearance
     let onOpenFeed: (String) -> Void
+    var onAddFeed: ((String) -> Void)? = nil
 
     var body: some View {
         List {
@@ -215,6 +220,15 @@ struct CollectionDetailView: View {
                 if store.members.isEmpty {
                     Text(verbatim: String(localized: "Adicione fontes a partir de um card ou de um resultado."))
                         .foregroundStyle(.secondary)
+                }
+                // The empty detail used to say how to add sources and offer no way to do it here.
+                if let onAddFeed {
+                    Button {
+                        onAddFeed(collection.id)
+                    } label: {
+                        Label(String(localized: "Adicionar feed por link"), systemImage: "link.badge.plus")
+                    }
+                    .accessibilityIdentifier("collection.addFeed")
                 }
                 ForEach(store.members) { member in
                     HStack(spacing: 10) {

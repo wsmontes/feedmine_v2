@@ -234,6 +234,8 @@ struct FeedMineApp: App {
 
     /// T11: the onboarding gate and the curated feed's own hood.
     @State private var showsOnboarding = false
+    /// The first run's answers could not be saved after its cover closed: the alert offers to reopen it.
+    @State private var onboardingSaveFailed = false
     /// What the reader answered in this session, so the block that asked shows the answer — and the way back —
     /// where the question was, without waiting for anything to be reloaded.
     @State private var inFeedAnswers: [String: ReaderPreferenceLevel] = [:]
@@ -758,6 +760,10 @@ struct FeedMineApp: App {
                                             }
                                         }
                                     },
+                                    onAddFeed: { id in
+                                        addFeedStore?.selectedCollectionID = id
+                                        present(.addFeed)
+                                    },
                                     onClose: { popSurface() })
                             } else {
                                 ProgressView("Abrindo as coleções")
@@ -884,6 +890,12 @@ struct FeedMineApp: App {
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
                 } message: { Text(readerError ?? "") }
+                .alert(String(localized: "Não foi possível salvar suas respostas"), isPresented: $onboardingSaveFailed) {
+                    Button(String(localized: "Tentar novamente")) { showsOnboarding = true }
+                    Button(String(localized: "Agora não"), role: .cancel) {}
+                } message: {
+                    Text(String(localized: "Você pode responder de novo agora. Nada do que está no aparelho foi perdido."))
+                }
                 .alert("Filtro salvo", isPresented: $filterActivationFailure) {
                     Button("Tentar novamente") {
                         Task {
@@ -1586,7 +1598,9 @@ struct ReaderHost: UIViewControllerRepresentable {
                     if await composition.completeFirstRun(discovery: recipe) {
                         showsOnboarding = false
                     } else {
-                        readerError = String(localized: "Não foi possível salvar suas respostas. Tente novamente.")
+                        // The cover is already gone, so "Tentar novamente" alone named no way back. This alert
+                        // offers the retry itself: it reopens the first run with nothing lost on the device.
+                        onboardingSaveFailed = true
                     }
                 }
             },

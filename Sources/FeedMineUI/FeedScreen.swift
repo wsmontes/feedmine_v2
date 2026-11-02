@@ -154,6 +154,27 @@ public struct FeedScreen: View {
         if store.renderedItems.isEmpty { FeedWorkFeedback(work: store.work) }
     }
 
+    /// A paused reading (history recovery) greys the header and the cards. With cards on screen the only
+    /// explanation used to be an accessibility value on the "⋯" menu, so a sighted reader saw dead controls and
+    /// no reason. This states the pause and offers the one way forward. An overlay, so the list keeps its geometry.
+    @ViewBuilder private var pausedReadingNotice: some View {
+        if readingIsPaused, let onRecoverHistory, !store.renderedItems.isEmpty {
+            VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.tight) {
+                Text(String(localized: "As novas publicações estão pausadas até você escolher os critérios desta leitura."))
+                    .font(FeedDesignTokens.Typography.label)
+                Button(String(localized: "Escolher como continuar"), action: onRecoverHistory)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("history-recovery-notice-action")
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("history-recovery-notice")
+        }
+    }
+
     @ViewBuilder private func feedBody(_ items: [PresentationCard]) -> some View {
         // Os itens chegam decididos pelo `body`: a janela segurada, quando há gesto, ou o que a loja publicou.
         // A posição do leitor **não** é lida aqui — era ela que fazia a lista inteira ser reavaliada a cada
@@ -266,6 +287,7 @@ public struct FeedScreen: View {
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
                 .overlay(alignment: .bottom) { workFeedback }
+                .overlay(alignment: .bottom) { pausedReadingNotice }
             } else {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
