@@ -56,6 +56,7 @@ public struct SourceManagementView: View {
             .scrollContentBackground(.hidden)
             .background(appearance.pageBackground)
             .navigationTitle(String(localized: "Fontes"))
+            .modifier(SourceToolErrorAlert(store: store))
             .toolbar {
                 ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
                     Button(String(localized: "Concluir"), action: onClose)
@@ -183,5 +184,21 @@ public struct SourceManagementView: View {
 private extension Label where Title == Text, Icon == Image {
     init(verbatim text: String, systemImage: String) {
         self.init { Text(verbatim: text) } icon: { Image(systemName: systemImage) }
+    }
+}
+
+/// The source tools' one error surface. `SourceManagementStore` already stated why a toggle, a search or an
+/// opening failed, but none of the source screens drew it: a refused toggle just snapped back. Each screen of the
+/// stack carries this, because an alert attached to a screen that is not on top is not presented.
+struct SourceToolErrorAlert: ViewModifier {
+    let store: SourceManagementStore
+
+    func body(content: Content) -> some View {
+        content.alert(String(localized: "Não foi possível concluir"), isPresented: Binding(
+            get: { store.errorMessage != nil }, set: { if !$0 { store.dismissError() } })) {
+            Button(String(localized: "OK"), role: .cancel) {}
+        } message: {
+            Text(verbatim: store.errorMessage ?? "")
+        }
     }
 }

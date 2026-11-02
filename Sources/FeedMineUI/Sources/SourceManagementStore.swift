@@ -79,6 +79,8 @@ public final class SourceManagementStore {
     public private(set) var query = ""
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
+    /// The reader acknowledged the error the source tools state (see `SourceToolErrorAlert`).
+    public func dismissError() { errorMessage = nil }
     /// False when the shipped catalog is missing: the surface says so instead of showing an empty tree.
     public private(set) var hasCatalog = true
 

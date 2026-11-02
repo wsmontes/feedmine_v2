@@ -109,6 +109,7 @@ public struct CountriesListView: View {
         .scrollContentBackground(.hidden)
         .background(appearance.pageBackground)
         .navigationTitle(String(localized: "Países"))
+        .modifier(SourceToolErrorAlert(store: store))
         .toolbar {
             ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
                 Button(String(localized: "Concluir"), action: onClose)

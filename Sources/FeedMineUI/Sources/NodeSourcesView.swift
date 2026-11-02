@@ -145,6 +145,7 @@ public struct NodeSourcesView: View {
             .scrollContentBackground(.hidden)
             .background(appearance.pageBackground)
             .navigationTitle(Text(verbatim: node.name))
+            .modifier(SourceToolErrorAlert(store: store))
             .toolbar {
                 if let onClose {
                     ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
