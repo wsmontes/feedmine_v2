@@ -1,0 +1,11 @@
+﻿A one podcast + 20 text feeds: first50 distinct=21 top=[('POD', 25), ('T06', 2), ('T02', 2)] min_gap=2 mean_gap=8.6
+    T06 POD T02 POD T11 POD T14 POD T05 POD T15 POD T10 POD T04 POD T01 POD T19 POD T09 POD T00 POD T08 POD T03 POD T07 POD
+B four podcasts + 20 text feeds: first50 distinct=24 top=[('P0', 7), ('P3', 6), ('P1', 6)] min_gap=8 mean_gap=14.2
+    P0 T01 P3 T08 P1 T06 P2 T09 P0 T00 P3 T10 P1 T13 P2 T18 P0 T12 P3 T04 P1 T07 P2 T03 P0 T05 P3 T15 P1 T17
+C one per-post-tagger + 19 categorised feeds: first50 distinct=20 top=[('TAGGY', 24), ('T00', 2), ('T16', 2)] min_gap=2 mean_gap=10.3
+    T00 T16 TAGGY T14 TAGGY T03 TAGGY T07 TAGGY T05 TAGGY T09 TAGGY T04 TAGGY T08 TAGGY T06 TAGGY T13 TAGGY T17 TAGGY T15 TAGGY T01 TAGGY T02 TAGGY T12
+D one prolific + 19 small, no facts: first50 distinct=20 top=[('BIG', 3), ('T17', 3), ('T08', 3)] min_gap=20 mean_gap=20.0
+    BIG T17 T08 T18 T16 T01 T03 T09 T04 T11 T07 T05 T14 T02 T13 T10 T12 T15 T00 T06 BIG T17 T08 T18 T16 T01 T03 T09 T04 T11
+E newest items with unknown facts: first50 distinct=21 top=[('UNK', 3), ('T07', 3), ('T17', 3)] min_gap=21 mean_gap=21.0
+    UNK T07 T17 T14 T10 T01 T00 T11 T09 T13 T06 T16 T03 T19 T02 T05 T08 T12 T18 T15 T04 UNK T07 T17 T14 T10 T01 T00 T11 T09
+F same supply, different input order -> identical output: True
