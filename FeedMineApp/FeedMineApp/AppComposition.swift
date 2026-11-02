@@ -3301,7 +3301,12 @@ final class FeedAssociation {
     /// pure value (`FeedReadingDecision`); resolving it reads the store and nothing else — no acquisition, no
     /// extraction, no cache, which is the invariant the architect fixed for this surface.
     private func read(_ cardID: PublicationCardID) {
-        guard let target = readingTarget(cardID) else { return }
+        guard let target = readingTarget(cardID) else {
+            // Nothing to read here and no site to open: the row looked tappable and the tap used to do nothing.
+            store.showToast(text: String(localized: "Este conteúdo não está disponível"),
+                systemImage: "exclamationmark.triangle")
+            return
+        }
         switch target {
         case .local:
             Self.log("reading card=\(cardID.rawValue) locally")

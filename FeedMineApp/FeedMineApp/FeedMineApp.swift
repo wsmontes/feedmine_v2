@@ -344,6 +344,9 @@ struct FeedMineApp: App {
         let onActivationFailure: () -> Void
         @State private var path: [SourceRoute] = []
         @State private var applyFailure: String?
+        /// The applied selection changed elsewhere while this draft was open. Retrying could never succeed (the
+        /// draft's baseline stays old) and `revert()` had no caller: the reader now chooses to discard or keep editing.
+        @State private var staleDraft = false
         @State private var closing = false
 
         var body: some View {
@@ -380,6 +383,15 @@ struct FeedMineApp: App {
             } message: {
                 Text(applyFailure ?? "")
             }
+            .alert(String(localized: "O filtro mudou"), isPresented: $staleDraft) {
+                Button(String(localized: "Descartar minhas alterações"), role: .destructive) {
+                    filterStore.revert()
+                    onDone()
+                }
+                Button(String(localized: "Continuar editando"), role: .cancel) {}
+            } message: {
+                Text(String(localized: "O filtro aplicado foi alterado em outro lugar enquanto você editava. Descarte suas alterações para ver o filtro atual."))
+            }
         }
 
         /// V1's `onDisappear`: going away applies the dirty parts. A clean draft closes without a durable write;
@@ -396,6 +408,8 @@ struct FeedMineApp: App {
                 onDone()
             } catch let failure as ReaderFilterFailure {
                 applyFailure = failure.readerMessage
+            } catch ReaderFilterStoreError.staleDraft {
+                staleDraft = true
             } catch {
                 applyFailure = String(localized: "Não foi possível salvar o filtro. Tente novamente.")
             }
@@ -449,6 +463,13 @@ struct FeedMineApp: App {
                 composition.association?.store.showToast(text: failure.readerMessage,
                     systemImage: "exclamationmark.triangle")
             }
+        } catch ReaderFilterStoreError.staleDraft {
+            // The sheet is gone, so there is no one to ask: an edit made over a selection that has since changed
+            // can never apply, and keeping it would refuse every later open. It is discarded and said so.
+            filterStore.revert()
+            composition.association?.store.showToast(
+                text: String(localized: "O filtro mudou enquanto você editava; suas alterações foram descartadas."),
+                systemImage: "exclamationmark.triangle")
         } catch {
             composition.association?.store.showToast(
                 text: String(localized: "Não foi possível salvar o filtro. Tente novamente."),
