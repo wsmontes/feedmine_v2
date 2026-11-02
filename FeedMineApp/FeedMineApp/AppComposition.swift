@@ -3128,6 +3128,26 @@ final class FeedAssociation {
         } catch { reportFailure(error, operation: .save) }
     }
 
+    /// The Saved list's own "Remover": takes the article out of one box, or out of every box when the list shows
+    /// all saved articles. Unlike the card's toggle it can never *add* (a toggle on a card saved in another box
+    /// would save it again in the preferred one), and it states the result, since the row disappears.
+    func removeSaved(_ cardID: PublicationCardID, fromBox listID: String?) {
+        do {
+            let library = ReaderLibraryStore(database: database)
+            let boxes = try listID.map { Set([$0]) } ?? library.bookmarkListIDs(forCard: cardID)
+            let now = Date()
+            for box in boxes {
+                try library.setBookmarkMembership(cardID: cardID, listID: box, included: false, at: now)
+            }
+            bookmarkMutationConfirmed()
+            // The same claim the toggle clears: an article no longer saved anywhere owes no prepared media.
+            prepareSavedMediaAndPublish(cardID, announceFailure: false)
+            // The list reads this revision; it redraws without the row now, not after the preparation settles.
+            savedMediaRevision &+= 1
+            store.showToast(text: String(localized: "Removido dos salvos"), systemImage: "bookmark.slash")
+        } catch { reportFailure(error, operation: .save) }
+    }
+
     /// P2: every preparation settles into the saved surface. A refused durable write has no row, so its failure
     /// is held for this session and stated on the row; the next attempt either records a durable state or fails
     /// again, never leaving the reader with an older "pending" that nothing backs.

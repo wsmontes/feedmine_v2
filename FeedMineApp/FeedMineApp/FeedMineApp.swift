@@ -246,6 +246,9 @@ struct FeedMineApp: App {
     /// coming back to a context the reader has already read resume the budget instead of renewing it.
     @State private var cadence = EditorialInvitationCadence()
     @State private var showsCuratedHood = false
+    /// Bumped by the Saved list's "Tentar de novo" after a failed read: the list destinations read it, so the
+    /// read runs again without the reader leaving and reopening the surface.
+    @State private var savedReadAttempt = 0
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -674,10 +677,15 @@ struct FeedMineApp: App {
                                     onClose: { popSurface() })
                                     .navigationDestination(for: LibraryRoute.self) { route in
                                         let _ = composition.association?.savedMediaRevision
+                                        let _ = savedReadAttempt
                                         FeedSavedListView(
                                             read: composition.association?.readSavedArticles(inBox: Self.boxID(route)) ?? .failed,
                                             onOpen: { cardID in composition.association?.openSaved(cardID) },
-                                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
+                                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) },
+                                            onRemove: { cardID in
+                                                composition.association?.removeSaved(cardID, fromBox: Self.boxID(route))
+                                            },
+                                            onReload: { savedReadAttempt &+= 1 })
                                             .task { composition.association?.resumeSavedMedia() }
                                     }
                             } else {
@@ -732,9 +740,12 @@ struct FeedMineApp: App {
                     switch destination {
                     case .saved:
                         let _ = composition.association?.savedMediaRevision
+                        let _ = savedReadAttempt
                         FeedSavedListView(read: composition.association?.readSavedArticles() ?? .failed,
                             onOpen: { cardID in composition.association?.openSaved(cardID) },
-                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
+                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) },
+                            onRemove: { cardID in composition.association?.removeSaved(cardID, fromBox: nil) },
+                            onReload: { savedReadAttempt &+= 1 })
                             .task { composition.association?.resumeSavedMedia() }
                     default:
                         // Only destinations the host declares available can be reached (T5 rule).

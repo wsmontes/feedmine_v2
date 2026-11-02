@@ -59,23 +59,33 @@ public struct FeedSavedListView: View {
     private let readFailure: Bool
     private let onOpen: (PublicationCardID) -> Void
     private let onRetry: (PublicationCardID) -> Void
+    /// Takes an article out of this list. Nil keeps the list read-only (no swipe, no menu entry).
+    private let onRemove: ((PublicationCardID) -> Void)?
+    /// Reads the list again after a failed read. Nil keeps the old instruction to reopen the surface.
+    private let onReload: (() -> Void)?
 
     public init(articles: [FeedSavedArticle], onOpen: @escaping (PublicationCardID) -> Void,
-        onRetry: @escaping (PublicationCardID) -> Void = { _ in }) {
+        onRetry: @escaping (PublicationCardID) -> Void = { _ in },
+        onRemove: ((PublicationCardID) -> Void)? = nil) {
         self.articles = articles
         readFailure = false
         self.onOpen = onOpen
         self.onRetry = onRetry
+        self.onRemove = onRemove
+        onReload = nil
     }
 
     /// The surface states a failed read instead of drawing the empty library: "nothing saved" and "we could not
     /// read what you saved" are different facts and only one of them is the reader's.
     public init(read: FeedSavedArticlesRead, onOpen: @escaping (PublicationCardID) -> Void,
-        onRetry: @escaping (PublicationCardID) -> Void = { _ in }) {
+        onRetry: @escaping (PublicationCardID) -> Void = { _ in },
+        onRemove: ((PublicationCardID) -> Void)? = nil, onReload: (() -> Void)? = nil) {
         articles = read.articles
         readFailure = read.failed
         self.onOpen = onOpen
         self.onRetry = onRetry
+        self.onRemove = onRemove
+        self.onReload = onReload
     }
 
     public var body: some View {
@@ -85,7 +95,17 @@ public struct FeedSavedListView: View {
                     Label(String(localized: "Não foi possível ler os artigos salvos"),
                         systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text(String(localized: "Nada foi alterado. Abra os salvos novamente para tentar de novo."))
+                    if onReload == nil {
+                        Text(String(localized: "Nada foi alterado. Abra os salvos novamente para tentar de novo."))
+                    } else {
+                        Text(String(localized: "Nada foi alterado."))
+                    }
+                } actions: {
+                    if let onReload {
+                        Button(String(localized: "Tentar de novo"), action: onReload)
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("saved-read-retry")
+                    }
                 }
             } else if articles.isEmpty {
                 ContentUnavailableView {
@@ -109,6 +129,20 @@ public struct FeedSavedListView: View {
                         // The availability line sits **outside** that button: a retry inside a button's label
                         // never receives the tap (the outer button consumes it), and the retry must be real.
                         availabilityLine(article)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        if let onRemove {
+                            Button(role: .destructive) { onRemove(article.id) } label: {
+                                Label(String(localized: "Remover"), systemImage: "bookmark.slash")
+                            }
+                        }
+                    }
+                    .contextMenu {
+                        if let onRemove {
+                            Button(role: .destructive) { onRemove(article.id) } label: {
+                                Label(String(localized: "Remover dos salvos"), systemImage: "bookmark.slash")
+                            }
+                        }
                     }
                 }
             }
