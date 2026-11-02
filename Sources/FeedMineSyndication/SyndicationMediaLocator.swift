@@ -80,6 +80,10 @@ enum SyndicationMediaLocator {
                     if attributes[name] == nil { attributes[name] = String(tag[valueRange]) }
                 }
                 func first(_ names: [String]) -> String? { names.lazy.compactMap { attributes[$0] }.first }
+                // The tag's own declared size: a beacon (`width="1"`) or an icon (both sides ? 150) is decoration,
+                // and the next image is considered instead. Skipped here, an item with no other image is the text
+                // card as designed, never an image that "failed" to prepare (INV-17).
+                if isDecorativeDeclaredSize(width: attributes["width"], height: attributes["height"]) { continue }
                 let srcset = first(["data-lazy-srcset", "data-srcset", "srcset"])
                 let source = preferredSrcsetCandidate(srcset)
                     ?? first(["data-lazy-src", "data-original", "data-orig-file", "data-src", "src"])
@@ -119,8 +123,28 @@ enum SyndicationMediaLocator {
         "favicon", "gravatar.com/avatar", "/emoji/", "s.w.org/images/core/emoji", "addtoany.com/buttons",
         "share_save", "icon_facebook", "icon_twitter", "feeds.feedburner.com/~ff", "feeds.feedburner.com/~r",
         "/tracker/", "count.gif", "pixel.gif", "track-rss-story", "blank.gif", "1x1.gif", "1x1.png", "spacer.gif",
-        "spacer.png", "doubleclick.net", "pixel.wp.com", "stats.wordpress.com"
+        "spacer.png", "doubleclick", "pixel.wp.com", "stats.wordpress.com",
+        // 2026-11-02 (V1 lessons): WordPress smilies, WordPress.com comment-count buttons, Feedsportal (Le Monde,
+        // older aggregators) beacons and avatar directories.
+        "/wp-includes/images/smilies/", "wp-smiley", "feeds.wordpress.com/1.0/", "feedsportal.com", "/avatars/"
     ]
+
+    /// An `<img>` whose declared size says it is not card art: a side of one or two pixels (a beacon, with or
+    /// without the other side) or both sides at most 150 (an icon). Undeclared, unparseable or zero sizes say
+    /// nothing. `width="1px"` is read as 1, as browsers do.
+    static func isDecorativeDeclaredSize(width: String?, height: String?) -> Bool {
+        func pixels(_ value: String?) -> Int? {
+            guard let value = value?.trimmingCharacters(in: .whitespaces).lowercased() else { return nil }
+            let digits = value.hasSuffix("px") ? String(value.dropLast(2)) : value
+            guard let number = Int(digits), number > 0 else { return nil }
+            return number
+        }
+        let w = pixels(width), h = pixels(height)
+        if let w, w <= 2 { return true }
+        if let h, h <= 2 { return true }
+        if let w, let h, w <= 150, h <= 150 { return true }
+        return false
+    }
 
     /// Tracking pixels, spacers, avatars, emoji, share buttons and tiny (≤150 px) sized variants.
     static func isDecorative(_ text: String) -> Bool {

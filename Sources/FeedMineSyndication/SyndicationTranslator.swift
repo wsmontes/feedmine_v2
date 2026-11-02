@@ -282,6 +282,9 @@ public struct SyndicationTranslator: Sendable {
     private static func media(_ text: String?, base: URL? = nil, width: Int? = nil, height: Int? = nil,
         mimeType: String? = nil) -> AcquisitionMediaCandidateClaim? {
         guard let url = SyndicationMediaLocator.resolve(text, base: base) else { return nil }
+        // A declared side of one or two pixels is a beacon even when the other side is not declared.
+        if let w = width, (1...2).contains(w) { return nil }
+        if let h = height, (1...2).contains(h) { return nil }
         let dimensions: (Int?, Int?) = (width ?? 0) > 0 && (height ?? 0) > 0 ? (width, height) : (nil, nil)
         // Declared tiny visuals are logos/icons, not card art (v1 isLikelyFaviconOrLogo).
         if let w = dimensions.0, let h = dimensions.1, w <= 150 && h <= 150 { return nil }

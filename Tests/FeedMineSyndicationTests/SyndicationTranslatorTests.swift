@@ -294,6 +294,16 @@ final class SyndicationTranslatorTests: XCTestCase {
         XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),
             ["https://example.test/photo-16x9.jpg","https://example.test/art-1400x1400.jpg"])
     }
+    /// A declared side of one or two pixels is a beacon even when the other side is absent; the HTML body's own
+    /// beacon (`width="1" height="1"`) is skipped the same way and the next image is the card visual.
+    func test28bDeclaredPixelSidesAreBeaconsNotCardArt() throws {
+        let o = try item(rss("<item><guid>g</guid><link>https://site.example/p</link>"
+            + "<media:thumbnail url=\"https://example.test/beacon-a\" width=\"1\"/>"
+            + "<media:content url=\"https://example.test/beacon-b\" medium=\"image\" height=\"2\"/>"
+            + "<description><![CDATA[<img src=\"https://example.test/beacon-c\" width=\"1\" height=\"1\">"
+            + "<img src=\"https://example.test/body.jpg\">]]></description></item>"))
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/body.jpg"])
+    }
     func test29ImagesFromMediaContentGroupEnclosureAndHTMLBody() throws {
         let o = try item(rss("<item><guid>g</guid><link>https://site.example/p</link>"
             + "<media:content url=\"https://example.test/audio.mp3\" type=\"audio/mpeg\"/>"
