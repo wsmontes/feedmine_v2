@@ -615,7 +615,8 @@ struct FeedMineApp: App {
                         MiniPlayerBar(state: composition.mediaState,
                             onToggle: { Task { await composition.toggleMedia() } },
                             onOpen: { showsPlayer = true },
-                            onClose: { Task { await composition.stopMedia() } })
+                            onClose: { Task { await composition.stopMedia() } },
+                            artwork: composition.mediaArtwork.map { Image(uiImage: $0) })
                     }
                 }
                 .sheet(isPresented: $showsPlayer) {
@@ -623,7 +624,8 @@ struct FeedMineApp: App {
                         onToggle: { Task { await composition.toggleMedia() } },
                         onSkip: { seconds in Task { await composition.skipMedia(by: seconds) } },
                         onSeek: { position in Task { await composition.seekMedia(to: position) } },
-                        onClose: { showsPlayer = false })
+                        onClose: { showsPlayer = false },
+                        artwork: composition.mediaArtwork.map { Image(uiImage: $0) })
                 }
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(item: sheetItem, onDismiss: {
@@ -1591,7 +1593,8 @@ struct ReaderHost: UIViewControllerRepresentable {
                 MiniPlayerBar(state: composition.mediaState,
                     onToggle: { Task { await composition.toggleMedia() } },
                     onOpen: { showsPlayer = true },
-                    onClose: { Task { await composition.stopMedia() } })
+                    onClose: { Task { await composition.stopMedia() } },
+                    artwork: composition.mediaArtwork.map { Image(uiImage: $0) })
                     .background(.ultraThinMaterial)
             }
         }

@@ -47,6 +47,44 @@ enum WarmPresentationFixture {
 }
 
 final class PresentationProjectionTests: XCTestCase {
+    /// V1's `durationFormatted`, in the card's own words: minutes under an hour, hours and minutes above, and nothing
+    /// under a minute or when the feed declared none.
+    func testPlaybackDurationLabel() {
+        XCTAssertNil(PresentationCard.durationLabel(seconds: nil))
+        XCTAssertNil(PresentationCard.durationLabel(seconds: 59))
+        XCTAssertEqual(PresentationCard.durationLabel(seconds: 60), "1 min")
+        XCTAssertEqual(PresentationCard.durationLabel(seconds: 2_040), "34 min")
+        XCTAssertEqual(PresentationCard.durationLabel(seconds: 3_600), "1 h")
+        XCTAssertEqual(PresentationCard.durationLabel(seconds: 3_900), "1 h 5 min")
+    }
+
+    /// The length frozen with an episode reaches the card, and only an episode states one.
+    func testAnEpisodeCarriesItsFrozenLengthAndNothingElseDoes() throws {
+        let url = URL(string: "https://example.test/ep.mp3")!
+        let origin = PublishedOrigin(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(),
+            sourceID: nil, providerID: nil, sourceDisplayName: "Show", providerDisplayName: nil)
+        let text = try XCTUnwrap(RenderContract(layout: .textOnly, mediaAspectRatio: nil))
+        let episode = try XCTUnwrap(PublishedCard(id: PublicationCardID(), origin: origin, contentEntityID: nil,
+            contentClusterID: nil, text: PublishedText(title: "Ep", primaryText: nil), timestamp: nil,
+            media: .none, renderContract: text, primaryAction: .mediaPlayback(url), mediaIdentity: .audio,
+            playbackDurationSeconds: 2_040))
+        let projected = PresentationCard(publishedCard: episode)
+        XCTAssertEqual(projected.playbackDurationSeconds, 2_040)
+        XCTAssertEqual(projected.playbackDurationLabel, "34 min")
+        XCTAssertEqual(projected.releasingDecodedImage().playbackDurationSeconds, 2_040,
+            "a residency change never drops a frozen fact")
+        let article = try XCTUnwrap(PublishedCard(id: PublicationCardID(), origin: origin, contentEntityID: nil,
+            contentClusterID: nil, text: PublishedText(title: "A", primaryText: nil), timestamp: nil,
+            media: .none, renderContract: text, primaryAction: .externalURL(url), mediaIdentity: PublishedMediaIdentity.none,
+            playbackDurationSeconds: 2_040))
+        XCTAssertNil(PresentationCard(publishedCard: article).playbackDurationLabel,
+            "a card that is not an episode states no length")
+        XCTAssertNil(PublishedCard(id: PublicationCardID(), origin: origin, contentEntityID: nil,
+            contentClusterID: nil, text: PublishedText(title: "Ep", primaryText: nil), timestamp: nil,
+            media: .none, renderContract: text, primaryAction: .mediaPlayback(url), mediaIdentity: .audio,
+            playbackDurationSeconds: 0), "a length of zero is refused")
+    }
+
     func testCompleteCardPreservesUIFacingPayload() throws {
         let card = try WarmPresentationFixture.card()
         let projected = PresentationCard(publishedCard: card)

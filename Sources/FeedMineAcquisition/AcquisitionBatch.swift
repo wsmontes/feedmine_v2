@@ -24,10 +24,16 @@ public struct AcquisitionMediaCandidateClaim: Hashable, Sendable {
     public let declaredMimeType: String?
     public let declaredPixelWidth: Int?
     public let declaredPixelHeight: Int?
+    /// The episode's own declared length in whole seconds (`itunes:duration`, JSON Feed `duration_in_seconds`),
+    /// when the feed stated one. Only a playback candidate carries it; nil is "not declared", never zero.
+    public let declaredDurationSeconds: Int?
     public init?(role: MediaCandidateRole, mediaClass: MediaCandidateClass, remoteURL: URL, declaredMimeType: String?,
-        declaredPixelWidth: Int?, declaredPixelHeight: Int?) {
+        declaredPixelWidth: Int?, declaredPixelHeight: Int?, declaredDurationSeconds: Int? = nil) {
         guard let scheme = remoteURL.scheme?.lowercased(), scheme == "http" || scheme == "https",
             let host = remoteURL.host, !host.isEmpty else { return nil }
+        if let declaredDurationSeconds {
+            guard declaredDurationSeconds > 0, role == .playback else { return nil }
+        }
         switch (declaredPixelWidth, declaredPixelHeight) {
         case (nil, nil): break
         case (.some(let width), .some(let height)) where width > 0 && height > 0: break
@@ -39,6 +45,7 @@ public struct AcquisitionMediaCandidateClaim: Hashable, Sendable {
         self.declaredMimeType = declaredMimeType
         self.declaredPixelWidth = declaredPixelWidth
         self.declaredPixelHeight = declaredPixelHeight
+        self.declaredDurationSeconds = declaredDurationSeconds
     }
 }
 

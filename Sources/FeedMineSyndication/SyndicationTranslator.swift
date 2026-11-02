@@ -89,7 +89,8 @@ public struct SyndicationTranslator: Sendable {
             else { return .failure(.invalidCanonicalObservation) }
             return .success(value)
         }
-        func rss(_ item: RSSFeedItem, kind: String, language: String?) -> Result<AcquisitionObservation, ItemFailure> {
+        func rss(_ item: RSSFeedItem, kind: String, language: String?,
+            showArtwork: String? = nil) -> Result<AcquisitionObservation, ItemFailure> {
             let object = Self.nonempty(item.guid?.text).map { identity(kind + "-guid", $0) }
                 ?? Self.nonempty(item.link).map { identity(kind + "-link", SyndicationItemIdentity.linkIdentity($0)) }
             let base = Self.webURL(item.link)
@@ -103,7 +104,14 @@ public struct SyndicationTranslator: Sendable {
                 let image = Self.media(enclosure.url, base: base, mimeType: enclosure.type) { media.append(image) }
             if let image = Self.htmlImage(item.content?.encoded ?? item.description, base: base) { media.append(image) }
             if let enclosure = item.enclosure?.attributes,
-                let playable = Self.playback(enclosure.url, base: base, mimeType: enclosure.type) {
+                let playable = Self.playback(enclosure.url, base: base, mimeType: enclosure.type,
+                    duration: item.iTunes?.duration) {
+                // V1 parity: the show's artwork is the episode's last visual (`extractImageURL(item) ?? feedImage`).
+                // It goes after the episode's own images, so it is used only when they are absent or cannot be
+                // prepared — which is also what keeps an episode whose own art fails from leaving the feed (INV-17).
+                if playable.mediaClass == .audio, let artwork = Self.showArtwork(showArtwork, base: base) {
+                    media.append(artwork)
+                }
                 media.append(playable)
             }
             // Spec 2026-10-24 §2.2: at most one playback per revision, and the item's own enclosure is its
@@ -122,7 +130,9 @@ public struct SyndicationTranslator: Sendable {
         switch feed {
         case .rss(let document):
             return try window(document.channel?.items ?? [], kind: .rss, start: startIndex, capacity: itemCapacity) {
-                rss($0, kind: "rss", language: document.channel?.language)
+                rss($0, kind: "rss", language: document.channel?.language,
+                    showArtwork: document.channel?.iTunes?.image?.attributes?.href
+                        ?? Self.channelImageIfNotALogo(document.channel?.image?.url))
             }
         case .rdf(let document):
             return try window(document.items ?? [], kind: .rdf, start: startIndex, capacity: itemCapacity) {
@@ -147,7 +157,9 @@ public struct SyndicationTranslator: Sendable {
                     }
                 }
                 if let image = Self.htmlImage(item.content?.text ?? item.summary?.text, base: base) { media.append(image) }
+                // One playback per revision (the store's own index): the first playable enclosure is the payload.
                 for enclosure in item.links ?? [] where enclosure.attributes?.rel?.lowercased() == "enclosure" {
+                    guard !media.contains(where: { $0.role == .playback }) else { break }
                     if let playable = Self.playback(enclosure.attributes?.href, base: base,
                         mimeType: enclosure.attributes?.type) { media.append(playable) }
                 }
@@ -191,7 +203,10 @@ public struct SyndicationTranslator: Sendable {
                 }
                 if let image = Self.htmlImage(item.contentHtml, base: base) { media.append(image) }
                 for attachment in item.attachments ?? [] {
-                    if let playable = Self.playback(attachment.url, base: base, mimeType: attachment.mimeType) {
+                    // One playback per revision (the store's own index): the first playable attachment is the payload.
+                    guard !media.contains(where: { $0.role == .playback }) else { break }
+                    if let playable = Self.playback(attachment.url, base: base, mimeType: attachment.mimeType,
+                        duration: attachment.durationInSeconds) {
                         media.append(playable)
                     }
                 }
@@ -294,13 +309,52 @@ public struct SyndicationTranslator: Sendable {
     /// V1's enclosure for an audio or video episode: the one playable payload an item can carry. The store
     /// enforces the same rule (at most one per revision), and it is appended *after* the visuals so it never
     /// takes the card's own ordinal 0.
-    private static func playback(_ text: String?, base: URL? = nil, mimeType: String?) -> AcquisitionMediaCandidateClaim? {
-        guard let declared = mimeType, let klass = MediaCandidateClass.playback(forMIME: declared),
-            let url = SyndicationMediaLocator.resolve(text, base: base, allowingPlayableMedia: true) else {
+    private static func playback(_ text: String?, base: URL? = nil, mimeType: String?,
+        duration: TimeInterval? = nil) -> AcquisitionMediaCandidateClaim? {
+        guard let url = SyndicationMediaLocator.resolve(text, base: base, allowingPlayableMedia: true) else {
             return nil
         }
-        return .init(role: klass.role, mediaClass: klass, remoteURL: url, declaredMimeType: declared,
-            declaredPixelWidth: nil, declaredPixelHeight: nil)
+        let klass: MediaCandidateClass
+        if let declared = mimeType, let named = MediaCandidateClass.playback(forMIME: declared) {
+            klass = named
+        } else if isGenericMIME(mimeType), let inferred = MediaCandidateClass.playback(forPathExtension: url.pathExtension) {
+            // V1's `isAudioCandidate`: a feed that does not say what its enclosure is still publishes an episode
+            // when the file is an audio container. A specific non-audio MIME (an image, a page) is never overruled.
+            klass = inferred
+        } else {
+            return nil
+        }
+        return .init(role: klass.role, mediaClass: klass, remoteURL: url, declaredMimeType: mimeType,
+            declaredPixelWidth: nil, declaredPixelHeight: nil, declaredDurationSeconds: declaredSeconds(duration))
+    }
+
+    /// A MIME type that names no kind at all: absent, empty, or one of the generic binary types feeds put on
+    /// episodes they host behind a download service.
+    static func isGenericMIME(_ type: String?) -> Bool {
+        guard let essence = declaredMediaType(type) else { return true }
+        return ["application/octet-stream", "binary/octet-stream", "application/x-octet-stream",
+            "application/download", "application/x-download", "application/unknown"].contains(essence)
+    }
+
+    /// The declared length as whole seconds: a positive, finite value up to two days. Anything else (zero, a
+    /// parse artefact, a placeholder of years) is "not declared" rather than a length the card would state.
+    static func declaredSeconds(_ duration: TimeInterval?) -> Int? {
+        guard let duration, duration.isFinite, duration >= 1, duration <= 172_800 else { return nil }
+        return Int(duration.rounded())
+    }
+
+    /// The show's own artwork as a card visual, through the same admission as any other image.
+    private static func showArtwork(_ text: String?, base: URL?) -> AcquisitionMediaCandidateClaim? {
+        media(text, base: base)
+    }
+
+    /// The channel's `<image>` is often the site's logo, not the show's art (V1's `isLikelyFaviconOrLogo`): it is
+    /// used only when it does not look like one. `itunes:image` is preferred whenever the channel declares it.
+    static func channelImageIfNotALogo(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let lower = text.lowercased()
+        if ["/logo", "-logo", "_logo", "cropped", "favicon"].contains(where: { lower.contains($0) }) { return nil }
+        return text
     }
 
     private static func thumbnails(_ values: [MediaThumbnail]?, base: URL?) -> [AcquisitionMediaCandidateClaim] {

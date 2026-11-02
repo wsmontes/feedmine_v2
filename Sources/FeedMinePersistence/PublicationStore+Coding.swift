@@ -96,7 +96,9 @@ extension PublicationStore {
             // D2: absent column or NULL is unknown history, never an inferred audio card.
             mediaIdentity: f.optionalStringIfPresent("media_identity"),
             // A historical schema opened by a migration test has no such column: absence is unknown, not an error.
-            diversity: try Self.decodeDiversity(f.optionalStringIfPresent("diversity_facts"))
+            diversity: try Self.decodeDiversity(f.optionalStringIfPresent("diversity_facts")),
+            // Absent column (a historical schema) or NULL: no declared length.
+            playbackDurationSeconds: try f.optionalIntIfPresent("playback_duration_seconds")
         )
         do { try validateCard(card) } catch { throw PublicationStoreError.corruption("card payload: \(error)") }
         return card
@@ -112,6 +114,11 @@ struct PublicationRecordFields {
     func optionalStringIfPresent(_ field: String) -> String? {
         guard row.columnNames.contains(field) else { return nil }
         return try? optionalString(field)
+    }
+    /// An integer column that may not exist in a historical schema; absent means nil.
+    func optionalIntIfPresent(_ field: String) throws -> Int? {
+        guard row.columnNames.contains(field) else { return nil }
+        return try optionalInt(field)
     }
     func optionalString(_ field: String) throws -> String? {
         switch value(field).storage {

@@ -36,7 +36,10 @@ final class RuntimeMigrationRebuildTests: XCTestCase {
         let sourceUUID = UUID(), source = sourceUUID.uuidString.lowercased()
         let mainEdition = key(), sourceEdition = key()
         let mainCards = [key(), key()], sourceCards = [key(), key()]
-        let mediaSelect = "SELECT * FROM media_candidates ORDER BY id"
+        let mediaSelect = """
+            SELECT id, origin_revision_id, ordinal, role, media_class, remote_locator, declared_mime_type,
+                declared_pixel_width, declared_pixel_height FROM media_candidates ORDER BY id
+            """
         let checkpointSelect = """
             SELECT context_key, edition_id, card_id, anchor_placement, updated_at FROM context_checkpoints ORDER BY context_key
             """

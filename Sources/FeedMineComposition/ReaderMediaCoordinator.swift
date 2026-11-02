@@ -76,7 +76,8 @@ public final class ReaderMediaCoordinator {
             throw ReaderActionError.actionUnavailable(.openMedia)
         }
         return ReaderMediaItem(cardID: cardID, url: media.url, title: media.title,
-            mimeType: media.mimeType, source: media.source)
+            mimeType: media.mimeType, source: media.source, artworkKey: media.artworkKey,
+            summary: media.summary, declaredDuration: media.declaredDuration)
     }
 
     public func pause() async { await player.pause() }

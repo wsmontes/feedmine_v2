@@ -29,6 +29,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             if entry.hasPrefix("published_cards:") || entry.hasPrefix("retired_published_cards:") {
                 return entry.replacingOccurrences(of: ", diversity_facts TEXT", with: "")
                     .replacingOccurrences(of: ", media_identity TEXT", with: "")
+                    .replacingOccurrences(of: ", playback_duration_seconds INTEGER", with: "")
             }
             // PD-9/F06 added the durable deferral state to the existing supply row; its columns are asserted in
             // `MediaDeferralStoreTests`, and the rest of the definition stays byte-compared.
@@ -301,7 +302,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
                  "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
                  "publication-media-identity-v1", "continuity-relative-position-v1",
                  "selection-supply-media-deferral-v1", "selection-supply-media-deferral-v2",
-                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1", "reader-history-preparation-v1", "reader-history-legacy-checkpoints-v1"])
+                 "reader-history-binding-v1", "reader-history-position-v1", "reader-history-active-position-v1", "reader-history-preparation-v1", "reader-history-legacy-checkpoints-v1",
+                 "media-candidate-duration-v1", "publication-playback-duration-v1"])
         }
     }
 

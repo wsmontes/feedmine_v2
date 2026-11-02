@@ -18,16 +18,19 @@ public struct PublicationPreparationInput: Hashable, Sendable {
     public let primaryAction: PublishedPrimaryAction?
     /// D2: the media kind the caller resolved from the occurrence's enclosure; nil for callers that predate it.
     public let mediaIdentity: PublishedMediaIdentity?
+    /// The episode's declared length, read from its playback candidate. Frozen only on an audio card.
+    public let playbackDurationSeconds: Int?
     public let presentation: PublicationPresentation
 
     public init(origin: PublishedOrigin, contentEntityID: ContentEntityID?, contentClusterID: ContentClusterID?,
         primaryAction: PublishedPrimaryAction?, mediaIdentity: PublishedMediaIdentity? = nil,
-        presentation: PublicationPresentation) {
+        playbackDurationSeconds: Int? = nil, presentation: PublicationPresentation) {
         self.origin = origin
         self.contentEntityID = contentEntityID
         self.contentClusterID = contentClusterID
         self.primaryAction = primaryAction
         self.mediaIdentity = mediaIdentity
+        self.playbackDurationSeconds = playbackDurationSeconds
         self.presentation = presentation
     }
 }
@@ -115,7 +118,9 @@ public enum PublicationPreparation {
             mediaIdentity: input.mediaIdentity,
             // P10: frozen at publication from the candidate's own facts — never from the latest canonical revision.
             diversity: EditorialDiversityFact(sourceIDs: Array(candidate.sourceIDs), providerID: candidate.providerID,
-                subjects: candidate.topics.identities.map(\.key), mediaKind: frozenMediaKind)) else {
+                subjects: candidate.topics.identities.map(\.key), mediaKind: frozenMediaKind),
+            // Only an episode states a length; any other card carries none, whatever the input said.
+            playbackDurationSeconds: input.mediaIdentity == .some(.audio) ? input.playbackDurationSeconds : nil) else {
             throw PublicationPreparationError.invalidDraft(index: index)
         }
         return draft

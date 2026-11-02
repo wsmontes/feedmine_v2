@@ -778,13 +778,17 @@ public struct ContentStore: Sendable {
             throw ContentStoreError.corruption("media candidate role/class/ordinal")
         }
         let locator = try f.string("remote_locator")
+        // 2026-11-02: a database opened under an older schema has no such column; absence is "not declared".
+        let duration: Int? = try row.columnNames.contains("declared_duration_seconds")
+            ? f.optionalInteger("declared_duration_seconds") : nil
         guard let url = URL(string: locator), exact(url.absoluteString, locator),
             let candidate = MediaCandidate(id: MediaCandidateID(rawValue: try f.uuid("id")),
                 originRevisionID: OriginRevisionID(rawValue: try f.uuid("origin_revision_id")),
                 role: role, mediaClass: mediaClass, remoteURL: url,
                 declaredMimeType: try f.optionalString("declared_mime_type"),
                 declaredPixelWidth: try f.optionalInteger("declared_pixel_width"),
-                declaredPixelHeight: try f.optionalInteger("declared_pixel_height")) else {
+                declaredPixelHeight: try f.optionalInteger("declared_pixel_height"),
+                declaredDurationSeconds: duration) else {
             throw ContentStoreError.corruption("media candidate locator/dimensions")
         }
         return candidate
@@ -793,11 +797,13 @@ public struct ContentStore: Sendable {
     private static func insertMediaCandidate(_ candidate: MediaCandidate, ordinal: Int, in db: Database) throws {
         try db.execute(sql: """
             INSERT INTO media_candidates (id, origin_revision_id, ordinal, role, media_class,
-                remote_locator, declared_mime_type, declared_pixel_width, declared_pixel_height)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                remote_locator, declared_mime_type, declared_pixel_width, declared_pixel_height,
+                declared_duration_seconds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: [key(candidate.id.rawValue), key(candidate.originRevisionID.rawValue), ordinal,
                 candidate.role.rawValue, candidate.mediaClass.rawValue, candidate.remoteURL.absoluteString,
-                candidate.declaredMimeType, candidate.declaredPixelWidth, candidate.declaredPixelHeight])
+                candidate.declaredMimeType, candidate.declaredPixelWidth, candidate.declaredPixelHeight,
+                candidate.declaredDurationSeconds])
     }
 
     private static func current(_ record: OriginRecord, in db: Database) throws -> OriginRevision? {

@@ -35,6 +35,16 @@ public enum MediaCandidateClass: String, Hashable, Codable, Sendable {
         if lower.hasPrefix("video/") { return .video }
         return nil
     }
+
+    /// V1's `isAudioCandidate` fallback: an enclosure whose MIME type says nothing (absent or a generic
+    /// `octet-stream`) is an episode when its file is an audio container. Only audio is inferred: a video, an image
+    /// or a page is never guessed from a file name.
+    public static func playback(forPathExtension pathExtension: String) -> MediaCandidateClass? {
+        audioPathExtensions.contains(pathExtension.lowercased()) ? .audio : nil
+    }
+
+    /// V1's own list (`RSSFetcher.audioExtensions`).
+    public static let audioPathExtensions: Set<String> = ["mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "wav", "flac"]
 }
 
 public struct MediaCandidate: Hashable, Sendable {
@@ -46,12 +56,19 @@ public struct MediaCandidate: Hashable, Sendable {
     public let declaredMimeType: String?
     public let declaredPixelWidth: Int?
     public let declaredPixelHeight: Int?
+    /// The episode's own declared length in whole seconds (`itunes:duration`, JSON Feed `duration_in_seconds`),
+    /// when the feed stated one. Only a playback candidate carries it; nil is "not declared", never zero.
+    public let declaredDurationSeconds: Int?
 
     public init?(id: MediaCandidateID, originRevisionID: OriginRevisionID,
         role: MediaCandidateRole, mediaClass: MediaCandidateClass, remoteURL: URL,
-        declaredMimeType: String?, declaredPixelWidth: Int?, declaredPixelHeight: Int?) {
+        declaredMimeType: String?, declaredPixelWidth: Int?, declaredPixelHeight: Int?,
+        declaredDurationSeconds: Int? = nil) {
         guard let scheme = remoteURL.scheme?.lowercased(), scheme == "http" || scheme == "https",
             let host = remoteURL.host, !host.isEmpty else { return nil }
+        if let declaredDurationSeconds {
+            guard declaredDurationSeconds > 0, role == .playback else { return nil }
+        }
         switch (declaredPixelWidth, declaredPixelHeight) {
         case (nil, nil): break
         case (.some(let width), .some(let height)) where width > 0 && height > 0: break
@@ -65,5 +82,6 @@ public struct MediaCandidate: Hashable, Sendable {
         self.declaredMimeType = declaredMimeType
         self.declaredPixelWidth = declaredPixelWidth
         self.declaredPixelHeight = declaredPixelHeight
+        self.declaredDurationSeconds = declaredDurationSeconds
     }
 }

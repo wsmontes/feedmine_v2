@@ -58,6 +58,9 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public let primaryActionKind: PresentationPrimaryActionKind?
     /// D2: the media kind the publication froze. Nil is unknown history — not audio, not video.
     public let mediaIdentity: PresentationMediaIdentity?
+    /// The episode's declared length in seconds, as the publication froze it (V1 showed "34 min" beside the badge).
+    /// Nil for every card that is not an episode and for an episode whose feed declared none.
+    public let playbackDurationSeconds: Int?
     /// Slot-sized local image ready to draw. An image card crossing admission always carries it; nil means either a
     /// declared `.textOnly` card or a bitmap released outside the pixel band (already admitted, reconstructed before
     /// it returns to the band).
@@ -69,7 +72,8 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         sourceID: SourceID?, sourceDisplayName: String?, providerDisplayName: String?,
         layout: PresentationCardLayout,
         mediaAspectRatio: Double?, primaryActionKind: PresentationPrimaryActionKind?,
-        mediaIdentity: PresentationMediaIdentity? = nil, image: PresentationImage?) {
+        mediaIdentity: PresentationMediaIdentity? = nil, playbackDurationSeconds: Int? = nil,
+        image: PresentationImage?) {
         self.id = id
         self.title = title
         self.primaryText = primaryText
@@ -81,6 +85,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         self.mediaAspectRatio = mediaAspectRatio
         self.primaryActionKind = primaryActionKind
         self.mediaIdentity = mediaIdentity
+        self.playbackDurationSeconds = playbackDurationSeconds
         self.image = image
     }
 
@@ -90,7 +95,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         PresentationCard(id: id, title: title, primaryText: primaryText, timestamp: timestamp, sourceID: sourceID,
             sourceDisplayName: sourceDisplayName, providerDisplayName: providerDisplayName, layout: layout,
             mediaAspectRatio: mediaAspectRatio, primaryActionKind: primaryActionKind,
-            mediaIdentity: mediaIdentity, image: image)
+            mediaIdentity: mediaIdentity, playbackDurationSeconds: playbackDurationSeconds, image: image)
     }
 
     /// Releases only the bitmap. The slot keeps its frozen geometry, so nothing moves and the card is
@@ -105,6 +110,20 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public var playsAudio: Bool { mediaIdentity == .audio }
     /// The card states that its payload is a video, which this build opens at the origin, never in-app.
     public var identifiesVideo: Bool { mediaIdentity == .video }
+
+    /// V1's `durationFormatted` beside the Podcast badge: "34 min", "1 h 5 min". Only an episode states one, and a
+    /// length under a minute is not stated (V1's own rule).
+    public var playbackDurationLabel: String? {
+        playsAudio ? Self.durationLabel(seconds: playbackDurationSeconds) : nil
+    }
+
+    public static func durationLabel(seconds: Int?) -> String? {
+        guard let seconds, seconds >= 60 else { return nil }
+        let minutes = seconds / 60
+        guard minutes >= 60 else { return "\(minutes) min" }
+        let hours = minutes / 60, rest = minutes % 60
+        return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
+    }
 
     /// Whether this value may cross the feed's presentation boundary: a declared text card, or an image card with
     /// the pixels it was published with. An image card with `image == nil` is either a residency release (already
@@ -148,6 +167,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         case .some(.audio): mediaIdentity = .audio
         case .some(.video): mediaIdentity = .video
         }
+        playbackDurationSeconds = publishedCard.playbackDurationSeconds
         let projectedLayout = layout
         image = publishedCard.media.primary.flatMap { decoder?.image(key: $0.key, layout: projectedLayout) }
     }

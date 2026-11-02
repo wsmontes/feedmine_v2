@@ -157,6 +157,29 @@ final class ReaderActionCoordinatorTests: XCTestCase {
         XCTAssertEqual(opened, .externalURL(URL(string: "https://example.com/artigo")!))
     }
 
+    /// V1 parity: the player is handed what V1's showed — the card's prepared art, its text and the episode's
+    /// declared length — all from the occurrence's own frozen fields.
+    func testOpenMediaCarriesTheArtTheTextAndTheDeclaredLength() async throws {
+        let base = card(reference: "https://example.test/ep.mp3", kind: "mediaPlayback", mime: "audio/mpeg")
+        let episode = PublicationStore.CardRecord(id: base.id, originRecordID: base.originRecordID,
+            originRevisionID: base.originRevisionID, sourceID: base.sourceID, providerID: nil,
+            sourceDisplayName: base.sourceDisplayName, providerDisplayName: nil, contentEntityID: nil,
+            contentClusterID: nil, title: base.title, primaryText: "  Notas do episódio  ",
+            timestampValue: nil, timestampKind: nil, mediaKey: "sha256:" + String(repeating: "a", count: 64),
+            mediaPixelWidth: 1400, mediaPixelHeight: 1400, mediaMimeType: "image/jpeg", renderLayout: "hero",
+            renderMediaAspectRatio: 1, primaryActionKind: "mediaPlayback",
+            primaryActionReference: "https://example.test/ep.mp3", mediaIdentity: "audio",
+            playbackDurationSeconds: 1_830)
+        let (database, _) = try published([episode])
+        let coordinator = ReaderActionCoordinator(database: database)
+        guard case .media(let media) = try await coordinator.perform(.openMedia, cardID: episode.id) else {
+            return XCTFail("an episode opens as media")
+        }
+        XCTAssertEqual(media.artworkKey, episode.mediaKey)
+        XCTAssertEqual(media.summary, "Notas do episódio")
+        XCTAssertEqual(media.declaredDuration, 1_830)
+    }
+
     private func XCTAssertThrowsActionError(_ expression: @autoclosure () async throws -> ReaderActionTarget,
         file: StaticString = #filePath, line: UInt = #line) async {
         do {

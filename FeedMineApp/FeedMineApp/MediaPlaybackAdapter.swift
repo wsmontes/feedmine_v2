@@ -25,6 +25,9 @@ import Foundation
 import Observation
 import AVFoundation
 import MediaPlayer
+#if canImport(UIKit)
+import UIKit
+#endif
 import FeedMineDomain
 import FeedMineRuntime
 
@@ -47,6 +50,31 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
     /// Where the reader stopped listening. Nil when the host did not provide one (a preview, a test): the player
     /// then simply has no memory, and says so by never restoring anything.
     @ObservationIgnored var positions: (any ReaderPlaybackPositions)?
+    #if canImport(UIKit)
+    /// Reads a card's prepared image from the app's own media store (never the network). Nil in a preview or a
+    /// test: the player then simply shows no art.
+    @ObservationIgnored var artworkLoader: ((String) -> UIImage?)?
+    /// One read per item: the bar re-renders on every tick, and the art never changes under the same key.
+    @ObservationIgnored private var artworkCache: (key: String, image: UIImage?, artwork: MPMediaItemArtwork?)?
+
+    /// The art of the item that is up, for the bar, the full player and the lock screen (V1 showed it in all three).
+    var currentArtwork: UIImage? { state.item.flatMap { artwork(for: $0)?.image } }
+
+    private func artwork(for item: ReaderMediaItem) -> (image: UIImage?, artwork: MPMediaItemArtwork?)? {
+        guard let key = item.artworkKey else { return nil }
+        if let cached = artworkCache, cached.key == key { return (cached.image, cached.artwork) }
+        let image = artworkLoader?(key)
+        let artwork = image.map(Self.nowPlayingArtwork)
+        artworkCache = (key, image, artwork)
+        return (image, artwork)
+    }
+
+    /// Built outside the main actor on purpose: MediaPlayer calls the handler on its own queue, and a closure that
+    /// inherited this class's isolation would assert there.
+    nonisolated private static func nowPlayingArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }
+    #endif
     /// The card that reached its end. V1's own guard: only the end event completes an item, and a position is
     /// never saved for one that completed, so pausing in the final seconds keeps a real resume point while
     /// finishing does not resurrect one.
@@ -262,6 +290,11 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         ]
         // V1 stated the program as the artist; a card that names none states none, rather than an empty line.
         if let source = item.source, !source.isEmpty { info[MPMediaItemPropertyArtist] = source }
+        // V1 published the episode's excerpt and its cached art; both come from the card's own frozen values.
+        if let summary = item.summary { info[MPMediaItemPropertyComments] = summary }
+        #if canImport(UIKit)
+        if let artwork = artwork(for: item)?.artwork { info[MPMediaItemPropertyArtwork] = artwork }
+        #endif
         if let duration = state.duration, duration > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = duration
         }
@@ -312,7 +345,8 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
     private func install(_ item: ReaderMediaItem, asset: AVURLAsset, retrying: Bool) {
         let startAt = retrying ? state.position : 0
         let statedReason = retrying ? state.error : nil
-        let statedDuration = retrying ? state.duration : nil
+        // V1 parity: the feed's declared length is stated from the first frame and replaced by the measured one.
+        let statedDuration = retrying ? state.duration : item.declaredDuration
         generation &+= 1
         let generation = self.generation
         interactionRevision &+= 1
@@ -530,7 +564,8 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         let duration = player.currentItem?.duration.seconds
         let known = duration.map { $0.isFinite && $0 > 0 ? $0 : nil } ?? nil
         guard completedCardID != state.item?.cardID else { return }
-        state = state.reporting(position: seconds, duration: known, isPlaying: player.rate > 0)
+        state = state.reporting(position: seconds, duration: known ?? state.item?.declaredDuration,
+            isPlaying: player.rate > 0)
         updateNowPlaying()
         if seconds - lastSavedAt >= ReaderPlaybackPositionRules.saveInterval, seconds > 0 {
             savePosition()

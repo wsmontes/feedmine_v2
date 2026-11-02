@@ -46,10 +46,15 @@ public struct AcquisitionAdmissionStore: Sendable {
         public let declaredMimeType: String?
         public let declaredPixelWidth: Int?
         public let declaredPixelHeight: Int?
+        public let declaredDurationSeconds: Int?
         public init?(role: MediaCandidateRole, mediaClass: MediaCandidateClass, remoteURL: URL,
-            declaredMimeType: String?, declaredPixelWidth: Int?, declaredPixelHeight: Int?) {
+            declaredMimeType: String?, declaredPixelWidth: Int?, declaredPixelHeight: Int?,
+            declaredDurationSeconds: Int? = nil) {
             guard let scheme = remoteURL.scheme?.lowercased(), scheme == "http" || scheme == "https",
                 let host = remoteURL.host, !host.isEmpty else { return nil }
+            if let declaredDurationSeconds {
+                guard declaredDurationSeconds > 0, role == .playback else { return nil }
+            }
             switch (declaredPixelWidth, declaredPixelHeight) {
             case (nil, nil): break
             case (.some(let width), .some(let height)) where width > 0 && height > 0: break
@@ -61,6 +66,7 @@ public struct AcquisitionAdmissionStore: Sendable {
             self.declaredMimeType = declaredMimeType
             self.declaredPixelWidth = declaredPixelWidth
             self.declaredPixelHeight = declaredPixelHeight
+            self.declaredDurationSeconds = declaredDurationSeconds
         }
     }
 
@@ -434,7 +440,8 @@ public struct AcquisitionAdmissionStore: Sendable {
             guard let result = MediaCandidate(id: ordinal < stored.count ? stored[ordinal].id : MediaCandidateID(),
                 originRevisionID: revisionID, role: claim.role, mediaClass: claim.mediaClass, remoteURL: claim.remoteURL,
                 declaredMimeType: claim.declaredMimeType, declaredPixelWidth: claim.declaredPixelWidth,
-                declaredPixelHeight: claim.declaredPixelHeight) else {
+                declaredPixelHeight: claim.declaredPixelHeight,
+                declaredDurationSeconds: claim.declaredDurationSeconds) else {
                 throw AcquisitionAdmissionStoreError.invalidObservation(index: index, field: "mediaCandidates")
             }
             return result

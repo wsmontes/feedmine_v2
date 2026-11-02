@@ -173,9 +173,17 @@ public struct FeedItemCardView: View, Equatable {
                 .clipped()
                 .overlay { decodedImage }
                 .clipShape(RoundedRectangle(cornerRadius: appearance.landscapeThumbnailRadius))
+                .contentShape(Rectangle())
+                // V1's band played an episode from its thumbnail as the portrait hero does; the band had no play
+                // path at all here, so a landscape episode could only be opened as an article.
+                .highPriorityGesture(isAudio
+                    ? TapGesture().onEnded { emit(.openMedia) }
+                    : TapGesture().onEnded { emit(.open) })
             }
 
-            openingSurface { landscapeContent }
+            openingSurface(mediaAction: isAudio && availableActions.contains(.openMedia)) { landscapeContent }
+
+            if isAudio, availableActions.contains(.openMedia) { playControl }
         }
         .padding(appearance.contentPadding)
         .frame(maxWidth: .infinity)
@@ -213,10 +221,16 @@ public struct FeedItemCardView: View, Equatable {
                     .padding(.top, 3)
             }
 
-            HStack {
+            HStack(spacing: 6) {
                 Text(verbatim: Self.formatted(card.timestamp?.value))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if let duration = card.playbackDurationLabel {
+                    Text(verbatim: duration)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("card.duration")
+                }
                 Spacer(minLength: 0)
             }
             .padding(.top, 4)
@@ -328,29 +342,41 @@ public struct FeedItemCardView: View, Equatable {
 
             if isAudio || card.identifiesVideo { MediaIdentityBadge(identity: card.mediaIdentity) }
 
+            // V1 parity: an episode says how long it is before anything loads ("Podcast · 34 min").
+            if let duration = card.playbackDurationLabel {
+                Text(verbatim: duration)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("card.duration")
+            }
+
             // D1: "hear" has to work with a finger. The play action used to exist only as an accessibility action
             // on the body, and a text-only audio card has no hero to tap, so a normal tap opened the article and
             // the player was unreachable (measured 2026-10-20 on the published catalogue: three audio cards, all
             // textOnly, zero plays). A visible control on the metadata row gives every audio card the same touch
             // path, in addition to the accessibility action that stays where it was.
-            if isAudio, availableActions.contains(.openMedia) {
-                Button { emit(.openMedia) } label: {
-                    Label(String(localized: "Tocar"), systemImage: "play.fill")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 10)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("card.play")
-                .accessibilityLabel(String(localized: "Tocar episódio"))
-            }
+            if isAudio, availableActions.contains(.openMedia) { playControl }
 
             Spacer(minLength: 0)
 
             if !card.isImageBearing { inlineBookmarkControl }
         }
+    }
+
+    /// The episode's own play control, the same in the portrait source row and beside the landscape band.
+    private var playControl: some View {
+        Button { emit(.openMedia) } label: {
+            Label(String(localized: "Tocar"), systemImage: "play.fill")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("card.play")
+        .accessibilityLabel(String(localized: "Tocar episódio"))
     }
 
     /// The inline control's glyph. The icon is caption-sized **on purpose** — the fix for an unreachable target is

@@ -23,7 +23,8 @@ public struct AdmissionPolicy: Sendable {
             let media = try value.mediaCandidates.map { claim in
                 guard let mapped = AcquisitionAdmissionStore.MediaCandidateCommand(role: claim.role,
                     mediaClass: claim.mediaClass, remoteURL: claim.remoteURL, declaredMimeType: claim.declaredMimeType,
-                    declaredPixelWidth: claim.declaredPixelWidth, declaredPixelHeight: claim.declaredPixelHeight) else {
+                    declaredPixelWidth: claim.declaredPixelWidth, declaredPixelHeight: claim.declaredPixelHeight,
+                    declaredDurationSeconds: claim.declaredDurationSeconds) else {
                     throw AdmissionPolicyError.invalidPersistenceMapping(index: index)
                 }
                 return mapped

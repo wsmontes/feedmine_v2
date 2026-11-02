@@ -309,6 +309,9 @@ extension PublicationStore {
             try require(["none", "audio", "video"].contains(identity), "media identity")
             try require(identity == "audio" || card.primaryActionKind != "mediaPlayback", "media identity action")
         }
+        if let duration = card.playbackDurationSeconds {
+            try require(duration > 0, "playback duration")
+        }
     }
 
     // These insert envelopes are private. No public row type or generic CRUD API escapes.
@@ -366,7 +369,7 @@ extension PublicationStore {
              PublicationValueCoding.date(s.createdAt, field: "created_at").databaseValue]
     }
 
-    private static let cardColumns = ["id", "origin_record_id", "origin_revision_id", "source_id", "provider_id", "source_display_name", "provider_display_name", "content_entity_id", "content_cluster_id", "title", "primary_text", "timestamp_value", "timestamp_kind", "media_key", "media_pixel_width", "media_pixel_height", "media_mime_type", "render_layout", "render_media_aspect_ratio", "primary_action_kind", "primary_action_reference", "media_identity", "diversity_facts"]
+    private static let cardColumns = ["id", "origin_record_id", "origin_revision_id", "source_id", "provider_id", "source_display_name", "provider_display_name", "content_entity_id", "content_cluster_id", "title", "primary_text", "timestamp_value", "timestamp_kind", "media_key", "media_pixel_width", "media_pixel_height", "media_mime_type", "render_layout", "render_media_aspect_ratio", "primary_action_kind", "primary_action_reference", "media_identity", "diversity_facts", "playback_duration_seconds"]
     private static func cardValues(_ c: CardRecord) throws -> [DatabaseValue] {
         try [
             (PersistenceValueCoding.uuid(c.id.rawValue)).databaseValue,
@@ -391,7 +394,8 @@ extension PublicationStore {
             (c.primaryActionKind).databaseValue,
             (c.primaryActionReference).databaseValue,
             (c.mediaIdentity).databaseValue,
-            (try PublicationStore.encodeDiversity(c.diversity)).databaseValue
+            (try PublicationStore.encodeDiversity(c.diversity)).databaseValue,
+            (c.playbackDurationSeconds).databaseValue
         ]
     }
 

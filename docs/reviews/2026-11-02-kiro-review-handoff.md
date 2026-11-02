@@ -174,3 +174,47 @@ topo (a razão está em `FeedMineApp.swift`, comentário de `AppSurface`); só o
   (`PersonaExplorationUITests.swift:542`).
 - No aparelho: conferir se arrastar o texto rolado no topo fecha o painel e se o gesto dentro do Safari não
   briga com a rolagem da página.
+
+## Rodada 6: podcasts no nível da V1
+
+Comparação V1 × V2 feita no código. O tocador já era o da V1; a diferença estava na leitura do feed e no que a
+tela mostra. Portado nesta rodada:
+
+- **Duração declarada (`itunes:duration`, `duration_in_seconds` do JSON Feed).** Vai do tradutor ao candidato de
+  reprodução (`declaredDurationSeconds`, coluna nova `media_candidates.declared_duration_seconds`), é congelada com
+  o card de áudio (`playbackDurationSeconds`, coluna nova `published_cards`/`retired_published_cards`
+  `.playback_duration_seconds`) e aparece no card ("34 min", `PresentationCard.playbackDurationLabel`, id
+  `card.duration`), no tocador antes do AVPlayer medir e na tela de bloqueio.
+  - Migrações aditivas e anuláveis: `media-candidate-duration-v1` e `publication-playback-duration-v1`.
+  - A duração **não** entra em `ContentStore.sameMediaCandidate`: incluir faria todo episódio já gravado virar
+    `knownVersionMediaConflict`. Efeito: episódio já gravado só ganha a duração quando ganha uma revisão nova
+    (por exemplo, quando a capa do programa passa a entrar na lista de mídia, abaixo).
+- **Capa do programa como última imagem do episódio** (V1: `extractImageURL(item) ?? feedImage`). Usa
+  `itunes:image` do canal; o `<image>` do canal só quando não parece logo. Entra depois das imagens do próprio
+  episódio e antes da reprodução, então só é usada quando a do episódio falta ou falha, o que também impede que o
+  episódio saia do feed por INV-17 quando a imagem dele falha. Só para itens com áudio.
+  - Risco aceito: um episódio sem imagem própria, que antes saía como card de texto, agora declara a capa; se a
+    capa falhar de vez, ele é retido (INV-17), como qualquer card com imagem.
+- **Áudio reconhecido pela extensão** quando o MIME falta ou é genérico (`octet-stream` e afins), como o
+  `isAudioCandidate` da V1. Só áudio; um MIME específico não-áudio nunca é contrariado. Atom e JSON Feed agora
+  param no primeiro anexo tocável: antes, uma entrada com dois anexos de áudio gerava duas reproduções e
+  esbarrava no índice de uma reprodução por revisão do banco.
+- **Mini-player e tocador completo com capa e nome do programa** (`PlayerArtwork`, ids `mini-player-source`,
+  `full-player-source`, `full-player-artwork`); sem capa, o bloco com onda da V1.
+- **Tela de bloqueio com capa e resumo** (`MPMediaItemPropertyArtwork`, `MPMediaItemPropertyComments`). A capa é a
+  imagem já preparada do card (`ImageMaterializer.localBytes`), nunca um download. O `MPMediaItemArtwork` é criado
+  numa função `nonisolated` para o handler não herdar o MainActor.
+- **Card em paisagem toca o episódio**: a miniatura toca (os outros cards abrem), o texto ganhou a ação de
+  acessibilidade "Tocar" e o botão `card.play` aparece ao lado.
+
+Testes novos: `SyndicationPodcastTranslationTests`, `PublicationStoreTests.testPlaybackDurationIsFrozenWithTheOccurrence`,
+`PresentationProjectionTests.testPlaybackDurationLabel` e `testAnEpisodeCarriesItsFrozenLengthAndNothingElseDoes`,
+`ReaderActionCoordinatorTests.testOpenMediaCarriesTheArtTheTextAndTheDeclaredLength`. Testes de esquema
+atualizados: lista de migrações em `PublicationRunwayStoreTests`, colunas em `PublicationMediaIdentityPersistenceTests`,
+`MediaCandidateSchemaTests` e `RuntimeMigrationRebuildTests` (o `SELECT *` virou lista de colunas).
+
+Fora desta rodada: velocidade, timer, botão de AirPlay, fila, download e "ouvido" (nenhuma das duas versões tem);
+filtro "Podcasts" (o tipo de conteúdo não é aplicado na seleção da V2; exige mudança de elegibilidade e versão nova).
+
+No Mac: rodar as suítes acima e `FeedMediaJourneyUITests`/`PlaybackTests`; no aparelho, conferir a capa na tela de
+bloqueio (o handler do `MPMediaItemArtwork` é o ponto sensível de concorrência) e um feed real sem MIME.

@@ -112,6 +112,9 @@ public struct PublicationStore: Sendable {
         public let mediaIdentity: String?
         /// P10: editorial facts frozen with the occurrence; nil for rows written before the facts existed.
         public let diversity: EditorialDiversityFact?
+        /// The episode's declared length, frozen with an audio occurrence; nil for any other card and for rows
+        /// written before the column existed.
+        public let playbackDurationSeconds: Int?
 
         public init(
             id: PublicationCardID,
@@ -136,7 +139,8 @@ public struct PublicationStore: Sendable {
             primaryActionKind: String?,
             primaryActionReference: String?,
             mediaIdentity: String? = nil,
-            diversity: EditorialDiversityFact? = nil
+            diversity: EditorialDiversityFact? = nil,
+            playbackDurationSeconds: Int? = nil
         ) {
             self.id = id
             self.originRecordID = originRecordID
@@ -161,6 +165,7 @@ public struct PublicationStore: Sendable {
             self.primaryActionReference = primaryActionReference
             self.mediaIdentity = mediaIdentity
             self.diversity = diversity
+            self.playbackDurationSeconds = playbackDurationSeconds
         }
     }
 

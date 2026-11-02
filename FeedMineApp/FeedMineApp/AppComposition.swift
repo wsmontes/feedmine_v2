@@ -650,6 +650,17 @@ final class AppComposition {
         mediaAdapter.positions = ReaderPlaybackPositionsAdapter(database: { [weak self] in
             self?.libraryDatabase()
         })
+        #if canImport(UIKit)
+        // V1 parity: the player shows the card's own prepared art, read from the same store the feed draws from.
+        let mediaDirectory = self.directory.appendingPathComponent("Media", isDirectory: true)
+        mediaAdapter.artworkLoader = { key in
+            guard let mediaKey = PublishedMediaKey(rawValue: key),
+                let bytes = try? ImageMaterializer(assetDirectory: mediaDirectory).localBytes(for: mediaKey) else {
+                return nil
+            }
+            return UIImage(data: bytes)
+        }
+        #endif
         // F02/B01: a reader who has chosen nothing is **not** a failure. The feed can be supplied by discovery,
         // and when it cannot, the empty-sources surface states exactly that. What the app does have to report is a
         // catalogue that cannot be read at all — and the two were the same branch here, which is why a client with
@@ -2020,6 +2031,11 @@ final class AppComposition {
 
     /// The reader's playback state, as the shell draws it.
     var mediaState: ReaderMediaState { mediaAdapter.state }
+
+    #if canImport(UIKit)
+    /// The art of the episode that is up, already prepared locally; nil when the card has none.
+    var mediaArtwork: UIImage? { mediaAdapter.currentArtwork }
+    #endif
 
     /// T9: the four intents the surfaces issue. They are the coordinator's, wrapped so the shell never holds it.
     /// The card intent's refusal is returned to the caller that owns a surface to state it.
@@ -4236,13 +4252,16 @@ final class FeedAssociation {
             // F10/T9/D2: one decision states both facts — the card's identity (audio, video or none), read from
             // the enclosure's own class, and the one action it may carry. An audio episode plays from its
             // enclosure; a video item opens its article at the origin; anything else opens its article.
-            let decision = PublishedMediaDecision.resolve(playback: playback(candidate.originRevisionID),
-                link: candidate.primaryLink)
+            let payload = playback(candidate.originRevisionID)
+            let decision = PublishedMediaDecision.resolve(playback: payload, link: candidate.primaryLink)
             return .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,
                 sourceID: source, providerID: candidate.providerID, sourceDisplayName: source.flatMap { names[$0] },
                 providerDisplayName: nil),
                 contentEntityID: nil, contentClusterID: nil,
                 primaryAction: decision.primaryAction, mediaIdentity: decision.identity,
+                // V1 parity: the episode's declared length is frozen with the card (PublicationPreparation keeps it
+                // only for an audio card).
+                playbackDurationSeconds: payload?.declaredDurationSeconds,
                 presentation: presentation)
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }

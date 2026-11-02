@@ -265,7 +265,8 @@ public struct PublicationCoordinator: Sendable {
                 contentEntityID: draft.contentEntityID, contentClusterID: draft.contentClusterID,
                 text: draft.text, timestamp: draft.timestamp, media: draft.media,
                 renderContract: draft.renderContract, primaryAction: draft.primaryAction,
-                mediaIdentity: draft.mediaIdentity, diversity: draft.diversity) else {
+                mediaIdentity: draft.mediaIdentity, diversity: draft.diversity,
+                playbackDurationSeconds: draft.playbackDurationSeconds) else {
                 throw PublicationCoordinatorError.invalidPreparedCard(index: index)
             }
             return card

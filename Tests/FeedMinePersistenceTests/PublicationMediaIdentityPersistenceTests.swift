@@ -109,8 +109,8 @@ final class PublicationMediaIdentityPersistenceTests: XCTestCase {
         }
         let database = try RuntimeDatabase(location: location)
         try database.read { db in
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('published_cards') ORDER BY cid").suffix(2),
-                ["diversity_facts", "media_identity"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('published_cards') ORDER BY cid").suffix(3),
+                ["diversity_facts", "media_identity", "playback_duration_seconds"])
             XCTAssertNil(try String.fetchOne(db, sql: "SELECT media_identity FROM published_cards WHERE id = ?",
                 arguments: [card]))
         }

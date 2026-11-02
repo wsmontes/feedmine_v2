@@ -20,17 +20,21 @@ public struct MiniPlayerBar: View {
     private let onOpen: () -> Void
     /// Stops playback and takes the bar away. Nil draws no close control (the bar then stays for the session).
     private let onClose: (() -> Void)?
+    /// The episode's own prepared art (V1's 40 pt thumbnail). Nil draws V1's waveform tile instead.
+    private let artwork: Image?
 
     /// V1's bar height. A constant, not a measurement: the feed above it must not move when the reader plays.
     public static let height: CGFloat = 56
 
     public init(state: ReaderMediaState, appearance: ReaderAppearance = .standard,
-        onToggle: @escaping () -> Void, onOpen: @escaping () -> Void, onClose: (() -> Void)? = nil) {
+        onToggle: @escaping () -> Void, onOpen: @escaping () -> Void, onClose: (() -> Void)? = nil,
+        artwork: Image? = nil) {
         self.state = state
         self.appearance = appearance
         self.onToggle = onToggle
         self.onOpen = onOpen
         self.onClose = onClose
+        self.artwork = artwork
     }
 
     public var body: some View {
@@ -46,21 +50,32 @@ public struct MiniPlayerBar: View {
             .accessibilityLabel(state.isPlaying ? String(localized: "Pausar") : String(localized: "Tocar"))
 
             Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: state.item?.title ?? String(localized: "Sem título"))
-                        .font(.subheadline)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("mini-player-title")
-                    // F15 R4: a refusal is stated in words, not only by the warning glyph — the bar names the
-                    // item that could not play and stays the destination to the full player's own reason.
-                    if let error = state.error {
-                        Text(verbatim: error)
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
+                HStack(spacing: 10) {
+                    PlayerArtwork(artwork: artwork, side: 40, radius: 6)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: state.item?.title ?? String(localized: "Sem título"))
+                            .font(.subheadline)
                             .lineLimit(1)
-                            .accessibilityIdentifier("mini-player-error")
-                    } else {
-                        progress
+                            .accessibilityIdentifier("mini-player-title")
+                        // V1 named the show under the episode; a card that names none states none.
+                        if let source = state.item?.source {
+                            Text(verbatim: source)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .accessibilityIdentifier("mini-player-source")
+                        }
+                        // F15 R4: a refusal is stated in words, not only by the warning glyph — the bar names the
+                        // item that could not play and stays the destination to the full player's own reason.
+                        if let error = state.error {
+                            Text(verbatim: error)
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .lineLimit(1)
+                                .accessibilityIdentifier("mini-player-error")
+                        } else {
+                            progress
+                        }
                     }
                 }
                 // The row fills the bar: opening the player is the whole bar's own gesture (V1's), and the
@@ -133,6 +148,33 @@ public struct MiniPlayerBar: View {
     }
 }
 
+/// The episode's art at a fixed size, or V1's waveform tile when the card has none. A drawing: the controls beside
+/// it carry the meaning, so it is hidden from VoiceOver.
+struct PlayerArtwork: View {
+    let artwork: Image?
+    let side: CGFloat
+    let radius: CGFloat
+
+    var body: some View {
+        Group {
+            if let artwork {
+                artwork.resizable().scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(colors: [Color.purple.opacity(0.25), Color.indigo.opacity(0.10)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Image(systemName: "waveform")
+                        .font(.system(size: side * 0.4, weight: .light))
+                        .foregroundStyle(Color.purple.opacity(0.5))
+                }
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: radius))
+        .accessibilityHidden(true)
+    }
+}
+
 /// V1's full player, as a sheet: the same intents, plus the two skips and a scrub.
 public struct FullPlayerView: View {
     private let state: ReaderMediaState
@@ -141,19 +183,22 @@ public struct FullPlayerView: View {
     private let onSkip: (TimeInterval) -> Void
     private let onSeek: (TimeInterval) -> Void
     private let onClose: () -> Void
+    /// The episode's own prepared art (V1's 280 pt cover). Nil draws V1's waveform tile instead.
+    private let artwork: Image?
 
     /// V1's own skip step.
     public static let skipInterval: TimeInterval = 15
 
     public init(state: ReaderMediaState, appearance: ReaderAppearance = .standard,
         onToggle: @escaping () -> Void, onSkip: @escaping (TimeInterval) -> Void,
-        onSeek: @escaping (TimeInterval) -> Void, onClose: @escaping () -> Void) {
+        onSeek: @escaping (TimeInterval) -> Void, onClose: @escaping () -> Void, artwork: Image? = nil) {
         self.state = state
         self.appearance = appearance
         self.onToggle = onToggle
         self.onSkip = onSkip
         self.onSeek = onSeek
         self.onClose = onClose
+        self.artwork = artwork
     }
 
     public var body: some View {
@@ -162,12 +207,23 @@ public struct FullPlayerView: View {
                 .fill(.secondary.opacity(0.4))
                 .frame(width: 36, height: 5)
                 .padding(.top, 8)
-            Text(verbatim: state.item?.title ?? String(localized: "Sem título"))
-                .font(.title3.weight(.semibold))
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .padding(.horizontal, 24)
-                .accessibilityIdentifier("full-player-title")
+            PlayerArtwork(artwork: artwork, side: 240, radius: 16)
+                .accessibilityIdentifier("full-player-artwork")
+            VStack(spacing: 6) {
+                Text(verbatim: state.item?.title ?? String(localized: "Sem título"))
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .accessibilityIdentifier("full-player-title")
+                if let source = state.item?.source {
+                    Text(verbatim: source)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("full-player-source")
+                }
+            }
+            .padding(.horizontal, 24)
             if let error = state.error {
                 Text(verbatim: error)
                     .font(.footnote)

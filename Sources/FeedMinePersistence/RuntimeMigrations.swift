@@ -785,6 +785,21 @@ public enum RuntimeMigrations {
                 CREATE INDEX reader_history_legacy_checkpoint_card ON reader_history_legacy_checkpoints(resolved_edition_id, card_id);
                 """)
         }
+        // 2026-11-02 (V1 podcast parity): the episode's declared length (`itunes:duration`) travels with its playback
+        // candidate and is frozen with the occurrence, so a card and the player can say how long an episode is
+        // before a byte of it is loaded (V1's `durationFormatted`). Additive and nullable: a row written before
+        // this schema keeps its exact past and reads as "not declared". Both card tables gain the column because
+        // history is archived by `INSERT ... SELECT *`, which needs the same column order.
+        migrator.registerMigration("media-candidate-duration-v1") { db in
+            try db.execute(sql: """
+                ALTER TABLE media_candidates ADD COLUMN declared_duration_seconds INTEGER
+                    CHECK (declared_duration_seconds IS NULL OR declared_duration_seconds > 0)
+                """)
+        }
+        migrator.registerMigration("publication-playback-duration-v1") { db in
+            try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN playback_duration_seconds INTEGER")
+            try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN playback_duration_seconds INTEGER")
+        }
         return migrator
     }
 

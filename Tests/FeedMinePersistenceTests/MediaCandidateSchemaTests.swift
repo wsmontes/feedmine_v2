@@ -167,7 +167,9 @@ final class MediaCandidateSchemaTests: XCTestCase {
                         return column.0 != "fingerprint_generation" && column.0 != "body_source_element"
                     }
                     if table == "feed_editions" { return column.0 != "context_identity" && column.0 != "context_key_json" }
-                    if table == "published_cards" { return column.0 != "diversity_facts" && column.0 != "media_identity" }
+                    if table == "published_cards" {
+                        return !["diversity_facts", "media_identity", "playback_duration_seconds"].contains(column.0)
+                    }
                     if table == "session_checkpoint" || table == "context_checkpoints" {
                         return column.0 != "anchor_top_delta" && column.0 != "anchor_height"
                     }

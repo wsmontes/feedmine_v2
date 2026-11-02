@@ -38,6 +38,26 @@ enum StorageFixture {
 }
 
 final class PublicationStoreTests: XCTestCase {
+    /// V1 parity (2026-11-02): an episode's declared length is frozen with its occurrence and read back exactly;
+    /// a card written without it reads as "not declared".
+    func testPlaybackDurationIsFrozenWithTheOccurrence() throws {
+        let database = try StorageFixture.database(self)
+        let store = PublicationStore(database: database)
+        let edition = StorageFixture.edition()
+        let episode = PublicationStore.CardRecord(id: PublicationCardID(), originRecordID: OriginRecordID(),
+            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil, sourceDisplayName: "Show",
+            providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil, title: "Episode",
+            primaryText: nil, timestampValue: nil, timestampKind: nil, mediaKey: nil, mediaPixelWidth: nil,
+            mediaPixelHeight: nil, mediaMimeType: nil, renderLayout: "textOnly", renderMediaAspectRatio: nil,
+            primaryActionKind: "mediaPlayback", primaryActionReference: "https://cdn.example.test/e.mp3",
+            mediaIdentity: "audio", playbackDurationSeconds: 2_040)
+        let plain = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [episode, plain]),
+            cards: [episode, plain])
+        XCTAssertEqual(try store.card(id: episode.id)?.playbackDurationSeconds, 2_040)
+        XCTAssertNil(try store.card(id: plain.id)?.playbackDurationSeconds)
+    }
+
     func testCreateAppendAndKeysetWindowsPreserveScalarsAndOrder() throws {
         let database = try StorageFixture.database(self)
         let store = PublicationStore(database: database)

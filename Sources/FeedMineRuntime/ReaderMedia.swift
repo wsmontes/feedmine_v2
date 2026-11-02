@@ -20,10 +20,20 @@ public struct ReaderMediaItem: Hashable, Sendable, Identifiable {
     public let mimeType: String?
     /// The program the episode belongs to, as the card froze it. V1 stated it on the lock screen as the artist.
     public let source: String?
+    /// The card's own prepared image (`PublishedMediaKey` raw value): V1's player and lock screen showed the
+    /// episode's art. Only a local image is ever drawn from it — the player never downloads one.
+    public let artworkKey: String?
+    /// The card's own text, which V1 published on the lock screen as the episode's comments.
+    public let summary: String?
+    /// The length the feed declared (`itunes:duration`), stated until the player measures the real one.
+    public let declaredDuration: TimeInterval?
 
     public init(cardID: PublicationCardID, url: URL, title: String?, mimeType: String?,
-        source: String? = nil) {
+        source: String? = nil, artworkKey: String? = nil, summary: String? = nil,
+        declaredDuration: TimeInterval? = nil) {
         self.cardID = cardID; self.url = url; self.title = title; self.mimeType = mimeType; self.source = source
+        self.artworkKey = artworkKey; self.summary = summary
+        self.declaredDuration = declaredDuration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
     }
 
     public var id: PublicationCardID { cardID }

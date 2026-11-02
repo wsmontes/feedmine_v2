@@ -75,6 +75,9 @@ public struct PublishedCard: Hashable, Sendable {
     /// P10: the editorial facts this occurrence was published with. Frozen with identity and text; nil for history
     /// written before the facts existed.
     public let diversity: EditorialDiversityFact?
+    /// The episode's declared length, frozen with an audio occurrence. Nil for every other card and for history
+    /// written before the fact existed.
+    public let playbackDurationSeconds: Int?
 
     public init?(
         id: PublicationCardID,
@@ -87,9 +90,11 @@ public struct PublishedCard: Hashable, Sendable {
         renderContract: RenderContract,
         primaryAction: PublishedPrimaryAction?,
         mediaIdentity: PublishedMediaIdentity? = nil,
-        diversity: EditorialDiversityFact? = nil
+        diversity: EditorialDiversityFact? = nil,
+        playbackDurationSeconds: Int? = nil
     ) {
         guard renderContract.layout != .textOnly || media.primary == nil else { return nil }
+        guard playbackDurationSeconds.map({ $0 > 0 }) ?? true else { return nil }
         // The two facts are one decision: a known audio card carries the in-app player, a known video or empty
         // card never does. Unknown (nil, history written before the fact) stays permitted and stays unknown.
         switch mediaIdentity {
@@ -111,5 +116,6 @@ public struct PublishedCard: Hashable, Sendable {
         self.primaryAction = primaryAction
         self.mediaIdentity = mediaIdentity
         self.diversity = diversity
+        self.playbackDurationSeconds = playbackDurationSeconds
     }
 }
