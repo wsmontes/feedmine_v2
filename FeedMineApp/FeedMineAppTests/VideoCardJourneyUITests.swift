@@ -561,23 +561,34 @@ final class VideoCardJourneyUITests: XCTestCase {
     /// A volta do navegador: o controle de fechar do Safari (o botão que o `SFSafariViewController` desenha) ou o
     /// gesto. Só conta como volta quando o conteúdo web não está mais na árvore.
     private func closeReader(_ app: XCUIApplication) {
-        if app.buttons["reading.close"].exists {
+        func timed(_ label: String, _ work: () -> Bool) -> Bool {
+            let started = Date()
+            let value = work()
+            print("VIDEO_CARD_JOURNEY query=\(label) ms=\(Int(Date().timeIntervalSince(started) * 1000)) value=\(value)")
+            return value
+        }
+        if timed("reading.close.exists", { app.buttons["reading.close"].exists }) {
             app.buttons["reading.close"].tap()
         } else {
             for label in ["Fechar", "Close", "Done", "Concluído"] {
                 let button = app.buttons[label].firstMatch
-                if button.exists && button.isHittable { button.tap(); break }
+                if timed("close-\(label).exists", { button.exists }) && button.isHittable { button.tap(); break }
             }
         }
         let deadline = Date().addingTimeInterval(30)
+        var iterations = 0
         while Date() < deadline {
-            if !app.staticTexts["reading.headline"].exists && !app.webViews.firstMatch.exists {
+            iterations += 1
+            let headline = timed("headline.exists.\(iterations)", { app.staticTexts["reading.headline"].exists })
+            let web = timed("webview.exists.\(iterations)", { app.webViews.firstMatch.exists })
+            if !headline && !web {
                 // A superfície sair da árvore não é o fim da transição: o feed ainda está escalado por um instante.
                 Thread.sleep(forTimeInterval: 1.2)
                 return
             }
             Thread.sleep(forTimeInterval: 0.5)
         }
+        print("VIDEO_CARD_JOURNEY query=close-timeout")
         app.swipeDown(velocity: .fast)
     }
 
