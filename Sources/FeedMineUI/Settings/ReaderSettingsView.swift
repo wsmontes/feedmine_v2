@@ -119,7 +119,7 @@ public struct ReaderSettingsView: View {
             }
         }
         .alert(String(localized: "Não foi possível salvar as preferências"), isPresented: Binding(
-            get: { store.errorMessage != nil }, set: { _ in })) {
+            get: { store.errorMessage != nil }, set: { if !$0 { store.dismissError() } })) {
             Button(String(localized: "OK"), role: .cancel) {}
         } message: {
             Text(verbatim: store.errorMessage ?? "")

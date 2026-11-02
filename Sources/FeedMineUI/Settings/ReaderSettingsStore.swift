@@ -22,6 +22,9 @@ public final class ReaderSettingsStore {
     public private(set) var settings: ReaderSettings = .standard
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
+    /// The reader acknowledged the error alert. Without this the alert's binding could not clear the message,
+    /// so OK left it up (or brought it back) until some later operation happened to succeed.
+    public func dismissError() { errorMessage = nil }
 
     @ObservationIgnored private let backend: ReaderSettingsBackend
 

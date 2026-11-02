@@ -142,6 +142,10 @@ public final class ReaderAddFeedStore {
         guard let text = clipboard(), !text.isEmpty else { return }
         input = input.isEmpty ? text : input + "\n" + text
         errorMessage = nil
+        // Like typing: the input changed, so the preview of the earlier input no longer describes what "Adicionar"
+        // would add. Keeping it made the next tap add only the earlier batch and discard what was pasted.
+        pendingProposal = nil
+        adoption = nil
     }
 
     public func loadCollections() async {

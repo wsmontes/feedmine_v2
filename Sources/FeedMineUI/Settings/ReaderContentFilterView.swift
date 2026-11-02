@@ -75,6 +75,9 @@ public final class ReaderContentFilterStore {
     public private(set) var enabledTemplates: Set<String> = []
     public private(set) var templates: [ReaderContentFilterTemplateRow] = []
     public private(set) var errorMessage: String?
+    /// The reader acknowledged the error alert. Without this the alert's binding could not clear the message,
+    /// so OK left it up (or brought it back) until some later operation happened to succeed.
+    public func dismissError() { errorMessage = nil }
 
     @ObservationIgnored private let backend: any ReaderContentFilterBackend
 
@@ -296,7 +299,7 @@ public struct ReaderContentFilterView: View {
             Button(String(localized: "Cancelar"), role: .cancel) {}
         }
         .alert(String(localized: "Não foi possível salvar"), isPresented: Binding(
-            get: { store.errorMessage != nil }, set: { _ in })) {
+            get: { store.errorMessage != nil }, set: { if !$0 { store.dismissError() } })) {
             Button(String(localized: "OK"), role: .cancel) {}
         } message: {
             Text(verbatim: store.errorMessage ?? "")
