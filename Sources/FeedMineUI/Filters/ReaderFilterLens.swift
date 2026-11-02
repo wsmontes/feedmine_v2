@@ -114,7 +114,7 @@ public struct ReaderFilterLens: View {
                 removal: .region(region)))
         }
         if filter.contentType != .all {
-            chips.append(.init(id: "content-type", kind: .contentType, label: filter.contentType.rawValue,
+            chips.append(.init(id: "content-type", kind: .contentType, label: filter.contentType.displayName,
                 systemImage: filter.contentType.icon, removal: .contentType))
         }
         for node in filter.taxonomyNodeIDs.sorted() {
@@ -127,7 +127,7 @@ public struct ReaderFilterLens: View {
                 removal: .language(language)))
         }
         if filter.mood != .all {
-            chips.append(.init(id: "mood", kind: .mood, label: filter.mood.rawValue,
+            chips.append(.init(id: "mood", kind: .mood, label: filter.mood.displayName,
                 systemImage: filter.mood.icon, removal: .mood))
         }
         if filter.effectiveExclusionRules != nil {
@@ -136,5 +136,32 @@ public struct ReaderFilterLens: View {
                 removal: .exclusions))
         }
         return chips
+    }
+}
+
+// The raw values are V1's persisted identities ("Serious", "Articles", …) and stay the stored and the
+// accessibility identity. What the reader reads is a localized name: the sheet and the lens drew the raw English
+// value inside the pt-BR interface.
+public extension ReaderMood {
+    var displayName: String {
+        switch self {
+        case .all: String(localized: "Todos")
+        case .serious: String(localized: "Sério")
+        case .fun: String(localized: "Divertido")
+        case .technical: String(localized: "Técnico")
+        case .inspiring: String(localized: "Inspirador")
+        }
+    }
+}
+
+public extension ReaderContentType {
+    var displayName: String {
+        switch self {
+        case .all: String(localized: "Todos")
+        case .text: String(localized: "Artigos")
+        case .video: String(localized: "Vídeos")
+        case .audio: String(localized: "Podcasts")
+        case .forum: String(localized: "Fóruns")
+        }
     }
 }

@@ -188,7 +188,7 @@ public struct FilterSheetView: View {
                     ForEach(ReaderContentType.allCases, id: \.rawValue) { type in
                         Button {
                             store.select(contentType: type)
-                        } label: { checkRow(type.rawValue, icon: type.icon,
+                        } label: { checkRow(type.displayName, icon: type.icon,
                             isSelected: store.draft.contentType == type) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("content-type-\(type.rawValue.lowercased())")
@@ -273,7 +273,7 @@ public struct FilterSheetView: View {
                     ForEach(ReaderMood.allCases, id: \.rawValue) { mood in
                         Button {
                             store.select(mood: mood)
-                        } label: { checkRow(mood.rawValue, icon: mood.icon, isSelected: store.draft.mood == mood) }
+                        } label: { checkRow(mood.displayName, icon: mood.icon, isSelected: store.draft.mood == mood) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("mood-\(mood.rawValue.lowercased())")
                             .accessibilityValue(store.draft.mood == mood ? "selected" : "not selected")
