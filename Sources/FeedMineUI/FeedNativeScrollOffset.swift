@@ -125,6 +125,9 @@ final class FeedNativeScrollOffset {
         scrollView != nil && !nativeGestureActive && !isAnimatingScroll && !isCorrecting
     }
     #if DEBUG
+    /// DEBUG-only: IDs with physical card geometry inside the real viewport.
+    /// Bounded to the IDs of the installed native rail; not editorial exposure.
+    private(set) var observedVisibleCardIDs: Set<PublicationCardID> = []
     private(set) var activeWrites = 0
     private(set) var activeWindowChanges = 0
     private(set) var activeLayoutSteps = 0
@@ -158,6 +161,7 @@ final class FeedNativeScrollOffset {
         }
         #if DEBUG
         if changed {
+            observedVisibleCardIDs.formIntersection(ids)
             let kept = Set(ids)
             gestureProofs = gestureProofs.filter { kept.contains($0.key) }
             if gestureActive { activeWindowChanges += 1 }
@@ -176,6 +180,13 @@ final class FeedNativeScrollOffset {
         visualWitness = nil
     }
     func observe(_ proof: FeedVisualCardGeometry) -> Bool {
+        #if DEBUG
+        if scrollView != nil && proof.frame.height > 0 &&
+            proof.frame.maxY > 0 && proof.frame.minY < proof.height &&
+            correction.currentWindowIDs.contains(proof.cardID) {
+            observedVisibleCardIDs.insert(proof.cardID)
+        }
+        #endif
         if provisionalCorrection != nil && !provisionalPhysicalScopeMatches {
             discardUntrustedProvisionalGeometry()
             return false
