@@ -348,6 +348,18 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertFalse(try renderedText(unrestricted, height: 1500).contains { $0.contains("Rever fontes excluídas") })
     }
 
+    func testStoredReadingsMenuDoesNotReplaceAnActiveFeedsLoadingOrFailureSurface() throws {
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        for work in [FeedPresentationState.Work.pending, .unreachable, .endOfContent] {
+            try store.install(FeedPresentationHandoff.report(work, into: store.state))
+            let text = try renderedText(FeedScreen(store: store, onRecoverHistory: {}), height: 1200)
+            XCTAssertFalse(text.contains { $0.contains("publicações estão pausadas") || $0.contains("escolher os critérios") },
+                "A stored-readings menu is not evidence of a paused feed: \(text)")
+        }
+        let paused = try renderedText(FeedScreen(store: store, onRecoverHistory: {}, readingIsPaused: true), height: 1200)
+        XCTAssertTrue(paused.contains { $0.contains("escolher os critérios") }, paused.description)
+    }
+
     func testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory() throws {
         let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
         try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))

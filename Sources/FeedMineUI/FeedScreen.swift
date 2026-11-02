@@ -282,7 +282,7 @@ public struct FeedScreen: View {
     }
 
     @ViewBuilder private var loadingSurface: some View {
-        if let onRecoverHistory {
+        if readingIsPaused, let onRecoverHistory {
             VStack(alignment: .leading, spacing: 12) {
                 Text(String(localized: "As novas publicações estão pausadas até você escolher os critérios desta leitura."))
                 Button(String(localized: "Escolher como continuar"), action: onRecoverHistory)
