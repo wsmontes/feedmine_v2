@@ -121,3 +121,32 @@ assuntos ? fonte ? ordem base). Sem aleatoriedade.
   `PublicationPreparationTests` (v7 congela o tipo).
 - No Mac: rodar esses quatro primeiro. Depois, num aparelho com o cat?logo real, comparar os 50 primeiros
   cards de uma Edition nova com os da Edition v6 atual (participa??o de ?udio e fontes distintas).
+
+## Rodada 4: teto de feed e imagens decorativas (mesmo branch)
+
+- **Teto do corpo do feed: 1 MB para 4 MB no estado nominal** (`StageBudgetPolicy.nominalFeedBodyBytes`). Um feed
+  acima do teto d? `bodyTooLarge` (conte?do remoto, sem nova tentativa), ent?o um podcast que publica o cat?logo
+  inteiro num documento nunca gerava card. Os degraus de press?o n?o mudaram: 500 KB em rede limitada, pouco
+  espa?o ou aquecimento s?rio; 250 KB em cr?tico. Teste: `PipelineHeadroomTests.testNominalPullReadsLargeFeedsAndPressureKeepsTheSmallerRungs`.
+  No aparelho: medir mem?ria com 8 feeds grandes simult?neos.
+- **Imagens decorativas filtradas na origem**, para o item virar card de texto em vez de imagem declarada que
+  falha e sai da fila (INV-17):
+  - marcadores novos em `SyndicationMediaLocator.decorativeMarkers`: smilies do WordPress (`/wp-includes/images/smilies/`,
+    `wp-smiley`), bot?es de coment?rio do WordPress.com, Feedsportal, `doubleclick` em qualquer dom?nio, `/avatars/`;
+  - `<img>` com `width`/`height` declarados: um lado de 1 ou 2 px, ou os dois ? 150, ? pulado e a pr?xima imagem
+    vale (`isDecorativeDeclaredSize`);
+  - `media:thumbnail`/`media:content` com um lado declarado de 1 ou 2 px ? recusado mesmo sem o outro lado.
+  - Testes: `SyndicationMediaLocatorDecorativeTests` (novo) e `SyndicationTranslatorTests.test28b...`.
+  - Efeito colateral esperado: como as URLs de m?dia entram na impress?o material, itens que tinham uma dessas
+    imagens ganham uma revis?o nova na pr?xima coleta. Cards j? publicados n?o mudam (PD-5).
+
+**Fora desta m?quina, de prop?sito:**
+- Mem?ria de visto/aberto por mat?ria: migra??o de banco e decis?o de produto sobre "lido".
+- Chave de provedor/agregador no v7: `providerID` ? sempre nil em produ??o (`SyndicationTranslator.swift`, `providerID: nil`)
+  e nenhum campo de publicador original ? lido; exige modelo novo.
+- Limite por fonte e filtros antes do `LIMIT`: a janela ? paginada por cursor e um corte em SQL pula linhas para
+  sempre (`ContentStore.candidateWindow`). Precisa de desenho e testes rodando.
+- Idade m?xima: vários fixtures usam datas fixas antigas (ex.: 1_700_000_000, nov/2023); um corte quebraria testes que n?o consigo rodar aqui.
+- Busca ao voltar depois de N minutos: a coleta s? nasce da press?o do runway (`RunwayController.acquisitionIntentIfEligible`);
+  um gatilho por tempo mexe nesse contrato.
+- Port?es de qualidade por item e idioma detectado: mudam a contagem de rejei??es e a identidade do que entra.
