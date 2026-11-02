@@ -181,7 +181,7 @@ final class FeedNativeStageHostTests: XCTestCase {
         XCTAssertEqual(native.currentWindowIDs, Array(ids[0..<3]),
             "The native writer must track actual drawn IDs, not the semantic rail")
         XCTAssertTrue(native.observedVisibleCardIDs.contains(ids[1]),
-            "Common card B must have delivered a visible real-layout proof to the native writer")
+            "Common card B missing from writer. Visible-native IDs: \(native.observedVisibleCardIDs.map { $0.rawValue.uuidString }.sorted()), capture probeEntries: \(FeedVisualCapture.probeEntries), probeGuards: \(FeedVisualCapture.probeGuards), cardObservations: \(FeedVisualCapture.cardObservations), physicalIDs: \(native.currentWindowIDs.count), nativeScrollAttached: \(native.scrollView != nil)")
         let offsetBefore = scroll.contentOffset.y
         let eventsBefore = viewportEvents
 
@@ -195,7 +195,8 @@ final class FeedNativeStageHostTests: XCTestCase {
         XCTAssertEqual(store.state.presentation?.window.items.map(\.id), Array(ids[1..<4]))
         XCTAssertEqual(store.renderedItems.map(\.id), Array(ids[0..<3]))
         XCTAssertEqual(native.currentWindowIDs, Array(ids[0..<3]))
-        XCTAssertTrue(native.observedVisibleCardIDs.contains(ids[1]))
+        XCTAssertTrue(native.observedVisibleCardIDs.contains(ids[1]),
+            "Common card B still has no native proof after semantic staging")
         XCTAssertEqual(scroll.contentOffset.y, offsetBefore, accuracy: 1,
             "Staging alone must not move the reader")
         XCTAssertEqual(viewportEvents, eventsBefore,
