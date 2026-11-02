@@ -154,6 +154,12 @@ final class AppComposition {
     #endif
     /// The product-facing message the reader sees when the composition cannot start.
     private(set) var startupFailure: String?
+    /// Whether `retryStartup()` can recover the failure in this process. A failure while the composition was being
+    /// built (the catalogue or the library could not be read) has no partial state to retry from: only reopening
+    /// the app rebuilds it, and the failure surface says so instead of offering a button that cannot work.
+    private(set) var startupFailureIsRetryable = true
+    /// Whether a retry of the startup is running, so the failure surface can show progress and not accept a second tap.
+    private(set) var isRetryingStartup = false
     /// D7-A: what the V1 upgrade carried and what remains inaccessible, owed to the reader on the first open
     /// after the upgrade. Nil when no upgrade is pending or the reader has already dismissed it.
     private(set) var legacyUpgradeNotice: ReaderLegacyUpgradeReceipt?
@@ -650,6 +656,7 @@ final class AppComposition {
         // an empty selection, a filled discovery profile and a good catalogue published nothing.
         if feeds.isEmpty, snapshot?.catalogueURL == nil {
             startupFailure = "Não foi possível carregar o catálogo local de fontes."
+            startupFailureIsRetryable = false
         } else {
             do {
                 let database = try RuntimeDatabase(location: .init(directory: self.directory))
@@ -713,6 +720,7 @@ final class AppComposition {
                 selectionVersion = saved.selectionVersion
             } catch {
                 startupFailure = "Não foi possível carregar suas fontes."
+                startupFailureIsRetryable = false
                 startupFailureDetail = String(describing: error)
                 Self.log("startup failure loading the source selection: \(String(describing: error))")
             }
@@ -742,6 +750,22 @@ final class AppComposition {
         // A read that throws is not a durable window: this launch then keeps the asynchronous path, which reports
         // its own failures to the reader.
         return (try? store.checkpoint()) != nil || (try? store.checkpoint(for: currentContextKey)) != nil
+    }
+
+    /// The reader asked to try again from the startup failure surface. Only a failure that happened while opening
+    /// the feed (after the composition was built) is retried: the failed association is closed and the launch runs
+    /// again from the same context. A failure that recurs is stated again by `launch()` itself.
+    func retryStartup() async {
+        guard startupFailure != nil, startupFailureIsRetryable, !isRetryingStartup, !replacingSession else { return }
+        isRetryingStartup = true
+        defer { isRetryingStartup = false }
+        if let failed = association {
+            await failed.close()
+            association = nil
+        }
+        startupFailure = nil
+        startupFailureDetail = nil
+        await launch()
     }
 
     func launch() async {

@@ -559,7 +559,10 @@ struct FeedMineApp: App {
                                 recovery.store.reportFirstScreenSurfaceIfReading()
                             }
                     } else if let failure = composition.startupFailure {
-                        Text(failure).padding()
+                        StartupFailureView(message: failure,
+                            isRetryable: composition.startupFailureIsRetryable,
+                            isRetrying: composition.isRetryingStartup,
+                            onRetry: { Task { await composition.retryStartup() } })
                     } else {
                         #if DEBUG
                         // The app's own launch progress, nameable so a journey can assert its absence once the app
@@ -2226,3 +2229,52 @@ private struct FeedLaunchWitnessProof: View {
     }
 }
 #endif
+
+/// What the reader sees when the app cannot start. A sentence alone was a dead end (the only exit was killing the
+/// app): this surface states the failure, offers the one action that can recover it in this process, and says
+/// plainly what to do when no action can.
+struct StartupFailureView: View {
+    let message: String
+    /// Whether `AppComposition.retryStartup()` can recover this failure without reopening the app.
+    let isRetryable: Bool
+    let isRetrying: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(verbatim: message)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            if isRetryable {
+                Text(String(localized: "Suas fontes, salvos e ajustes continuam guardados neste aparelho."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button(action: onRetry) {
+                    if isRetrying {
+                        ProgressView()
+                    } else {
+                        Text(String(localized: "Tentar novamente"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRetrying)
+                .accessibilityIdentifier("startup-failure-retry")
+            } else {
+                Text(String(localized: "Feche o FeedMine e abra de novo. Suas fontes, salvos e ajustes continuam guardados neste aparelho."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("startup-failure")
+    }
+}
