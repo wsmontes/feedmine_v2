@@ -165,18 +165,19 @@ public final class RuntimeDatabase: Sendable {
         }
         // DatabasePool's default persistent journal mode establishes WAL.
         // A competing writer must wait for the lock instead of failing on a transient SQLITE_BUSY:
-        // the default immediate-error mode turns contention into a user-visible failure. WAL readers
-        // do not block, so this bound belongs to the writer; it is not a retry policy.
+        // the default immediate-error mode turns contention into a user-visible failure. GRDB applies
+        // this to every connection of the pool; in WAL mode readers rarely meet it, so in practice the
+        // bound is the writer's. It is a wait, not a retry policy.
         configuration.busyMode = .timeout(RuntimeDatabase.writerBusyTimeout)
         do {
             let pool = try DatabasePool(path: databaseURL.path, configuration: configuration)
             var nonErasingMigrator = migrator
             // Enforce non-erasure even for an internally supplied test migrator.
             nonErasingMigrator.eraseDatabaseOnSchemaChange = false
-            try nonErasingMigrator.migrate(pool)
             // GRDB ignores applied identifiers this migrator does not know, so a file written by a
             // newer build would open as if it were current (a rollback across a TestFlight build).
-            // Refuse instead of presenting newer state as this build's own.
+            // Refuse instead of presenting newer state as this build's own — and refuse **before**
+            // migrating, so this build never writes into a file a newer build owns.
             let appliedButUnknown: Set<String> = refusesUnknownAppliedMigrations
                 ? try pool.read { db in
                     try nonErasingMigrator.appliedIdentifiers(db)
@@ -186,6 +187,7 @@ public final class RuntimeDatabase: Sendable {
             if !appliedButUnknown.isEmpty {
                 throw RuntimeDatabaseError.incompatibleSchema(unknownIdentifiers: appliedButUnknown.sorted())
             }
+            try nonErasingMigrator.migrate(pool)
             self.pool = pool
         } catch let error as RuntimeDatabaseError {
             throw error
