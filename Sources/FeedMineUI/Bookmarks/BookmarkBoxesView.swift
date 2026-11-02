@@ -29,6 +29,9 @@ public struct BookmarkBoxesView: View {
     @State private var newName = ""
     @State private var renameTarget: BookmarkBoxRow?
     @State private var renameName = ""
+    /// The box the reader asked to delete, waiting for confirmation: deleting a box also unsaves the articles
+    /// kept only in it (the memberships go with the box), so it is not a one-swipe action.
+    @State private var deleteTarget: BookmarkBoxRow?
 
     public init(store: BookmarkBoxesStore, appearance: ReaderAppearance = .standard,
         onOpenAll: @escaping () -> Void, onOpenBox: @escaping (String) -> Void, onClose: @escaping () -> Void = {}) {
@@ -73,9 +76,13 @@ public struct BookmarkBoxesView: View {
         .toolbar {
             // V1's own way out of the surface, as the source sheet and the collections surface have:
             // a "Concluir" that closes it. Without it the sheet could only be dragged away.
-            ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
-                Button(String(localized: "Concluir"), action: onClose)
-                    .accessibilityIdentifier("bookmarkBoxes.done")
+            // While reordering, the reorder button reads "Concluir" too; two identical buttons side by side did
+            // different things, so the sheet's own close steps aside until the order is done.
+            if !store.isReordering {
+                ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
+                    Button(String(localized: "Concluir"), action: onClose)
+                        .accessibilityIdentifier("bookmarkBoxes.done")
+                }
             }
             ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
                 Button(store.isReordering ? String(localized: "Concluir") : String(localized: "Reordenar")) {
@@ -114,6 +121,18 @@ public struct BookmarkBoxesView: View {
             Button(String(localized: "OK"), role: .cancel) {}
         } message: {
             Text(verbatim: store.errorMessage ?? "")
+        }
+        .confirmationDialog(Text(verbatim: String(localized: "Apagar “\(deleteTarget?.name ?? "")”?")),
+            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+            titleVisibility: .visible) {
+            Button(String(localized: "Apagar caixa"), role: .destructive) {
+                guard let target = deleteTarget else { return }
+                deleteTarget = nil
+                Task { await store.delete(id: target.id) }
+            }
+            Button(String(localized: "Cancelar"), role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text(verbatim: String(localized: "Os artigos guardados só nesta caixa deixam de estar salvos."))
         }
         .task { if store.boxes.isEmpty { await store.load() } }
     }
@@ -156,7 +175,7 @@ public struct BookmarkBoxesView: View {
             .tint(.blue)
             if !box.isDefault {
                 Button(role: .destructive) {
-                    Task { await store.delete(id: box.id) }
+                    deleteTarget = box
                 } label: {
                     Label(String(localized: "Apagar"), systemImage: "trash")
                 }
