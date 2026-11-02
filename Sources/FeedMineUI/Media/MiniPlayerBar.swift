@@ -18,16 +18,19 @@ public struct MiniPlayerBar: View {
     /// The host's intents: the bar never reaches a player itself.
     private let onToggle: () -> Void
     private let onOpen: () -> Void
+    /// Stops playback and takes the bar away. Nil draws no close control (the bar then stays for the session).
+    private let onClose: (() -> Void)?
 
     /// V1's bar height. A constant, not a measurement: the feed above it must not move when the reader plays.
     public static let height: CGFloat = 56
 
     public init(state: ReaderMediaState, appearance: ReaderAppearance = .standard,
-        onToggle: @escaping () -> Void, onOpen: @escaping () -> Void) {
+        onToggle: @escaping () -> Void, onOpen: @escaping () -> Void, onClose: (() -> Void)? = nil) {
         self.state = state
         self.appearance = appearance
         self.onToggle = onToggle
         self.onOpen = onOpen
+        self.onClose = onClose
     }
 
     public var body: some View {
@@ -72,6 +75,19 @@ public struct MiniPlayerBar: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .accessibilityLabel(error)
+            }
+            // The bar had no way out: after a refused item it stayed on the feed for the rest of the session.
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(String(localized: "Fechar o player"))
+                .accessibilityIdentifier("mini-player-close")
             }
         }
         .padding(.horizontal, FeedDesignTokens.Spacing.page)
@@ -206,7 +222,9 @@ public struct FullPlayerView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 24)
             }
-        } else {
+        } else if state.error == nil {
+            // A refused item has no length to wait for: its reason is already stated above, and "Carregando…"
+            // beside it claimed work that will never finish.
             Text(verbatim: String(localized: "Carregando…"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)

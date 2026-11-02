@@ -617,7 +617,8 @@ struct FeedMineApp: App {
                     if composition.mediaState.item != nil {
                         MiniPlayerBar(state: composition.mediaState,
                             onToggle: { Task { await composition.toggleMedia() } },
-                            onOpen: { showsPlayer = true })
+                            onOpen: { showsPlayer = true },
+                            onClose: { Task { await composition.stopMedia() } })
                     }
                 }
                 .sheet(isPresented: $showsPlayer) {
@@ -1557,7 +1558,8 @@ struct ReaderHost: UIViewControllerRepresentable {
             if composition.mediaState.item != nil {
                 MiniPlayerBar(state: composition.mediaState,
                     onToggle: { Task { await composition.toggleMedia() } },
-                    onOpen: { showsPlayer = true })
+                    onOpen: { showsPlayer = true },
+                    onClose: { Task { await composition.stopMedia() } })
                     .background(.ultraThinMaterial)
             }
         }
