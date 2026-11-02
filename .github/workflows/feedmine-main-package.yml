@@ -7,7 +7,7 @@ name: FeedMine main package gate (iOS)
 # acceptance gates (README "Executar e verificar").
 on:
   push:
-    branches: [main, 'kiro/**']
+    branches: [main]
   pull_request:
     branches: [main]
 

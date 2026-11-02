@@ -21,6 +21,12 @@
 #   (3) release run with ASC_KEY_ID unset: exit 9 before ANY xcodebuild call (fail closed before
 #       the archive, since the archive now signs with those credentials).
 #   (4) release run with the .p8 missing: exit 9 before any xcodebuild call, message names the path.
+#   (5) static: both xcodebuild calls expand "${SIGNING_FLAGS[@]}" and neither spells a signing
+#       flag itself (equal argv in (1) could otherwise come from two copies that agree today).
+#
+# The xcodebuild stub stamps FeedmineGitSHA/Branch/BuildDate from the NAME=VALUE build settings, as
+# ProcessInfoPlistFile does; without them the script's archive identity checks refuse with exit 8.
+# On a non-macOS host, PlistBuddy and BSD mktemp must be provided (shims) for cases (1)-(4).
 #
 # Usage: scripts/test-export-signing-flags.sh [--script PATH]
 #   --script PATH runs the same assertions against another copy of the script; that is how the
@@ -96,6 +102,16 @@ case "\${1:-}" in
   archive)
     printf '%s\0' "\$@" > "$ARGV/archive.argv"
     echo archive >> "$ARGV/calls.log"
+    # Like ProcessInfoPlistFile, stamp the identity from the NAME=VALUE build settings the
+    # release script passes on the command line (it refuses an archive without them).
+    STAMP_SHA=absent; STAMP_BRANCH=absent; STAMP_DATE=absent
+    for arg in "\$@"; do
+      case "\$arg" in
+        FEEDMINE_GIT_SHA=*) STAMP_SHA="\${arg#*=}" ;;
+        FEEDMINE_GIT_BRANCH=*) STAMP_BRANCH="\${arg#*=}" ;;
+        FEEDMINE_BUILD_DATE=*) STAMP_DATE="\${arg#*=}" ;;
+      esac
+    done
     APP="$FIX/.build/feedmine-v2.xcarchive/Products/Applications/FeedMine.app"
     mkdir -p "\$APP"
     cat > "\$APP/Info.plist" <<PL
@@ -105,7 +121,9 @@ case "\${1:-}" in
 <dict>
   <key>CFBundleIdentifier</key><string>com.feedmine.app</string>
   <key>CFBundleVersion</key><string>49</string>
-  <key>FeedmineGitSHA</key><string>\$(git -C "$FIX" rev-parse --short HEAD)</string>
+  <key>FeedmineGitSHA</key><string>\$STAMP_SHA</string>
+  <key>FeedmineGitBranch</key><string>\$STAMP_BRANCH</string>
+  <key>FeedmineBuildDate</key><string>\$STAMP_DATE</string>
 </dict>
 </plist>
 PL
@@ -230,6 +248,23 @@ if [ "$CODE" -eq 9 ] && [ ! -f "$ARGV/calls.log" ] && printf '%s' "$ERR" | grep 
   pass "(4) missing .p8 refuses with exit 9 before xcodebuild: $(printf '%s' "$ERR" | head -1)"
 else
   fail "(4) expected exit 9 naming the missing key and no xcodebuild; got code=$CODE calls=[$(cat "$ARGV/calls.log" 2>/dev/null)] err=[$ERR]"
+fi
+
+# --- (5) one definition: both calls expand SIGNING_FLAGS, no call spells the flags itself --------
+# Equal argv in (1) can also come from two hand-kept copies that happen to agree today; this case
+# holds the property the header promises. Each xcodebuild invocation is read up to its redirection.
+calls="$(awk '/xcodebuild (archive|-exportArchive)/ { on = 1 } on { print } on && />/ { on = 0; print "--" }' "$SCRIPT")"
+archive_call="$(printf '%s\n' "$calls" | awk '/xcodebuild archive/ { on = 1 } on { print } /^--$/ { on = 0 }')"
+export_call="$(printf '%s\n' "$calls" | awk '/xcodebuild -exportArchive/ { on = 1 } on { print } /^--$/ { on = 0 }')"
+one_definition=1
+for call in "$archive_call" "$export_call"; do
+  printf '%s' "$call" | grep -Fq '"${SIGNING_FLAGS[@]}"' || one_definition=0
+  printf '%s' "$call" | grep -Eq -- '-allowProvisioningUpdates|-authenticationKey' && one_definition=0
+done
+if [ -n "$archive_call" ] && [ -n "$export_call" ] && [ "$one_definition" -eq 1 ]; then
+  pass "(5) archive and -exportArchive both expand \"\${SIGNING_FLAGS[@]}\" and spell no signing flag"
+else
+  fail "(5) an xcodebuild call does not use SIGNING_FLAGS (or repeats a flag): archive=[$archive_call] export=[$export_call]"
 fi
 
 if [ "$FAILED" -eq 0 ]; then
