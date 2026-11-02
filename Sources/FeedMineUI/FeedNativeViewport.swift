@@ -213,6 +213,12 @@ struct NativeFeedViewport: ViewModifier {
                 }
                 settlePendingJump()
             }
+            // A failed reconstruction preserves the card and the window; only the unavailable fact changes. Without
+            // observing it, the pending jump would keep waiting for a preparation the session already concluded.
+            // (Added by 473dee7; dropped by the conflict resolution of cherry-pick c415ca3 and restored here.)
+            .onChange(of: store.state.presentation?.unavailableImageCardIDs) { _, _ in
+                settlePendingJump()
+            }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
                 armPresentationRestoration()
