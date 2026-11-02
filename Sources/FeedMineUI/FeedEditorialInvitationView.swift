@@ -64,13 +64,10 @@ public struct FeedEditorialInvitationView: View {
                         .accessibilityIdentifier("feed-invitation-hide-\(nodeKey)")
                 }
             } else if isCompact {
-                // The session's later offers: the same title, the same two answers, the same way out, and no
-                // paragraphs — the reader has met the question's shape already and is being asked about another
-                // group, not taught the product again.
-                Text(verbatim: String(localized: "FeedMine sugere"))
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    actions
+                // The session's later offers: the same title (drawn once, above), the same two answers, the same
+                // way out, and no paragraphs — the reader has met the question's shape already and is being asked
+                // about another group, not taught the product again.
+                actions
             } else {
                 // The review's wording, and the reason for it: the subject offered is how the **catalogue
                 // files the source**, not what the article is about. The sentence attributes the classification
@@ -101,7 +98,15 @@ public struct FeedEditorialInvitationView: View {
     /// The two answers and the way out. One definition, so the full and the compact form can never drift apart in
     /// what they do — only in how much they explain.
     @ViewBuilder private var actions: some View {
-        HStack(spacing: FeedDesignTokens.Spacing.tight) {
+        // A long subject name made the three buttons squeeze into one row on iPhone widths: when they do not fit
+        // side by side, they stack. Only one of the two layouts is ever drawn.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: FeedDesignTokens.Spacing.tight) { actionButtons }
+            VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.tight) { actionButtons }
+        }
+    }
+
+    @ViewBuilder private var actionButtons: some View {
             Button(String(localized: "Mais de \(subjectName)")) { onVote(.more) }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("feed-invitation-more-\(nodeKey)")
@@ -115,7 +120,6 @@ public struct FeedEditorialInvitationView: View {
                 .buttonStyle(.plain)
                 .font(.caption)
                 .accessibilityIdentifier("feed-invitation-hide-\(nodeKey)")
-        }
     }
 
 }
