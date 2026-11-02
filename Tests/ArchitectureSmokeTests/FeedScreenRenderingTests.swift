@@ -360,6 +360,18 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertTrue(paused.contains { $0.contains("escolher os critérios") }, paused.description)
     }
 
+    func testFirstWindowCannotWaitForeverWhenNoLayoutCallbackArrives() async throws {
+        let f = try fixture(), first = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        store.noteFirstScreenAppeared(hasSources: true, maximumWait: .milliseconds(5))
+        try store.install(FeedPresentationHandoff.receive(snapshot: first, into: store.state))
+        // No geometry callback at all: the real window arrived, but SwiftUI has not measured it.
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertGreaterThan(store.firstScreenWaited, .zero)
+        XCTAssertEqual(store.firstScreenSurface, .reading,
+            "The existing stall bound must still expire when the first layout proof never arrives")
+    }
+
     func testSourceExclusionRecoveryAlsoAppearsWhenEndHasNoPublishedHistory() throws {
         let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
         try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))

@@ -515,8 +515,12 @@ struct FeedMineApp: App {
                                     association.store.firstScreenSurface == .preparation {
                                     let remaining = limit - association.store.firstScreenWaited
                                     if remaining > .zero { try? await Task.sleep(for: remaining) }
-                                    guard !Task.isCancelled,
-                                        association.store.firstScreenSurface == .preparation else { return }
+                                    guard !Task.isCancelled else { return }
+                                    // Time passing can satisfy the gate without an observable store update.
+                                    // Publish that reading state before leaving this task, or the old cover
+                                    // remains drawn until an unrelated pipeline event happens to redraw it.
+                                    reportFirstScreenSurface(of: association)
+                                    guard association.store.firstScreenSurface == .preparation else { return }
                                     guard association.store.firstScreenWaited >= limit else {
                                         continue // a card arrived during the sleep and reset the stall clock
                                     }

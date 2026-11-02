@@ -298,6 +298,9 @@ public final class FeedScreenStore {
         // re-renderizava a lista inteira — 12–14 vezes por segundo numa rajada (medido no aparelho, 2026-10-14).
         // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
         let rendered = presentationState.presentation?.window.items
+        if renderedItems.isEmpty, let rendered, !rendered.isEmpty {
+            firstScreen.hold.beginWaiting()
+        }
         if rendered != renderedItems { renderedItems = rendered ?? [] }
         if received.work != work { work = received.work }
         if presentationState.presentation?.editionID != renderedEditionID {
@@ -488,6 +491,13 @@ final class FeedFirstScreenHold {
 
     /// The screen drew a surface that waits: that is what makes holding the transition legitimate.
     func notePreparationShown() { preparationShown = true }
+
+    /// A ready window can precede its first geometry callback. The existing stall bound must run
+    /// in that interval too; repeated installations do not renew it.
+    func beginWaiting() {
+        guard !frozen, startedAt == nil else { return }
+        startedAt = clock()
+    }
 
     /// One laid-out card, as the scroll view measured it. The bottom is in viewport coordinates, so the card's own
     /// height and every spacing above it are already part of the value.
