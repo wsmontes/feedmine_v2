@@ -172,12 +172,13 @@ public struct SelectionEngine: Sendable {
                     > right.originRevisionID.rawValue.uuidString.lowercased()
             }
         }
-        // v6 is explicit to revision 6 and the maximum-distance behavior. An unknown future version never
-        // inherits it: it falls through to the preserved legacy paths below.
-        if plan.revision.sequencingPolicyVersion.rawValue == 6, policy.sequencing == .maximumDistance {
+        // Preserve v6 ordering; v7 prioritizes supplier breadth before topic and format distance.
+        // Future revisions retain the legacy fallback until explicitly supported.
+        if [6, 7].contains(plan.revision.sequencingPolicyVersion.rawValue), policy.sequencing == .maximumDistance {
             let positions = diversity?.publishedPositions ?? []
             let sequenced = MaximumDistanceSequencing.sequence(ordered, positions: positions,
-                after: neighbor, singleSourceContext: Self.isSingleSource(plan.context.request))
+                after: neighbor, singleSourceContext: Self.isSingleSource(plan.context.request),
+                sourceBreadthFirst: plan.revision.sequencingPolicyVersion.rawValue == 7)
             return Self.result(plan: plan, window: window,
                 placed: sequenced.placed, held: sequenced.held, publicationLimit: publicationLimit)
         }

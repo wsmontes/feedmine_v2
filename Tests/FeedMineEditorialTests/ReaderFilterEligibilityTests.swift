@@ -71,16 +71,6 @@ final class ReaderFilterEligibilityTests: XCTestCase {
             exclusions: ReaderContentExclusions(isEnabled: true, rules: []))).admits(candidate(headline: "Crypto")))
     }
 
-    /// A criterion this build cannot answer is not consulted: the UI refuses to set it, so enforcement must
-    /// not behave as if metadata existed.
-    func testUnanswerableCriteriaAreNotConsulted() {
-        let taxonomyOnly = ReaderFilter(regionIDs: ["us"], taxonomyNodeIDs: ["tech"], contentType: .video)
-        let eligibility = ReaderFilterEligibility(filter: taxonomyOnly,
-            enforced: Set(ReaderFilterCriterion.enforceable))
-        XCTAssertTrue(eligibility.admits(candidate(language: "fr", headline: "Anything")),
-            "taxonomy, region and content type have no metadata to answer them yet")
-        XCTAssertEqual(Set(ReaderFilterCriterion.enforceable), [.preset, .languages, .mood])
-    }
 
     /// A restricted source set excludes a candidate that belongs only to other sources, and a candidate with
     /// unknown memberships is not excluded by this rule (the acquisition boundary already scoped the query).

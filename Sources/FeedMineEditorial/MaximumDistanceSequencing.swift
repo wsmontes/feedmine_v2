@@ -17,7 +17,7 @@ enum MaximumDistanceSequencing {
     }
 
     static func sequence(_ ordered: [Candidate], positions: [EditorialDiversityFact?],
-        after neighbor: SelectionNeighbor?, singleSourceContext: Bool) -> (placed: [Candidate], held: [Candidate]) {
+        after neighbor: SelectionNeighbor?, singleSourceContext: Bool, sourceBreadthFirst: Bool = false) -> (placed: [Candidate], held: [Candidate]) {
         let facts = ordered.map { candidate in
             Facts(type: candidate.mediaKind,
                 subjects: Set(candidate.topics.identities.map(\.key)),
@@ -55,7 +55,7 @@ enum MaximumDistanceSequencing {
             guard !compatible.isEmpty else { break }
 
             var pool = compatible
-            for dimension in 0..<3 {
+            for dimension in (sourceBreadthFirst ? [2, 1, 0] : [0, 1, 2]) {
                 let scored = pool.map { index in
                     (index, distance(facts[index], dimension: dimension, current: current,
                         typeSeen: typeSeen, subjectSeen: subjectSeen, sourceSeen: sourceSeen))

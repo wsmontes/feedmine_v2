@@ -1124,3 +1124,150 @@ extension ColdFeedBootstrapTests {
         XCTAssertEqual(accounted.published, 20)
     }
 }
+
+extension ColdFeedBootstrapTests {
+    private func fm59Policy(context: FeedContext) -> (FeedPlan, ResolvedSelectionPolicy) {
+        let v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: v, eligibilityPolicyVersion: v,
+            scoringPolicyVersion: v, sequencingPolicyVersion: .init(rawValue: 7),
+            exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
+        let plan = FeedPlan(context: context, revision: revision)!
+        let policy = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: revision.sequencingPolicyVersion,
+            exposurePolicyVersion: v, selectionSchemaVersion: revision.selectionSchemaVersion,
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .maximumDistance, exposure: .excludePublishedRevisions)
+        return (plan, policy)
+    }
+
+    private func fm59FirstCards(database: RuntimeDatabase, edition: FeedEditionID) throws -> [PublicationStore.CardRecord] {
+        let store = PublicationStore(database: database)
+        let first = try XCTUnwrap(store.segments(editionID: edition).first)
+        let cards = try store.cards(ids: first.cardIDs)
+        return try first.cardIDs.map { try XCTUnwrap(cards[$0]) }
+    }
+
+    func testFM59DelayedDistinctSuppliersContributeBeforeTheFirstDurablePublication() async throws {
+        let f = try fixture(items: 32), id = identity(), db = f.database
+        let authority = AcquisitionTargetAuthority(database: db)
+        let (plan, policy) = fm59Policy(context: f.plan.context)
+        var registrations = [registration(f.target, source: f.source, http: f.http)]
+        var delayed: [ColdHTTPFixture] = []
+        for index in 1..<50 {
+            let http = ColdHTTPFixture(items: 1, paused: true, label: "supplier-\(index)")
+            let source = SourceID()
+            let target = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication,
+                authorizedSources: [source])
+            registrations.append(registration(target, source: source, http: http))
+            delayed.append(http)
+        }
+        let slower = delayed
+        addTeardownBlock { for http in slower { http.release(); http.remove() } }
+        let acquisition = try snapshot(db, registrations)
+        let fastTarget = f.target.id
+        let fastHTTP = f.http, contactsAtPublication = ColdJournal()
+        let (firstSettled, signal) = AsyncStream<Void>.makeStream()
+        // This delay is a controlled transport input, not an elapsed-time acceptance assertion.
+        // The oracle below reads the immutable first durable segment, after every pull has completed.
+        let release = Task {
+            for await _ in firstSettled { break }
+            try await Task.sleep(for: .milliseconds(100))
+            for http in slower { http.release() }
+        }
+        defer { signal.finish(); release.cancel(); for http in slower { http.release() } }
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: plan, policy: policy,
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(concurrentTargetLimit: 20),
+            prepare: { Self.prepared($0) },
+            evidence: { event in
+                if case .settled(let target, _, _) = event, target == fastTarget { signal.yield(()) }
+                if case .publishedCards = event {
+                    contactsAtPublication.append(String(slower.filter { $0.calls > 0 }.count + (fastHTTP.calls > 0 ? 1 : 0)))
+                }
+            }, publicationLimit: 50)
+        let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 128,
+            acquisition: .init(targetWorkCapacity: 50, batchCapacityPerNewExecution: 1,
+                observationCapacityPerBatch: 32, byteCapacityPerBatch: 100_000)!)!
+        let completed = expectation(description: "Finite fifty-source acquisition settles")
+        let running = Task {
+            defer { completed.fulfill() }
+            return try await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 50)
+        }
+        let waited = await XCTWaiter.fulfillment(of: [completed], timeout: 5)
+        if waited != .completed {
+            bootstrap.cancel(); running.cancel()
+            for http in slower { http.release() }
+        }
+        XCTAssertEqual(waited, .completed, "Broad preparation cannot deadlock waiting for every slow supplier")
+        let outcome = try await running.value
+        guard case .published = outcome else { return XCTFail("Rich, successful supply must publish") }
+        XCTAssertEqual(slower.filter { $0.calls == 1 }.count + f.http.calls, 50,
+            "The finite contact cohort contains fifty distinct source registrations")
+        XCTAssertEqual(contactsAtPublication.values.first.flatMap(Int.init), 50,
+            "The first receipt, not the eventual end of acquisition, must witness fifty actual contacts")
+        let first = try fm59FirstCards(database: db, edition: id.editionID)
+        XCTAssertGreaterThanOrEqual(Set(first.prefix(12).compactMap(\.sourceID)).count, 10)
+        XCTAssertGreaterThanOrEqual(Set(first.prefix(50).compactMap(\.sourceID)).count, 40,
+            "Later ingestion cannot repair a first segment frozen from the fast podcast-like supplier")
+        let stored = try PublicationStore(database: db).cards(ids: first.map(\.id))
+        let checkpoint = try SessionStore(database: db).checkpoint()
+        let restoredSession = FeedSession(publicationHistory: .init(database: db))
+        let restored = try await restoredSession.admitPresentation(.restore(.init(backwardCapacity: 0, forwardCapacity: 50)))
+        XCTAssertEqual(restored?.editionID, id.editionID)
+        XCTAssertEqual(restored?.window.anchor.cardID, checkpoint?.cardID)
+        XCTAssertEqual(try PublicationStore(database: db).cards(ids: first.map(\.id)), stored,
+            "A warm restore may not rewrite source attribution, media, actions or the published prefix")
+        XCTAssertEqual(try SessionStore(database: db).checkpoint(), checkpoint)
+    }
+
+    func testFM59LocalSingleSupplierHeadDoesNotBypassBroadAcquisitionBeforeFirstCommit() async throws {
+        let f = try fixture(), id = identity(), db = f.database
+        try Self.seed(db, source: f.source, count: 8)
+        let authority = AcquisitionTargetAuthority(database: db)
+        var registrations = [registration(f.target, source: f.source, http: f.http)]
+        var remotes: [ColdHTTPFixture] = []
+        for index in 1..<50 {
+            let http = ColdHTTPFixture(items: 1, label: "remote-\(index)")
+            let source = SourceID()
+            let target = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication,
+                authorizedSources: [source])
+            registrations.append(registration(target, source: source, http: http))
+            remotes.append(http)
+        }
+        let retained = remotes
+        addTeardownBlock { for http in retained { http.remove() } }
+        let acquisition = try snapshot(db, registrations)
+        let (plan, policy) = fm59Policy(context: f.plan.context)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: plan, policy: policy,
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(concurrentTargetLimit: 20),
+            prepare: { Self.prepared($0) }, publicationLimit: 50)
+        let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 128,
+            acquisition: .init(targetWorkCapacity: 50, batchCapacityPerNewExecution: 1,
+                observationCapacityPerBatch: 32, byteCapacityPerBatch: 100_000)!)!
+        let completed = expectation(description: "Local head expands to the finite source cohort")
+        let running = Task {
+            defer { completed.fulfill() }
+            return try await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 50)
+        }
+        let waited = await XCTWaiter.fulfillment(of: [completed], timeout: 5)
+        if waited != .completed { bootstrap.cancel(); running.cancel() }
+        XCTAssertEqual(waited, .completed, "A narrow local head cannot cause an endless diversity hold")
+        let outcome = try await running.value
+        guard case .published = outcome else { return XCTFail("Rich source scope must publish") }
+        let first = try fm59FirstCards(database: db, edition: id.editionID)
+        XCTAssertGreaterThanOrEqual(Set(first.prefix(50).compactMap(\.sourceID)).count, 40,
+            "Unpublished local items are supply, not permission to freeze a homogeneous new feed")
+    }
+
+    func testFM59GenuineSingleSourceScarcityStillPublishesWithoutAQuorum() async throws {
+        let f = try fixture(sourceContext: true, items: 3), id = identity()
+        let (plan, policy) = fm59Policy(context: f.plan.context)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: plan, policy: policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) }, publicationLimit: 50)
+        let outcome = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 8)
+        guard case .published = outcome else { return XCTFail("One-source context is not a failed diversity quorum") }
+        let cards = try fm59FirstCards(database: f.database, edition: id.editionID)
+        XCTAssertEqual(Set(cards.compactMap(\.sourceID)), [f.source])
+        XCTAssertEqual(Set(cards.map(\.originRecordID)).count, 3)
+        XCTAssertEqual(f.http.calls, 1)
+    }
+}

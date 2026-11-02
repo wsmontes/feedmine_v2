@@ -131,15 +131,12 @@ public struct ReaderDiscoveryBuilder: Sendable {
     /// How many source keys one pool may look up: the ceiling that keeps a profile query cheap while leaving room
     /// for the language and media filters to drop what the reader did not ask for.
     private let keyCeiling: Int
-    /// The source kinds a discovery pool may draw from. Text **and** audio: a reader who asks for discovery
-    /// must not be handed a text-only internet, and the product promises "listen" as well as "read"
-    /// (PD-2026-10-20 D10). Video sources stay out of the automatic pool this round — a video source the reader
-    /// already follows keeps working with its items identified; it is not discovered on their behalf.
-    /// What an item **is** comes from its own enclosure, never from this source-level kind.
+    /// Source kinds eligible for automatic exploration. An item's actual kind is still
+    /// determined from its own payload, independently of this source-level signal.
     private let mediaKinds: Set<String>
 
     public init(catalogURL: URL, perTopicCeiling: Int = 2_000, keyCeiling: Int = 4_000,
-        mediaKinds: Set<String> = ["text", "audio"]) {
+        mediaKinds: Set<String> = ["text", "audio", "video"]) {
         self.catalogURL = catalogURL
         self.perTopicCeiling = perTopicCeiling
         self.keyCeiling = keyCeiling

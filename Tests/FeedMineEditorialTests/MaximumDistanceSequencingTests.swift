@@ -216,8 +216,8 @@ final class MaximumDistanceSequencingTests: XCTestCase {
     func testUnknownFutureVersionDoesNotInheritV6() throws {
         let repeated = candidate(1, kind: .audio, time: 30)
         let novel = candidate(2, kind: EditorialMediaKind.none, time: 20)
-        let result = try select([repeated, novel], positions: [fact(.audio)], version: 7)
+        let result = try select([repeated, novel], positions: [fact(.audio)], version: UInt64.max)
         XCTAssertEqual(ids(result), [repeated.originRecordID, novel.originRecordID],
-            "version 7 keeps the legacy order instead of inheriting v6")
+            "an unsupported future version must not inherit a supported sequencing behavior")
     }
 }
