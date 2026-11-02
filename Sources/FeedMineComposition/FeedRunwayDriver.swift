@@ -77,6 +77,7 @@ public actor FeedRunwayDriver {
     /// already ended cannot leave an unbounded set of suspended preparations behind.
     private var callerMediaRefreshTask: Task<Void, Never>?
     private var backgroundRoundScope: RunwayScope?
+    private let preparedReserve: PreparedReserve?
     private let session: FeedSession
     let runway: RunwayController
     private let plan: FeedPlan
@@ -157,12 +158,13 @@ public actor FeedRunwayDriver {
         // The host's publication cap for one opportunity: the runway's own published-reserve target. Nil keeps the
         // uncapped behavior; a capped slice that leaves ready candidates behind reports the walk it started from,
         // so the next opportunity publishes the following block instead of the walk passing cards nobody published.
-        publicationLimit: Int? = nil) throws {
+        publicationLimit: Int? = nil, preparedReserve: PreparedReserve? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         if let demand = selectedSourceCoverage {
             guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
                 demand.pressure == .selectedSourceCoverage else { throw FeedRunwayDriverError.policyContextMismatch }
         }
+        self.preparedReserve = preparedReserve
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
         self.selectedSourceCoverage = selectedSourceCoverage
@@ -358,8 +360,14 @@ public actor FeedRunwayDriver {
             await runway.deactivate(); return nil
         }
         await runway.activate(scope)
-        try await runway.submitObservation(.init(editionID: presentation.editionID,
-            anchorCardID: presentation.window.anchor.cardID, sampledAt: monotonicNow(), activity: .stationary))
+        // A foreground cadence is an opportunity, not a newer reader fact. Overwriting the
+        // observation here can overtake an ingress captured before this await and make its
+        // demand fail the controller's monotonicity guard. Background clears the observation,
+        // so a real resume (and a new scope) still seeds a stationary measurement.
+        if await runway.snapshot().latestObservation == nil {
+            try await runway.submitObservation(.init(editionID: presentation.editionID,
+                anchorCardID: presentation.window.anchor.cardID, sampledAt: monotonicNow(), activity: .stationary))
+        }
         return try await drive(resources: resources)
     }
 
@@ -764,7 +772,22 @@ public actor FeedRunwayDriver {
                 return await session.currentPresentation()
             }
             causalExecution?.reconsiderRequested = false
-            let currentResources = causalExecution!.resources
+            var currentResources = causalExecution!.resources
+            if let preparedReserve, await preparedReserve.snapshot().ready == 0 {
+                // The useful-yield/thermal ladder may shrink maintenance work to 32.
+                // With no prepared card to draw from, recover with the full structural
+                // batch instead. Published history's readyAhead is a different stock
+                // (it can be saturated while this reserve is empty).
+                let r = currentResources.runway
+                currentResources = FeedRunwayDriverResources(runway: RunwayResourceFacts(
+                    localWorkAllowed: r.localWorkAllowed,
+                    examinedCandidateCapacity: max(r.examinedCandidateCapacity, StageBudgetPolicy.preparedReserveDepth),
+                    readyProbeBound: r.readyProbeBound, readyProbeCeiling: r.readyProbeCeiling,
+                    forwardAdvanceProbeBound: r.forwardAdvanceProbeBound, reserveCards: r.reserveCards)!,
+                    acquisition: currentResources.acquisition,
+                    discoveryExaminedCapacity: currentResources.discoveryExaminedCapacity)
+            }
+            if backgroundSuspended { return await session.currentPresentation() }
             let action: RunwayControllerAction
             if resumeOutstanding, let outstanding = before.outstandingAcquisition {
                 // Only an explicit caller opportunity resumes a deferred intent.

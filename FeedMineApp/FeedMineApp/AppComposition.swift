@@ -3366,7 +3366,7 @@ final class FeedAssociation {
             // The publication cap is the runway's own published-reserve target: one opportunity publishes at most
             // what the reserve exists to hold ahead of the reader. The rest stays ready and eligible, so the next
             // opportunity publishes it — a burst that publishes every ready candidate was the defect this states away.
-            publicationLimit: Self.runwayMinimumReserveCards)
+            publicationLimit: Self.runwayMinimumReserveCards, preparedReserve: reserve)
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,

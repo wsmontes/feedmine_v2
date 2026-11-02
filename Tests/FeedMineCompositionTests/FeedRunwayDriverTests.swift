@@ -107,13 +107,14 @@ final class FeedRunwayDriverTests: XCTestCase {
             scoringPolicyVersion:r.scoringPolicyVersion,sequencingPolicyVersion:r.sequencingPolicyVersion,exposurePolicyVersion:r.exposurePolicyVersion,
             selectionSchemaVersion:r.selectionSchemaVersion,eligibility:.structuralOnly,scoring:.equal,sequencing:.recencyDescending,exposure:.excludePublishedRevisions)
     }
-    private func resources(targets:Int = 1,local:Bool = true) -> FeedRunwayDriverResources {
-        .init(runway:.init(localWorkAllowed:local,examinedCandidateCapacity:8,readyProbeBound:8,readyProbeCeiling:64,forwardAdvanceProbeBound:64)!,
+    private func resources(targets:Int = 1,local:Bool = true,examined:Int = 8) -> FeedRunwayDriverResources {
+        .init(runway:.init(localWorkAllowed:local,examinedCandidateCapacity:examined,readyProbeBound:8,readyProbeCeiling:64,forwardAdvanceProbeBound:64)!,
             acquisition:.init(targetWorkCapacity:targets,batchCapacityPerNewExecution:1,observationCapacityPerBatch:8,byteCapacityPerBatch:100_000)!)
     }
     private func fixture(historyCount:Int = 1,checkpoint:Bool = true,seedLocal:Bool = false,registrations:Bool = true,
         paused:Bool = false,otherPaused:Bool = false,error:URLError? = nil,context:FeedContext? = nil,driverContext:FeedContext? = nil,
-        differentRevision:Bool = false,prepareFailure:Bool = false,cancelPrepare:Bool = false) throws -> Fixture {
+        differentRevision:Bool = false,prepareFailure:Bool = false,cancelPrepare:Bool = false,
+        reserve: PreparedReserve? = nil, trace: ReplenishmentTrace? = nil) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at:root) }
         let db = try RuntimeDatabase(location:.init(directory:root))
@@ -156,14 +157,14 @@ final class FeedRunwayDriverTests: XCTestCase {
             SyndicationTargetRegistration(targetID:otherTarget.id,targetGeneration:1,endpoint:otherHTTP.url,bindings:[otherBinding])!] : []
         let acquisition = try SyndicationAcquisitionSnapshot(database:db,registrations:regs,session:transport,redirectCapacity:0,now:{ Date(timeIntervalSince1970:5) })
         let session = FeedSession(publicationHistory:.init(database:db)),clock = DriverClock()
-        let runway = RunwayController(configuration:.init(policyInputs:.init(safetyFactor:1,releaseMarginSeconds:0)!,consumptionSampleLimit:4,replenishmentSampleLimit:4)!)
+        let runway = RunwayController(configuration:.init(policyInputs:.init(safetyFactor:1,releaseMarginSeconds:0)!,consumptionSampleLimit:4,replenishmentSampleLimit:4)!, trace: trace)
         let driverPlan = differentRevision ? plan(p.context) : driverContext.map { plan($0) } ?? p
         let coordinator = acquisition.makeCoordinator()
         let publications = DriverPublicationLog()
         let driver = try FeedRunwayDriver(session:session,runway:runway,plan:driverPlan,policy:policy(driverPlan),acquisition:acquisition,coordinator:coordinator,
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
-            }, onPublication: { receipt in publications.append(receipt) })
+            }, trace: trace, onPublication: { receipt in publications.append(receipt) }, preparedReserve: reserve)
         // The association's close order, in the fixture: stop new starts and the late-opportunity drain, cancel and
         // await every authorized pull, and only then let the registered transport invalidation run. Registered
         // after that block, this teardown runs before it (LIFO), so no escaped task can call
@@ -1083,6 +1084,60 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(driven.lastCoverage, .pressured(requiredCards: 20),
             "The measured target (4 cards/s × 5 s) decided, not the bootstrap reserve of 4")
     }
+    func testForegroundTickDoesNotOvertakeCapturedViewportDemand() async throws {
+        let f = try fixture(historyCount: 4, registrations: false)
+        let p = try await restore(f, resources: resources(targets: 0, local: false))
+        let before = await f.runway.snapshot()
+        let capturedAt = RunwayMonotonicTime(seconds: 100)!
+        f.clock.jump(to: 200)
+        _ = try await f.driver.activateCurrentPresentation(resources: resources(targets: 0, local: false))
+        let ticked = await f.runway.snapshot()
+        XCTAssertEqual(ticked.latestObservation, before.latestObservation,
+            "A cadence opportunity must not replace the reader's observation with a later stationary one")
+        _ = try await f.driver.submitViewport(.init(anchor: .init(cardID: p.window.items[1].id, placement: .top)),
+            activity: .forward, resources: resources(targets: 0, local: false), sampledAt: capturedAt)
+        let moved = await f.runway.snapshot()
+        XCTAssertEqual(moved.latestObservation?.sampledAt, capturedAt)
+        XCTAssertEqual(moved.latestObservation?.activity, .forward)
+    }
+
+    func testEmptyPreparedReserveExaminesFullBatchUnderReducedBudget() async throws {
+        let journal = DriverMediaJournal()
+        let trace = ReplenishmentTrace { event, fields in
+            if event == ReplenishmentEvent.requested, fields["kind"] == "local" {
+                journal.append(fields["examined_capacity"] ?? "missing")
+            }
+        }
+        let f = try fixture(seedLocal: true, registrations: false, reserve: PreparedReserve(), trace: trace)
+        let p = try await restore(f, resources: resources(targets: 0, local: false))
+        _ = try await tail(f, p, resources: resources(targets: 0, examined: 32))
+        XCTAssertEqual(journal.values.first, "128", "An empty prepared reserve must bypass the reduced examination budget")
+    }
+
+    func testPreparedStockKeepsReducedExaminationBudget() async throws {
+        let journal = DriverMediaJournal()
+        let trace = ReplenishmentTrace { event, fields in
+            if event == ReplenishmentEvent.requested, fields["kind"] == "local" {
+                journal.append(fields["examined_capacity"] ?? "missing")
+            }
+        }
+        let reserve = PreparedReserve(), revision = OriginRevisionID()
+        _ = await reserve.plan(offer: [revision])
+        await reserve.markPreparing(revision, attempt: 0)
+        await reserve.settle(revision, outcome: .prepared(hasImage: false))
+        let f = try fixture(seedLocal: true, registrations: false, reserve: reserve, trace: trace)
+        let p = try await restore(f, resources: resources(targets: 0, local: false))
+        _ = try await tail(f, p, resources: resources(targets: 0, examined: 32))
+        XCTAssertEqual(journal.values.first, "32")
+    }
+
+    func testEmptyPreparedReserveDoesNotAuthorizeDeniedLocalWork() async throws {
+        let f = try fixture(seedLocal: true, registrations: false, reserve: PreparedReserve())
+        let p = try await restore(f, resources: resources(targets: 0, local: false))
+        _ = try await tail(f, p, resources: resources(targets: 0, local: false))
+        XCTAssertTrue(f.publications.values.isEmpty)
+    }
+
     func test22DeactivatePreservesPresentation() async throws {
         let f = try fixture(),p = try await restore(f); await f.driver.deactivate()
         let snap = await f.runway.snapshot(),current = await f.session.currentPresentation(); XCTAssertNil(snap.scope); XCTAssertEqual(current,p)
