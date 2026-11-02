@@ -204,6 +204,52 @@ final class ReaderHostTests: XCTestCase {
         XCTAssertEqual(platform.attempts.count, 1, "and no second hosting presentation was made")
     }
 
+    /// NF-10: the text page is a sheet with a grabber, as V1's reader was, and dragging it down is a finish like the
+    /// close control: the app is told once, and the host does not ask the platform to dismiss a sheet UIKit already
+    /// took away.
+    func testDraggingTheTextPageDownFinishesTheReaderOnce() async throws {
+        let platform = PlatformDouble()
+        let recorder = Recorder()
+        let coordinator = coordinator(platform, recorder)
+
+        coordinator.show(.local(Self.content))
+        await waitUntil { platform.up != nil }
+        let controller = try XCTUnwrap(platform.up)
+        XCTAssertEqual(controller.modalPresentationStyle, .pageSheet)
+        XCTAssertEqual(controller.sheetPresentationController?.prefersGrabberVisible, true)
+        let presentation = try XCTUnwrap(controller.presentationController)
+        XCTAssertTrue(presentation.delegate === coordinator, "a drag-down reaches the host")
+
+        coordinator.presentationControllerDidDismiss(presentation)
+        XCTAssertEqual(recorder.finishes, 1, "the drag reports a finish, as the close control does")
+        coordinator.show(nil)
+        XCTAssertEqual(platform.dismissals.count, 0, "the sheet UIKit took away is not dismissed again")
+
+        coordinator.show(.local(Self.otherContent))
+        await waitUntil { platform.attempts.count == 2 }
+        XCTAssertEqual(platform.attempts.count, 2, "the next card opens a fresh reader")
+    }
+
+    /// NF-10: the site is a sheet too, and dragging it down ends the reader as Safari's close does.
+    func testDraggingTheSiteDownFinishesTheReader() async throws {
+        let platform = PlatformDouble()
+        let recorder = Recorder()
+        let sites = SiteRecorder()
+        let coordinator = coordinator(platform, recorder, sites)
+
+        coordinator.show(.site(Self.url))
+        await waitUntil { sites.raised.count == 1 }
+        let safari = try XCTUnwrap(sites.raised.first?.safari)
+        XCTAssertEqual(safari.modalPresentationStyle, .pageSheet)
+        let presentation = try XCTUnwrap(safari.presentationController)
+        XCTAssertTrue(presentation.delegate === coordinator)
+
+        coordinator.presentationControllerDidDismiss(presentation)
+        XCTAssertEqual(recorder.finishes, 1)
+        coordinator.presentationControllerDidDismiss(presentation)
+        XCTAssertEqual(recorder.finishes, 1, "a second report for the same sheet finishes nothing")
+    }
+
     /// A site presentation the platform refuses must not strand `.site`: the next attempt is made on the
     /// platform's own report, mirroring the reader's presentation, instead of `open-site` going inert for the
     /// life of the reader.

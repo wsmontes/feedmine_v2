@@ -1270,7 +1270,7 @@ struct ReaderHost: UIViewControllerRepresentable {
         }
 
         @MainActor
-        final class Coordinator: NSObject, SFSafariViewControllerDelegate {
+        final class Coordinator: NSObject, SFSafariViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
             /// The reader's content and what its chrome reports: both are refreshed by every render of the host,
             /// never kept as the values the coordinator happened to be built with.
             private var reader: (ReaderPage, @escaping () -> Void) -> AnyView
@@ -1353,7 +1353,9 @@ struct ReaderHost: UIViewControllerRepresentable {
                 }
             }
 
-            /// The text page: the reader's own hosting controller, presented full screen.
+            /// The text page: the reader's own hosting controller, presented as a sheet the reader can drag down
+            /// (V1's reader, NF-10). The feed stays in the window underneath, so the position it returns to is the one
+            /// it never left; a drag-down reports through `presentationControllerDidDismiss`, like the close control.
             private func showLocal(_ page: ReaderPage) {
                 // The local page and the site never coexist: a page the chrome asks for replaces the one up.
                 dismissSite()
@@ -1368,7 +1370,12 @@ struct ReaderHost: UIViewControllerRepresentable {
                     return
                 }
                 let controller = UIHostingController(rootView: content)
-                controller.modalPresentationStyle = .fullScreen
+                controller.modalPresentationStyle = .pageSheet
+                if let sheet = controller.sheetPresentationController {
+                    sheet.detents = [.large()]
+                    sheet.prefersGrabberVisible = true
+                }
+                controller.presentationController?.delegate = self
                 controller.view.backgroundColor = .systemBackground
                 // UI-READABILITY-01: the reader is the app's second presentation root, and this controller is
                 // where its appearance is declared. The window content's `.preferredColorScheme(.light)` reaches
@@ -1383,7 +1390,7 @@ struct ReaderHost: UIViewControllerRepresentable {
                 open(controller, page: page, tries: Self.presentationAttempts)
             }
 
-            /// The site page: SFSafariViewController presented modally with the default style, as Apple
+            /// The site page: SFSafariViewController presented modally as a page sheet, as Apple
             /// requires, from the surface that asked for the reader. It is not a child of the reader's hosting
             /// controller and the text page is taken down while it is up — the site replaces the text. Its own
             /// close control reports through the delegate; finishing ends the reader and returns to the surface
@@ -1404,6 +1411,10 @@ struct ReaderHost: UIViewControllerRepresentable {
                 configuration.entersReaderIfAvailable = false
                 let controller = SFSafariViewController(url: url, configuration: configuration)
                 controller.delegate = self
+                // NF-10: the site is a sheet too, dismissed by dragging it down as V1's reader was. The drag reports
+                // through `presentationControllerDidDismiss`, the close control through the Safari delegate.
+                controller.modalPresentationStyle = .pageSheet
+                controller.presentationController?.delegate = self
                 controller.dismissButtonStyle = .close
                 controller.preferredControlTintColor = .tintColor
                 site = controller
@@ -1496,6 +1507,32 @@ struct ReaderHost: UIViewControllerRepresentable {
                     siteRaising = false
                     sitePending = false
                     requestedSite = nil
+                    onFinish()
+                }
+            }
+
+            /// NF-10: the reader dragged a sheet down. UIKit has already taken it away and calls this only for a
+            /// dismissal the reader made (never for one this host asked for), so the host forgets the page without
+            /// asking the platform again and reports the finish exactly as the close control does: the app's surface
+            /// stack pops back to the surface the reader was opened from. A site dragged down over the text page ends
+            /// the reader, as Safari's own close does.
+            nonisolated func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+                MainActor.assumeIsolated {
+                    let dismissed = presentationController.presentedViewController
+                    if let site, dismissed === site {
+                        self.site = nil
+                        siteURL = nil
+                        siteRaising = false
+                        sitePending = false
+                        requestedSite = nil
+                        onFinish()
+                        return
+                    }
+                    guard let presented, dismissed === presented else { return }
+                    self.presented = nil
+                    shown = nil
+                    isUp = false
+                    isAttempting = false
                     onFinish()
                 }
             }

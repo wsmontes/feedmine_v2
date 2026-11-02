@@ -150,3 +150,26 @@ assuntos ? fonte ? ordem base). Sem aleatoriedade.
 - Busca ao voltar depois de N minutos: a coleta s? nasce da press?o do runway (`RunwayController.acquisitionIntentIfEligible`);
   um gatilho por tempo mexe nesse contrato.
 - Port?es de qualidade por item e idioma detectado: mudam a contagem de rejei??es e a identidade do que entra.
+
+## Rodada 5: leitura em painel que desce (NF-10)
+
+O leitor local deixou de ser `.fullScreen` e virou `.pageSheet` (detent `.large`, al?a vis?vel); o site
+(`SFSafariViewController`) tamb?m ? apresentado como `.pageSheet`. Arrastar para baixo fecha, como na V1
+(`.sheet(item:)` em `FeedScreen.swift:260` da V1). O `ReaderHost` continua sendo a apresenta??o UIKit a partir do
+topo (a raz?o est? em `FeedMineApp.swift`, coment?rio de `AppSurface`); s? o estilo e o retorno mudaram.
+
+- `ReaderHost.Coordinator` agora ? `UIAdaptivePresentationControllerDelegate`. `presentationControllerDidDismiss`
+  esquece a p?gina sem pedir outro dismiss ao UIKit e chama `onFinish()`, o mesmo caminho do bot?o Fechar. Um site
+  arrastado sobre o texto encerra o leitor, como o Fechar do Safari j? fazia.
+- Testes novos: `ReaderHostTests.testDraggingTheTextPageDownFinishesTheReaderOnce` e
+  `testDraggingTheSiteDownFinishesTheReader`.
+- O feed fica na janela por baixo do painel. Antes, com `.fullScreen`, o `onDisappear` de `FeedNativeViewport`
+  (linhas 232-241) pode ter disparado ao abrir o leitor; agora n?o dispara. N?o verificado em execu??o.
+- No Mac, rodar `ReaderHostTests` e as su?tes de leitura que medem a posi??o na volta:
+  `ReadingSurfaceUITests` (principalmente `testClosingSitePreservesScrolledCardIdentityAndFrameWithDeepHistory`),
+  `ReleaseReaderJourneyUITests` (`test01`, `test02`), `VideoCardJourneyUITests`, `FeedMediaJourneyUITests`,
+  `FeedMineUITests.testU2SavedListAndInAppReaderPreserveTheSession`. Nenhum desses testes arrasta para baixo; um
+  teste de UI do gesto deve arrastar a partir da al?a ("Sheet Grabber"), li??o da V1
+  (`PersonaExplorationUITests.swift:542`).
+- No aparelho: conferir se arrastar o texto rolado no topo fecha o painel e se o gesto dentro do Safari n?o
+  briga com a rolagem da p?gina.
