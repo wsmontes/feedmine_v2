@@ -3942,16 +3942,6 @@
         }
       }
     },
-    "Esta carta não declara uma fonte": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This card doesn’t name a source"
-          }
-        }
-      }
-    },
     "Explore outros assuntos": {
       "localizations": {
         "en": {
@@ -4038,16 +4028,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "No results"
-          }
-        }
-      }
-    },
-    "Não foi possível abrir esta carta": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn’t open this card"
           }
         }
       }
@@ -4544,6 +4524,634 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reading criteria choice pending"
+          }
+        }
+      }
+    },
+    "Este card não declara uma fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This card doesn’t name a source"
+          }
+        }
+      }
+    },
+    "Não foi possível abrir este card": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open this card"
+          }
+        }
+      }
+    },
+    "Suas fontes, salvos e ajustes continuam guardados neste aparelho.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your sources, saved items and settings are still stored on this device."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suas fontes, salvos e ajustes continuam guardados neste aparelho."
+          }
+        }
+      }
+    },
+    "Feche o FeedMine e abra de novo. Suas fontes, salvos e ajustes continuam guardados neste aparelho.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close FeedMine and open it again. Your sources, saved items and settings are still stored on this device."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feche o FeedMine e abra de novo. Suas fontes, salvos e ajustes continuam guardados neste aparelho."
+          }
+        }
+      }
+    },
+    "Sem conexão. Os cards acima continuam disponíveis.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connection. The cards above are still available."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sem conexão. Os cards acima continuam disponíveis."
+          }
+        }
+      }
+    },
+    "Não há histórias novas por enquanto.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No new stories for now."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não há histórias novas por enquanto."
+          }
+        }
+      }
+    },
+    "Removido dos salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed from saved"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removido dos salvos"
+          }
+        }
+      }
+    },
+    "Nada foi alterado.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing was changed."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada foi alterado."
+          }
+        }
+      }
+    },
+    "Tentar de novo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tentar de novo"
+          }
+        }
+      }
+    },
+    "Não foi possível concluir": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't complete"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível concluir"
+          }
+        }
+      }
+    },
+    "Excluído": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleted"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluído"
+          }
+        }
+      }
+    },
+    "Não foi possível excluir. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't delete. Try again."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível excluir. Tente novamente."
+          }
+        }
+      }
+    },
+    "Não foi possível reunir estas fontes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't collect these sources."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível reunir estas fontes."
+          }
+        }
+      }
+    },
+    "Não foi possível salvar o marcador inteligente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't save the smart bookmark."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível salvar o marcador inteligente."
+          }
+        }
+      }
+    },
+    "Marcador inteligente salvo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart bookmark saved"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcador inteligente salvo"
+          }
+        }
+      }
+    },
+    "Não foi possível abrir este feed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open this feed."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir este feed."
+          }
+        }
+      }
+    },
+    "Não foi possível abrir o feed desta coleção.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open this collection's feed."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir o feed desta coleção."
+          }
+        }
+      }
+    },
+    "Não foi possível renomear o feed curado.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't rename the curated feed."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível renomear o feed curado."
+          }
+        }
+      }
+    },
+    "Não foi possível exportar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't export"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível exportar"
+          }
+        }
+      }
+    },
+    "O arquivo não pôde ser gravado. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file couldn't be written. Try again."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O arquivo não pôde ser gravado. Tente novamente."
+          }
+        }
+      }
+    },
+    "Não foi possível criar o feed. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't create the feed. Try again."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível criar o feed. Tente novamente."
+          }
+        }
+      }
+    },
+    "O filtro mudou": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The filter changed"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O filtro mudou"
+          }
+        }
+      }
+    },
+    "Descartar minhas alterações": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard my changes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar minhas alterações"
+          }
+        }
+      }
+    },
+    "Continuar editando": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep editing"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar editando"
+          }
+        }
+      }
+    },
+    "O filtro aplicado foi alterado em outro lugar enquanto você editava. Descarte suas alterações para ver o filtro atual.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The applied filter was changed elsewhere while you were editing. Discard your changes to see the current filter."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O filtro aplicado foi alterado em outro lugar enquanto você editava. Descarte suas alterações para ver o filtro atual."
+          }
+        }
+      }
+    },
+    "O filtro mudou enquanto você editava; suas alterações foram descartadas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The filter changed while you were editing; your changes were discarded."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O filtro mudou enquanto você editava; suas alterações foram descartadas."
+          }
+        }
+      }
+    },
+    "Adicionar feed por link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add feed by link"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar feed por link"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar suas respostas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't save your answers"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível salvar suas respostas"
+          }
+        }
+      }
+    },
+    "Agora não": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not now"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agora não"
+          }
+        }
+      }
+    },
+    "Você pode responder de novo agora. Nada do que está no aparelho foi perdido.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can answer again now. Nothing on this device was lost."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você pode responder de novo agora. Nada do que está no aparelho foi perdido."
+          }
+        }
+      }
+    },
+    "Fechar o player": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close the player"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fechar o player"
+          }
+        }
+      }
+    },
+    "Apagar caixa": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete box"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apagar caixa"
+          }
+        }
+      }
+    },
+    "Os artigos guardados só nesta caixa deixam de estar salvos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Articles kept only in this box will no longer be saved."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os artigos guardados só nesta caixa deixam de estar salvos."
+          }
+        }
+      }
+    },
+    "Todos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos"
+          }
+        }
+      }
+    },
+    "Sério": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serious"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sério"
+          }
+        }
+      }
+    },
+    "Divertido": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fun"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Divertido"
+          }
+        }
+      }
+    },
+    "Técnico": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Técnico"
+          }
+        }
+      }
+    },
+    "Inspirador": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspiring"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspirador"
+          }
+        }
+      }
+    },
+    "Vídeos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Videos"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vídeos"
+          }
+        }
+      }
+    },
+    "Fóruns": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forums"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fóruns"
           }
         }
       }

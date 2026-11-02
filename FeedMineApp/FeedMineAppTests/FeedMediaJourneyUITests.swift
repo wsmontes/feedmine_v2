@@ -403,7 +403,7 @@ final class FeedMediaJourneyUITests: XCTestCase {
                         + "foi comprovada")
                     closeReader(app)
                 } else {
-                    let refused = app.staticTexts["Não foi possível abrir esta carta"].exists
+                    let refused = app.staticTexts["Não foi possível abrir este card"].exists
                     videoNotes.append("origin=none (a carta não declara link; recusa do app=\(refused)); "
                         + "nenhum alvo tocável foi inventado")
                 }

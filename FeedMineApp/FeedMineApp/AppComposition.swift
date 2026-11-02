@@ -3059,7 +3059,7 @@ final class FeedAssociation {
                 do { card = try PublicationStore(database: database).card(id: cardID) }
             catch { reportFailure(error, operation: .openCard); return }
                 guard let sourceID = card?.sourceID else {
-                    store.showToast(text: String(localized: "Esta carta não declara uma fonte"),
+                    store.showToast(text: String(localized: "Este card não declara uma fonte"),
                         systemImage: "info.circle")
                     return
                 }
@@ -5302,7 +5302,7 @@ final class FeedAssociation {
         var statement: String? {
             switch self {
             case .feedRefresh: return nil
-            case .openCard: return String(localized: "Não foi possível abrir esta carta")
+            case .openCard: return String(localized: "Não foi possível abrir este card")
             case .save: return String(localized: "Não foi possível salvar")
             case .copy: return String(localized: "Não foi possível copiar")
             case .share: return String(localized: "Não foi possível compartilhar")
