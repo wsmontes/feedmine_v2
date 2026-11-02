@@ -130,7 +130,8 @@ public struct FeedLoadingView: View {
         switch work {
         case .unavailable:
             actions(tryAgain: true, adjust: true)
-        case .unreachable, .deferred:
+        case .unreachable, .deferred, .failed:
+            // A failure with no cards on screen used to state its message and stop: the reader had no next step.
             actions(tryAgain: true, adjust: false)
         default:
             EmptyView()

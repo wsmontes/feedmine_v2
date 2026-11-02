@@ -246,6 +246,7 @@ public struct FeedScreen: View {
                           }
                         }
                         endOfContentBlock(items: items)
+                        tailRecoveryBlock(items: items)
                     }
                     #if canImport(UIKit)
                     .background(FeedNativeScrollProbe(access: capture.nativeScrollOffset, ids: items.map(\.id)))
@@ -280,6 +281,7 @@ public struct FeedScreen: View {
                             }
                         }
                         endOfContentBlock(items: items)
+                        tailRecoveryBlock(items: items)
                     }
                     .padding(FeedDesignTokens.Spacing.page)
                     .frame(maxWidth: .infinity)
@@ -362,6 +364,47 @@ public struct FeedScreen: View {
                     FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
                         explicit: true)
                 })
+        }
+    }
+
+    /// With cards on screen, a feed that cannot continue (no connection, a failure, a deferred attempt, nothing
+    /// new) had no next step: "Tentar novamente" lived only on the empty surface. Like the end block, this is one
+    /// more child **after the last card**, drawn only when the mounted list really ends where the history ends, so
+    /// it never moves a card the reader can see and never claims an end above a deferred gap.
+    @ViewBuilder private func tailRecoveryBlock(items: [PresentationCard]) -> some View {
+        if !readingIsPaused, onRecoverHistory == nil,
+            let lastPhysical = items.last?.id,
+            lastPhysical == store.state.presentation?.window.items.last?.id,
+            let message = Self.tailRecoveryMessage(for: store.work) {
+            VStack(spacing: FeedDesignTokens.Spacing.tight) {
+                Text(verbatim: message)
+                    .font(FeedDesignTokens.Typography.label)
+                    .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: FeedDesignTokens.Spacing.deck) {
+                    Button(String(localized: "Tentar novamente")) { onTryAgain() }
+                        .buttonStyle(.bordered)
+                    if store.work == .unavailable {
+                        Button(String(localized: "Ajustar interesses")) { onAdjustInterests() }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FeedDesignTokens.Spacing.section)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("feed-tail-recovery")
+        }
+    }
+
+    /// The sentence the tail states for a work condition that a retry can address; nil draws nothing.
+    static func tailRecoveryMessage(for work: FeedPresentationState.Work) -> String? {
+        switch work {
+        case .unreachable: String(localized: "Sem conexão. Os cards acima continuam disponíveis.")
+        case .failed(let message): message
+        case .deferred: String(localized: "Aguardando nova oportunidade")
+        case .unavailable: String(localized: "Não há histórias novas por enquanto.")
+        case .idle, .pending, .preparing, .endOfContent: nil
         }
     }
 }

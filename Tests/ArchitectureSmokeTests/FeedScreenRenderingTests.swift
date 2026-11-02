@@ -232,7 +232,7 @@ final class FeedScreenRenderingTests: XCTestCase {
             (.deferred, ["Aguardando nova oportunidade", "Nada está sendo buscado agora.", "Tentar novamente"],
                 ["Aguardando nova oportunidade", "Nada está sendo buscado agora."]),
             (.failed(message: "Falha recebida da composição"),
-                ["A Falha recebida da composição", "Falha recebida da composição"],
+                ["A Falha recebida da composição", "Falha recebida da composição", "Tentar novamente"],
                 ["Falha recebida da composição"])
         ]
         for (work, expectedScreen, expectedView) in cases {
